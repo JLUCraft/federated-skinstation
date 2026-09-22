@@ -30,6 +30,8 @@ SKIN_CONFIG=.local/config.json SMTP_USER=... SMTP_PASSWORD=... bun start
 
 反向代理 HTTPS 到本站；用户页面 `/portal/`。校邮域名须由社团核实配置。现支持单账号单游戏角色、验证码注册、邮件找回密码及会话撤销、Yggdrasil authenticate/refresh/validate/invalidate/signout、join/hasJoined/profile、PNG 上传、设备绑定的学生凭据。
 
+注意：登录限速（每邮箱 10 次/60 秒）在验密前计数，触发期间该账号的 signout 也会暂时被拒，属预期行为。
+
 学校根和 issuer 使用 `unionctl keygen` 生成；根签署 delegation 后可离线保存。签署示例：
 
 ```sh

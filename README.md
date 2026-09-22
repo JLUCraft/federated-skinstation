@@ -1,4 +1,4 @@
-# skin-station
+# federated-skinstation
 
 独立部署的 TypeScript 全栈皮肤站：Fastify、React/Vite、Node SQLite、SMTP。无 serverless 依赖。Node >=22.22；本地使用 Bun 安装依赖，运行时由 tsx 调用 Node。
 

@@ -86,7 +86,7 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
     if(!row)return [];
     return Object.values(JSON.parse(row.value) as Record<string,{bs_root:string}>).map(server=>new URL(server.bs_root).hostname);
   };
-  app.get('/',async()=>({meta:{serverName:'JLUCraft Federation',implementationName:'skin-station',implementationVersion:VERSION,links:{homepage:config.origin+'/portal/',register:config.origin+'/portal/'}},skinDomains:[...new Set([origin.hostname,...config.peers.map(p=>new URL(p.origin).hostname),...muaDomains()])],signaturePublickey:createPublicKey(signingKey()).export({type:'spki',format:'pem'})}));
+  app.get('/',async()=>({meta:{serverName:'JLUCraft Federation',implementationName:'federated-skinstation',implementationVersion:VERSION,links:{homepage:config.origin+'/portal/',register:config.origin+'/portal/'}},skinDomains:[...new Set([origin.hostname,...config.peers.map(p=>new URL(p.origin).hostname),...muaDomains()])],signaturePublickey:createPublicKey(signingKey()).export({type:'spki',format:'pem'})}));
   app.post('/api/email/start',{config:{rateLimit:{max:5,timeWindow:3600000}}},async(req,reply)=>{
     const body=obj(req.body);const email=text(body.email).toLowerCase();const schoolId=text(body.school);const school=config.schools[schoolId];
     requireThat(school&&school.emailDomains.some(d=>email.split('@').length===2&&email.split('@')[1]===d.toLowerCase()),'Unsupported school email');

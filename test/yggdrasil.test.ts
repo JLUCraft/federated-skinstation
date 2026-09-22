@@ -17,6 +17,13 @@ test('Yggdrasil optional client token, refresh failure atomicity, requestUser an
   assert.equal((await s.post('/authserver/invalidate',{accessToken:'unknown'})).statusCode,204);
  }finally{await s.close();}
 });
+test('student credential rejects an invalid holder with 400 instead of 500',async()=>{
+ const s=await site();try{
+  const a=await s.enroll('HolderCheck');
+  const res=await s.app.inject({method:'POST',url:'/api/student-credential',headers:{authorization:`Bearer ${a.accessToken}`},payload:{holder:'not-a-peer-id'}});
+  assert.equal(res.statusCode,400);
+ }finally{await s.close();}
+});
 test('Yggdrasil join IP binding, lookup aliases and signed textures',async()=>{
  const s=await site();try{
   const a=await s.enroll('Network');await s.post('/sessionserver/session/minecraft/join',{accessToken:a.accessToken,selectedProfile:a.selectedProfile.id,serverId:'unique-hash'});

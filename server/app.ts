@@ -140,7 +140,7 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
     return account?{id:db.profileId(account),name:account.name}:reply.code(204).send();
   });
   app.get('/api/me',async req=>{const a=db.token(bearer(req.headers.authorization),undefined,now());return {id:a.id,profileId:db.profileId(a),name:a.name,school:a.school,verifiedAt:a.verified_at,textures:db.db.prepare('SELECT kind,hash,model FROM profile_textures WHERE account=?').all(a.id),muaAdmin:config.mua?.member?.adminAccounts?.includes(a.id)??false};});
-  app.post('/api/student-credential',async req=>{const a=db.token(bearer(req.headers.authorization),undefined,now());const holder=text(obj(req.body).holder);peerIdFromString(holder);const school=config.schools[a.school];requireThat(school);return issueStudent(a,holder,school,now(),db.profileId(a));});
+  app.post('/api/student-credential',async req=>{const a=db.token(bearer(req.headers.authorization),undefined,now());const holder=text(obj(req.body).holder);try{peerIdFromString(holder);}catch{throw new Rejected('Invalid holder.',400,'Bad Request');}const school=config.schools[a.school];requireThat(school);return issueStudent(a,holder,school,now(),db.profileId(a));});
   const saveTexture=async(account:Account,kind:'skin'|'cape',input:Buffer,model='default')=>{
     requireThat(input.length>=24&&input.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])));
     const width=input.readUInt32BE(16),height=input.readUInt32BE(20);

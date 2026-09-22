@@ -1,6 +1,7 @@
 import { createPrivateKey, createPublicKey, verify } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {registerMemberFeatures} from './mua-member.js';
+import { boundedValue, boundedJson, field, record } from './validate.js';
 import { Store, digest, requireThat, secret } from './store.js';
 
 export interface MuaConfig {
@@ -11,28 +12,6 @@ export interface MuaConfig {
   member?: { keyEnv: string; adminAccounts?:string[]; oauthSigningKey?:string };
 }
 
-const record = (v: unknown): Record<string, unknown> => {
-  requireThat(v !== null && typeof v === 'object' && !Array.isArray(v));
-  return v as Record<string, unknown>;
-};
-function field(v: unknown, max = 256): string {
-  requireThat(typeof v === 'string' && v.length > 0 && v.length <= max);
-  return v;
-}
-export async function boundedValue(response: Response): Promise<unknown> {
-  requireThat(response.ok, 'MUA upstream rejected request');
-  const reader = response.body?.getReader(); requireThat(reader);
-  const chunks: Uint8Array[] = []; let size = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read(); if (done) break;
-      size += value.length; requireThat(size <= 65536, 'MUA response too large'); chunks.push(value);
-    }
-  } finally { await reader.cancel(); }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-}
-
-export async function boundedJson(response:Response){return record(await boundedValue(response));}
 
 /** OAuth subjects are opaque CODE:ID values. Email and nickname are NOT identifiers. */
 export function muaSubject(user: Record<string, unknown>): string {

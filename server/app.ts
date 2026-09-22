@@ -10,14 +10,18 @@ import {PNG} from 'pngjs';
 import nodemailer from 'nodemailer';
 import { peerIdFromString } from '@libp2p/peer-id';
 import { Store, Rejected, requireThat, secret, digest, encodePassword, verifyPassword, accountId, type Account } from './store.js';
+import { field, record, boundedJson } from './validate.js';
+import { createRequire } from 'node:module';
+
+const VERSION = createRequire(import.meta.url)('../package.json').version as string;
 import { issueStudent, type School } from './federation.js';
 import { registerMua, type MuaConfig } from './mua.js';
 
 export interface Config {trustProxy?:string[];listen:string;port:number;origin:string;database:string;textures:string;signingKey:string;schools:Record<string,School>;peers:Array<{origin:string;publicKey:string}>;smtp:{host:string;port:number;from:string};webRoot?:string;mua?:MuaConfig}
 interface Profile {id:string;name:string;properties?:Array<{name:string;value:string;signature?:string}>}
 const now=()=>Math.floor(Date.now()/1000);
-function text(value:unknown,max=256):string {requireThat(typeof value==='string'&&value.length>0&&value.length<=max,'Invalid field');return value;}
-const obj=(value:unknown):Record<string,unknown>=>{requireThat(value!==null&&typeof value==='object'&&!Array.isArray(value));return value as Record<string,unknown>;};
+const text=field;
+const obj=record;
 const bearer=(header:unknown)=>{const value=text(header,2048);requireThat(value.startsWith('Bearer '));return value.slice(7);};
 export async function build(config:Config,dependencies:{mail?:(email:string,code:string)=>Promise<void>;muaFetch?:typeof fetch}={}) {
   const origin=new URL(config.origin);requireThat(origin.protocol==='https:'||origin.hostname==='127.0.0.1','HTTPS origin required');
@@ -82,7 +86,7 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
     if(!row)return [];
     return Object.values(JSON.parse(row.value) as Record<string,{bs_root:string}>).map(server=>new URL(server.bs_root).hostname);
   };
-  app.get('/',async()=>({meta:{serverName:'JLUCraft Federation',implementationName:'skin-station',implementationVersion:'0.2.0',links:{homepage:config.origin+'/portal/',register:config.origin+'/portal/'}},skinDomains:[...new Set([origin.hostname,...config.peers.map(p=>new URL(p.origin).hostname),...muaDomains()])],signaturePublickey:createPublicKey(signingKey()).export({type:'spki',format:'pem'})}));
+  app.get('/',async()=>({meta:{serverName:'JLUCraft Federation',implementationName:'skin-station',implementationVersion:VERSION,links:{homepage:config.origin+'/portal/',register:config.origin+'/portal/'}},skinDomains:[...new Set([origin.hostname,...config.peers.map(p=>new URL(p.origin).hostname),...muaDomains()])],signaturePublickey:createPublicKey(signingKey()).export({type:'spki',format:'pem'})}));
   app.post('/api/email/start',{config:{rateLimit:{max:5,timeWindow:3600000}}},async(req,reply)=>{
     const body=obj(req.body);const email=text(body.email).toLowerCase();const schoolId=text(body.school);const school=config.schools[schoolId];
     requireThat(school&&school.emailDomains.some(d=>email.split('@').length===2&&email.split('@')[1]===d.toLowerCase()),'Unsupported school email');
@@ -116,7 +120,7 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
     const responses=await Promise.all(config.peers.map(async peer=>{
       const nonce=secret();const url=new URL(`${peer.origin}/federation/hasJoined`);url.search=new URLSearchParams({username,serverId,nonce,...(q.ip===undefined?{}:{ip:text(q.ip,64)})}).toString();
       const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(5000)});if(response.status===204)return undefined;
-      requireThat(response.ok);const bytes=await bounded(response,65536);const proof=obj(JSON.parse(bytes));const payload=Buffer.from(text(proof.payload,65536),'base64');
+      const proof=await boundedJson(response);const payload=Buffer.from(text(proof.payload,65536),'base64');
       requireThat(verify('RSA-SHA256',payload,peer.publicKey,Buffer.from(text(proof.signature,4096),'base64')));
       const claim=obj(JSON.parse(payload.toString()));requireThat(claim.username===username&&claim.serverId===serverId&&claim.nonce===nonce&&typeof claim.expires==='number'&&claim.expires>=now()&&claim.expires<=now()+30);
       const p=claim.profile as Profile;requireThat(p&&/^[a-f0-9]{32}$/.test(p.id)&&p.name===username&&Array.isArray(p.properties));
@@ -174,4 +178,3 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
   if(config.webRoot)await app.register(staticFiles,{root:resolve(config.webRoot),prefix:'/portal/'});
   return app;
 }
-async function bounded(response:globalThis.Response,max:number) {const reader=response.body?.getReader();requireThat(reader);let size=0;const chunks:Uint8Array[]=[];try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;requireThat(size<=max);chunks.push(value);}}finally{await reader.cancel();}return Buffer.concat(chunks).toString('utf8');}

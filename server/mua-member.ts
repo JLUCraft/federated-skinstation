@@ -2,11 +2,12 @@ import {constants,createHmac,createPrivateKey,createPublicKey,publicEncrypt,sign
 import {readFile} from 'node:fs/promises';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {Store,requireThat,digest,secret} from './store.js';
+import {field,record} from './validate.js';
 import type {MuaConfig} from './mua.js';
 
 const now=()=>Math.floor(Date.now()/1000);
-const string=(value:unknown,max=256)=>{requireThat(typeof value==='string'&&value.length>0&&value.length<=max);return value;};
-const object=(value:unknown)=>{requireThat(value!==null&&typeof value==='object'&&!Array.isArray(value));return value as Record<string,unknown>;};
+const string=field;
+const object=record;
 type MemberFetch=(path:string,init?:RequestInit)=>Promise<unknown>;
 
 /** Local ownership is checked before every Union binding request; a UUID is never proof of ownership. */

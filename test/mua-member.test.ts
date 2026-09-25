@@ -25,8 +25,8 @@ test('member signed email lookup, cross-site binding ownership and administrator
  }finally{await s.close();delete process.env.JLU_TEST_MEMBER;}
 });
 test('MUA provider requires explicit consent, authenticates encrypted envelope and consumes request once',async()=>{
- const host=generateKeyPairSync('rsa',{modulusLength:2048});const cfg:MuaConfig={apiRoot:'https://mua.example.test/api/union',hostPublicKey:host.publicKey.export({type:'spki',format:'pem'}).toString(),member:{keyEnv:'JLU_TEST_PROVIDER',oauthSigningKey:'fixture'}};
- process.env.JLU_TEST_PROVIDER='provider-test-key';const s=await site(cfg,async input=>{assert.ok(String(input).endsWith('/oauth2/backend'));return Response.json({publicKey:host.publicKey.export({type:'spki',format:'pem'}).toString()});});
+ const host=generateKeyPairSync('rsa',{modulusLength:2048});const cfg:MuaConfig={apiRoot:'https://mua.example.test/api/union',hostPublicKey:host.publicKey.export({type:'spki',format:'pem'}).toString(),member:{keyEnv:'JLU_TEST_PROVIDER',oauthSigningKey:'fixture',oauthBackendPublicKey:host.publicKey.export({type:'spki',format:'pem'}).toString()}};
+ process.env.JLU_TEST_PROVIDER='provider-test-key';const s=await site(cfg,async()=>{throw new Error('OAuth must use its configured key without trusting a backend lookup');});
  try{
   const a=await s.enroll('Provider');const request=await s.app.inject('/api/union/member/oauth2/grant?state=original-state&client_id=app');assert.equal(request.statusCode,302);
   const ticket=new URLSearchParams(new URL(request.headers.location!).hash.slice(1)).get('mua-grant');const headers={authorization:`Bearer ${a.accessToken}`};

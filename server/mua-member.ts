@@ -11,7 +11,7 @@ const object=record;
 type MemberFetch=(path:string,init?:RequestInit)=>Promise<unknown>;
 
 /** Local ownership is checked before every Union binding request; a UUID is never proof of ownership. */
-export async function registerMemberFeatures(app:FastifyInstance,db:Store,config:MuaConfig,origin:string,memberFetch:MemberFetch,memberKey:()=>string,fetchJson:MemberFetch){
+export async function registerMemberFeatures(app:FastifyInstance,db:Store,config:MuaConfig,origin:string,memberFetch:MemberFetch,memberKey:()=>string){
   const authenticate=(req:FastifyRequest)=>{
     const header=string(req.headers.authorization,2048);requireThat(header.startsWith('Bearer '));
     return db.token(header.slice(7),undefined,now());
@@ -48,6 +48,9 @@ export async function registerMemberFeatures(app:FastifyInstance,db:Store,config
   app.get('/api/mua/admin/status',async req=>{admin(req);return db.db.prepare('SELECT revision,synced,attempts,next FROM mua_sync WHERE id=1').get();});
 
   if(!config.member?.oauthSigningKey)return;
+  // Independently confirmed pin; never learn an encryption recipient from a TLS response.
+  const publicKey=createPublicKey(string(config.member.oauthBackendPublicKey,16384));
+  const bits=publicKey.asymmetricKeyDetails?.modulusLength??0;requireThat(publicKey.asymmetricKeyType==='rsa'&&bits>=2048&&bits<=8192);
   const signer=createPrivateKey(await readFile(config.member.oauthSigningKey));
   requireThat(signer.asymmetricKeyType==='rsa'&&(signer.asymmetricKeyDetails?.modulusLength??0)>=2048);
   const root=config.apiRoot.replace(/\/$/,'');const allowedOrigin=new URL(root).origin;
@@ -71,10 +74,6 @@ export async function registerMemberFeatures(app:FastifyInstance,db:Store,config
   app.post('/api/mua/authorize',async req=>{
     const account=authenticate(req);const body=object(req.body);requireThat(body.consent===true,'Explicit consent required');
     const ticket=string(body.ticket);const pending=db.db.prepare('SELECT query FROM mua_provider_requests WHERE ticket=? AND expires>?').get(digest(ticket),now()) as {query:string}|undefined;requireThat(pending,'Authorization request expired');
-    const backend=object(await fetchJson('/oauth2/backend'));const publicKey=createPublicKey(string(backend.publicKey,16384));
-    const bits=publicKey.asymmetricKeyDetails?.modulusLength??0;requireThat(publicKey.asymmetricKeyType==='rsa'&&bits>=2048&&bits<=8192);
-    // The bearer may be revoked while the upstream request is in flight.
-    authenticate(req);
     const uid=db.transaction(()=>{
       const consumed=db.db.prepare('DELETE FROM mua_provider_requests WHERE ticket=? AND expires>?').run(digest(ticket),now());requireThat(consumed.changes===1);
       db.db.prepare('INSERT OR IGNORE INTO mua_subjects(account) VALUES(?)').run(account.id);

@@ -32,3 +32,7 @@ test('MUA encrypted secrets survive restart; corruption and wrong keys fail clos
  }finally{db?.close();delete process.env[name];await rm(dir,{recursive:true,force:true});}
 });
 
+test('OAuth provider refuses startup without an independently pinned backend encryption key',async()=>{
+ const host=generateKeyPairSync('rsa',{modulusLength:2048});
+ await assert.rejects(site({apiRoot:'https://mua.example.test/api/union',hostPublicKey:host.publicKey.export({type:'spki',format:'pem'}).toString(),member:{keyEnv:'JLU_UNUSED_KEY',oauthSigningKey:'fixture'}}));
+});

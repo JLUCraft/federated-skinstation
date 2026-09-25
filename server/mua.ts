@@ -10,7 +10,7 @@ export interface MuaConfig {
   /** Explicit administrator pin; never learn this key from an incoming request. */
   hostPublicKey: string;
   oauth?: { clientId: string; clientSecretEnv: string };
-  member?: { keyEnv: string; storageKeyEnv?:string; adminAccounts?:string[]; oauthSigningKey?:string };
+  member?: { keyEnv: string; storageKeyEnv?:string; adminAccounts?:string[]; oauthSigningKey?:string; oauthBackendPublicKey?:string };
 }
 
 
@@ -137,7 +137,7 @@ export async function registerMua(app: FastifyInstance, db: Store, config: MuaCo
     });
   });
 
-  if(config.member)await registerMemberFeatures(app,db,config,origin,memberFetch,memberKey,fetchJson);
+  if(config.member)await registerMemberFeatures(app,db,config,origin,memberFetch,memberKey);
   if (!config.oauth) return;
   const oauth = config.oauth;
   const callback = `${origin}/api/mua/callback`;

@@ -2,7 +2,7 @@ import { createPrivateKey, createPublicKey, verify } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {registerMemberFeatures} from './mua-member.js';
 import { boundedValue, boundedJson, field, record } from './validate.js';
-import { Store, digest, requireThat, secret } from './store.js';
+import { Store, digest, requireThat, secret, type Account } from './store.js';
 
 export interface MuaConfig {
   apiRoot: string;
@@ -43,7 +43,7 @@ export function verifyHost(db: Store, publicKey: string, raw: Buffer, headers: R
   });
 }
 
-export async function registerMua(app: FastifyInstance, db: Store, config: MuaConfig, origin: string, fetcher: typeof fetch = fetch) {
+export async function registerMua(app: FastifyInstance, db: Store, config: MuaConfig, origin: string, authorize: (account: Account) => Promise<void>, fetcher: typeof fetch = fetch) {
   yggdrasilRoot(config.apiRoot, 'all');
   requireThat(createPublicKey(config.hostPublicKey).asymmetricKeyType === 'rsa');
   db.db.exec(`CREATE TABLE IF NOT EXISTS mua_state(name TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -168,6 +168,10 @@ export async function registerMua(app: FastifyInstance, db: Store, config: MuaCo
     const accessToken = field(response.access_token, 8192);
     const user = await fetchJson('/oauth2/user', { headers: { Authorization: `Bearer ${accessToken}` } });
     const subject = muaSubject(user);
+    const current = db.db.prepare('SELECT account FROM tokens WHERE hash=? AND expires>?').get(token, now()) as {account:string} | undefined;
+    requireThat(current);
+    const account = db.account('id', current.account);requireThat(account);
+    await authorize(account);
     db.transaction(() => {
       // A logout/expiry during the upstream round trip cancels the operation.
       const live = db.db.prepare('SELECT account FROM tokens WHERE hash=? AND expires>?').get(token, now()) as { account: string } | undefined;

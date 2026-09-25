@@ -15,7 +15,7 @@ import { createRequire } from 'node:module';
 
 const VERSION = createRequire(import.meta.url)('../package.json').version as string;
 import { type School } from './federation.js';
-import { identityProposal, confirmIdentity } from './unified-identity.js';
+import { identityProposal, confirmIdentity, authorizeAccount } from './unified-identity.js';
 import { registerMua, type MuaConfig } from './mua.js';
 
 export interface Config {trustProxy?:string[];listen:string;port:number;origin:string;database:string;textures:string;signingKey:string;schools:Record<string,School>;peers:Array<{origin:string;publicKey:string}>;smtp:{host:string;port:number;from:string};webRoot?:string;mua?:MuaConfig}
@@ -37,6 +37,17 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
     if(request.url.startsWith('/portal/')) reply.header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     else if(!request.url.startsWith('/textures/')) reply.header('Cache-Control','no-store');
     return payload;
+  });
+  const authorize = async(account:Account) => {
+    const school=config.schools[account.school];requireThat(school);
+    await authorizeAccount(db,account,school);
+  };
+  app.addHook('preHandler',async req=>{
+    if(req.url==='/authserver/invalidate'||req.url==='/authserver/signout')return;
+    const header=req.headers.authorization;
+    const body=req.body && typeof req.body==='object' ? req.body as Record<string,unknown> : undefined;
+    const token=header?.startsWith('Bearer ')?header.slice(7):typeof body?.accessToken==='string'?body.accessToken:undefined;
+    if(token)await authorize(db.token(token,undefined,now()));
   });
   app.get('/health/live',async()=>({status:'ok'}));
   app.get('/health/ready',async()=>{db.db.prepare('SELECT 1').get();return {status:'ok'};});
@@ -103,6 +114,7 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
   app.post('/authserver/authenticate',{config:{rateLimit:{max:20,timeWindow:60000}}},async req=>{
     const body=obj(req.body);const email=text(body.username).toLowerCase();db.rate(`login:${digest(email)}`,now(),10,60);
     const a=db.account('email',email);requireThat(a&&await verifyPassword(text(body.password,1024),a.password),'Invalid credentials');
+    await authorize(a);
     const client=body.clientToken===undefined?accountId():text(body.clientToken);return loginReply(a,db.transaction(()=>db.mint(a.id,client,now())),client,body.requestUser===true);
   });
   app.post('/authserver/refresh',async req=>{const b=obj(req.body);const client=b.clientToken===undefined?undefined:text(b.clientToken);const result=db.refresh(text(b.accessToken),client,b.selectedProfile?text(obj(b.selectedProfile).id):undefined,now());return loginReply(result.account,result.token,result.client,b.requestUser===true);});
@@ -113,10 +125,12 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
   app.get('/federation/hasJoined',async(req,reply)=>{
     const q=obj(req.query);const username=text(q.username,16),serverId=text(q.serverId,64),nonce=text(q.nonce,128);
     const a=db.joined(username,serverId,now(),q.ip===undefined?undefined:text(q.ip,64));if(!a)return reply.code(204).send();
+    await authorize(a);
     const payload=Buffer.from(JSON.stringify({username,serverId,nonce,expires:now()+15,profile:profile(a)}));return {payload:payload.toString('base64'),signature:sign('RSA-SHA256',payload,key).toString('base64')};
   });
   app.get('/sessionserver/session/minecraft/hasJoined',async(req,reply)=>{
     const q=obj(req.query);const username=text(q.username,16),serverId=text(q.serverId,64);const local=db.joined(username,serverId,now(),q.ip===undefined?undefined:text(q.ip,64));
+    if(local)await authorize(local);
     const found:Profile[]=local?[profile(local)]:[];
     const responses=await Promise.all(config.peers.map(async peer=>{
       const nonce=secret();const url=new URL(`${peer.origin}/federation/hasJoined`);url.search=new URLSearchParams({username,serverId,nonce,...(q.ip===undefined?{}:{ip:text(q.ip,64)})}).toString();
@@ -153,6 +167,7 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
     let png:PNG=PNG.sync.read(input,{checkCRC:true});
     if(padded){const scale=width/22;requireThat(64*scale<=1024&&32*scale<=1024);const canvas=new PNG({width:64*scale,height:32*scale});PNG.bitblt(png,canvas,0,0,width,height,0,0);png=canvas;}
     const bytes=PNG.sync.write(png);const hash=(await import('node:crypto')).createHash('sha256').update(bytes).digest('hex');
+    await authorize(account);
     await writeFile(resolve(config.textures,hash),bytes,{mode:0o600});
     db.transaction(()=>{
       db.db.prepare('INSERT OR REPLACE INTO profile_textures VALUES(?,?,?,?)').run(account.id,kind,hash,model);
@@ -176,7 +191,7 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
     return reply.code(204).send();
   }});
   app.get('/textures/:hash',async(req,reply)=>{const hash=text(obj(req.params).hash,64);requireThat(/^[0-9a-f]{64}$/.test(hash));return reply.type('image/png').header('X-Content-Type-Options','nosniff').send(await readFile(resolve(config.textures,hash)));});
-  if(config.mua)await registerMua(app,db,config.mua,config.origin,dependencies.muaFetch);
+  if(config.mua)await registerMua(app,db,config.mua,config.origin,authorize,dependencies.muaFetch);
   if(config.webRoot)await app.register(staticFiles,{root:resolve(config.webRoot),prefix:'/portal/'});
   return app;
 }

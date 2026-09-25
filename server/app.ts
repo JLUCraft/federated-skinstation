@@ -3,8 +3,8 @@ import rateLimit from '@fastify/rate-limit';
 import staticFiles from '@fastify/static';
 import multipart from '@fastify/multipart';
 import {STATUS_CODES} from 'node:http';
-import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { createPrivateKey, createPublicKey, sign, verify, randomUUID } from 'node:crypto';
+import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {PNG} from 'pngjs';
 import nodemailer from 'nodemailer';
@@ -16,8 +16,8 @@ import { createRequire } from 'node:module';
 const VERSION = createRequire(import.meta.url)('../package.json').version as string;
 import { type School } from './federation.js';
 import { identityProposal, confirmIdentity, authorizeAccount } from './unified-identity.js';
-import {SecretState} from './secret-state.js';
 import { registerMua, type MuaConfig } from './mua.js';
+import {SecretState} from './secret-state.js';
 
 export interface Config {trustProxy?:string[];listen:string;port:number;origin:string;database:string;textures:string;signingKey:string;schools:Record<string,School>;peers:Array<{origin:string;publicKey:string}>;smtp:{host:string;port:number;from:string};webRoot?:string;mua?:MuaConfig}
 interface Profile {id:string;name:string;properties?:Array<{name:string;value:string;signature?:string}>}
@@ -171,10 +171,16 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
     if(padded){const scale=width/22;requireThat(64*scale<=1024&&32*scale<=1024);const canvas=new PNG({width:64*scale,height:32*scale});PNG.bitblt(png,canvas,0,0,width,height,0,0);png=canvas;}
     const bytes=PNG.sync.write(png);const hash=(await import('node:crypto')).createHash('sha256').update(bytes).digest('hex');
     await authorize(account);
-    await writeFile(resolve(config.textures,hash),bytes,{mode:0o600});
-    db.transaction(()=>{
-      db.db.prepare('INSERT OR REPLACE INTO profile_textures VALUES(?,?,?,?)').run(account.id,kind,hash,model);
-    });
+    const temporary=resolve(config.textures,`${hash}.tmp.${randomUUID()}`);
+    try {
+      await writeFile(temporary,bytes,{mode:0o600,flag:'wx'});
+      // Publish complete immutable bytes before creating a database reference.
+      // A crash may leave an unreferenced blob, never a reference to partial bytes.
+      await rename(temporary,resolve(config.textures,hash));
+      db.transaction(()=>{
+        db.db.prepare('INSERT OR REPLACE INTO profile_textures VALUES(?,?,?,?)').run(account.id,kind,hash,model);
+      });
+    } finally { await rm(temporary,{force:true}); }
   };
   for(const method of ['PUT','DELETE'] as const)app.route({method,url:'/api/user/profile/:uuid/:kind',handler:async(req,reply)=>{
     let a:Account;try{a=db.token(bearer(req.headers.authorization),undefined,now());}catch{throw new Rejected('Invalid token.',401,'Unauthorized');}

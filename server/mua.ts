@@ -1,5 +1,6 @@
 import { createPrivateKey, createPublicKey, verify } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import {isSecretName,type SecretState} from './secret-state.js';
 import {registerMemberFeatures} from './mua-member.js';
 import { boundedValue, boundedJson, field, record } from './validate.js';
 import { Store, digest, requireThat, secret, type Account } from './store.js';
@@ -9,7 +10,7 @@ export interface MuaConfig {
   /** Explicit administrator pin; never learn this key from an incoming request. */
   hostPublicKey: string;
   oauth?: { clientId: string; clientSecretEnv: string };
-  member?: { keyEnv: string; adminAccounts?:string[]; oauthSigningKey?:string };
+  member?: { keyEnv: string; storageKeyEnv?:string; adminAccounts?:string[]; oauthSigningKey?:string };
 }
 
 
@@ -43,19 +44,20 @@ export function verifyHost(db: Store, publicKey: string, raw: Buffer, headers: R
   });
 }
 
-export async function registerMua(app: FastifyInstance, db: Store, config: MuaConfig, origin: string, authorize: (account: Account) => Promise<void>, fetcher: typeof fetch = fetch) {
+export async function registerMua(app: FastifyInstance, db: Store, config: MuaConfig, origin: string, authorize: (account: Account) => Promise<void>, fetcher: typeof fetch = fetch, secrets?:SecretState) {
   yggdrasilRoot(config.apiRoot, 'all');
   requireThat(createPublicKey(config.hostPublicKey).asymmetricKeyType === 'rsa');
   db.db.exec(`CREATE TABLE IF NOT EXISTS mua_state(name TEXT PRIMARY KEY,value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS mua_nonces(nonce TEXT PRIMARY KEY,expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS mua_links(account TEXT PRIMARY KEY REFERENCES accounts(id),subject TEXT UNIQUE NOT NULL,verified_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS mua_oauth(state TEXT PRIMARY KEY,cookie TEXT NOT NULL,token TEXT NOT NULL REFERENCES tokens(hash) ON DELETE CASCADE,expires INTEGER NOT NULL);`);
+  if(config.member){requireThat(secrets,'MUA storage key required');secrets.validate(db);}
   const now = () => Math.floor(Date.now() / 1000);
   const root = config.apiRoot.replace(/\/$/, '');
   const fetchJson = async (path: string, init?: RequestInit) => boundedJson(await fetcher(`${root}${path}`, { ...init, redirect: 'error', signal: AbortSignal.timeout(5000) }));
 
-  const stored=(name:string)=> (db.db.prepare('SELECT value FROM mua_state WHERE name=?').get(name) as {value:string}|undefined)?.value;
-  const save=(name:string,value:string)=>db.db.prepare('INSERT OR REPLACE INTO mua_state VALUES(?,?)').run(name,value);
+  const stored=(name:string)=>{const value=(db.db.prepare('SELECT value FROM mua_state WHERE name=?').get(name) as {value:string}|undefined)?.value;if(value!==undefined&&isSecretName(name)){requireThat(secrets);return secrets.open(name,value);}return value;};
+  const save=(name:string,value:string)=>{if(isSecretName(name)){requireThat(secrets);value=secrets.seal(name,value);}return db.db.prepare('INSERT OR REPLACE INTO mua_state VALUES(?,?)').run(name,value);};
   const memberKey=()=>{const key=stored('memberKey')??(config.member?process.env[config.member.keyEnv]:undefined);requireThat(key,'Member key missing');return key;};
   const memberFetch=async(path:string,init:RequestInit={})=>{
     requireThat(config.member,'Member integration not configured');

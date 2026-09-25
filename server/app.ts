@@ -16,6 +16,7 @@ import { createRequire } from 'node:module';
 const VERSION = createRequire(import.meta.url)('../package.json').version as string;
 import { type School } from './federation.js';
 import { identityProposal, confirmIdentity, authorizeAccount } from './unified-identity.js';
+import {SecretState} from './secret-state.js';
 import { registerMua, type MuaConfig } from './mua.js';
 
 export interface Config {trustProxy?:string[];listen:string;port:number;origin:string;database:string;textures:string;signingKey:string;schools:Record<string,School>;peers:Array<{origin:string;publicKey:string}>;smtp:{host:string;port:number;from:string};webRoot?:string;mua?:MuaConfig}
@@ -28,6 +29,7 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
   const origin=new URL(config.origin);requireThat(origin.protocol==='https:'||origin.hostname==='127.0.0.1','HTTPS origin required');
   requireThat(config.peers.length<=32);for(const peer of config.peers){const url=new URL(peer.origin);requireThat(url.protocol==='https:'||url.hostname==='127.0.0.1');createPublicKey(peer.publicKey);}
   const key=createPrivateKey(await readFile(config.signingKey));requireThat(key.asymmetricKeyType==='rsa','RSA signing key required');
+  const secrets=config.mua?.member?SecretState.fromEnvironment(config.mua.member.storageKeyEnv):undefined;
   const db=new Store(config.database);await mkdir(config.textures,{recursive:true});
   const app=Fastify({trustProxy:config.trustProxy??false,logger:{redact:['req.headers.authorization','req.headers.cookie','req.body'],serializers:{req:req=>({method:req.method,url:req.url.split('?')[0],remoteAddress:req.ip})}},bodyLimit:64*1024});
   app.addHook('onClose',async()=>db.close());
@@ -62,7 +64,8 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
   let textureSigningKey=key;
   const signingKey=()=>{
     if(config.mua?.member){
-      const pem=(db.db.prepare("SELECT value FROM mua_state WHERE name='textureKey'").get() as {value:string}|undefined)?.value;
+      const encrypted=(db.db.prepare("SELECT value FROM mua_state WHERE name='textureKey'").get() as {value:string}|undefined)?.value;
+      const pem=encrypted?secrets?.open('textureKey',encrypted):undefined;
       if(pem&&pem!==texturePem){textureSigningKey=createPrivateKey(pem);texturePem=pem;}
     }
     return textureSigningKey;
@@ -191,7 +194,10 @@ export async function build(config:Config,dependencies:{mail?:(email:string,code
     return reply.code(204).send();
   }});
   app.get('/textures/:hash',async(req,reply)=>{const hash=text(obj(req.params).hash,64);requireThat(/^[0-9a-f]{64}$/.test(hash));return reply.type('image/png').header('X-Content-Type-Options','nosniff').send(await readFile(resolve(config.textures,hash)));});
-  if(config.mua)await registerMua(app,db,config.mua,config.origin,authorize,dependencies.muaFetch);
+  if(config.mua){
+    try { await registerMua(app,db,config.mua,config.origin,authorize,dependencies.muaFetch,secrets); }
+    catch(error){ await app.close(); throw error; }
+  }
   if(config.webRoot)await app.register(staticFiles,{root:resolve(config.webRoot),prefix:'/portal/'});
   return app;
 }

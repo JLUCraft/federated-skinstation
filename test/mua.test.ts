@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { generateKeyPairSync, sign, randomBytes } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -64,11 +64,12 @@ test('mail enrollment, Yggdrasil invalidation and signed MUA diagnosis HTTP flow
  } finally {await app.close();await rm(dir,{recursive:true,force:true});}
 });
 test('signed MUA member control rotates scoped keys, syncs profiles and remaps UUID atomically',async()=>{
+ process.env.TEST_MUA_STORAGE=randomBytes(32).toString('hex');
  const dir=await mkdtemp(join(tmpdir(),'mua-member-test-'));
  await writeFile(join(dir,'rsa.pem'),keys.privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});
  const texture=generateKeyPairSync('rsa',{modulusLength:2048});
  let code='';let synced:unknown;
- const app=await build({listen:'127.0.0.1',port:0,origin:'http://127.0.0.1',database:join(dir,'db'),textures:join(dir,'textures'),signingKey:join(dir,'rsa.pem'),schools:{jlu:{emailDomains:['mails.jlu.edu.cn'],issuerKey:'unused'}},peers:[],smtp:{host:'localhost',port:465,from:'test@localhost'},mua:{apiRoot:'https://skin.mualliance.ltd/api/union',hostPublicKey:publicKey,member:{keyEnv:'TEST_UNUSED_MEMBER_KEY'}}},{mail:async(_,value)=>{code=value;},muaFetch:async(input,init)=>{
+ const app=await build({listen:'127.0.0.1',port:0,origin:'http://127.0.0.1',database:join(dir,'db'),textures:join(dir,'textures'),signingKey:join(dir,'rsa.pem'),schools:{jlu:{emailDomains:['mails.jlu.edu.cn'],issuerKey:'unused'}},peers:[],smtp:{host:'localhost',port:465,from:'test@localhost'},mua:{apiRoot:'https://skin.mualliance.ltd/api/union',hostPublicKey:publicKey,member:{keyEnv:'TEST_UNUSED_MEMBER_KEY',storageKeyEnv:'TEST_MUA_STORAGE'}}},{mail:async(_,value)=>{code=value;},muaFetch:async(input,init)=>{
   assert.equal(new Headers(init?.headers).get('X-Union-Member-Key'),'rotated-member-secret');
   const url=String(input);
   if(url.endsWith('/serverlist'))return Response.json({servers:[],version:2});

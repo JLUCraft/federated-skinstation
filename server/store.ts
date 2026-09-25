@@ -72,6 +72,8 @@ export class Store {
     this.transaction(()=>{
       const row=this.db.prepare('SELECT payload FROM challenges WHERE email=? AND token=? AND expires>?').get(email,digest(code),now) as {payload:string}|undefined;
       requireThat(row,'Invalid or expired verification');const a=JSON.parse(row.payload) as Account;
+      const collision=this.account('name',a.name);
+      if(collision && collision.email!==a.email)throw new Rejected('Profile name already in use',409,'Name Conflict');
       this.db.prepare('INSERT INTO accounts VALUES(?,?,?,?,?,?) ON CONFLICT(email) DO UPDATE SET verified_at=excluded.verified_at').run(a.id,a.name,a.email,a.school,a.password,now);
       this.db.prepare('DELETE FROM challenges WHERE email=?').run(email);
       this.db.prepare('UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1').run();

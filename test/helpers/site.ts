@@ -9,7 +9,7 @@ export async function site(mua?:MuaConfig,muaFetch?:typeof fetch){
  await writeFile(join(dir,'key.pem'),keys.privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});
  if(mua?.member?.oauthSigningKey)mua.member.oauthSigningKey=join(dir,'key.pem');
  let code='';
- const config:Config={listen:'127.0.0.1',port:0,origin:'https://skin.example.test',database:join(dir,'db'),textures:join(dir,'textures'),signingKey:join(dir,'key.pem'),schools:{jlu:{emailDomains:['school.test'],issuerKey:'unused',delegation:'unused',roots:[]}},peers:[],smtp:{host:'unused',port:465,from:'test@example.test'},mua};
+ const config:Config={listen:'127.0.0.1',port:0,origin:'https://skin.example.test',database:join(dir,'db'),textures:join(dir,'textures'),signingKey:join(dir,'key.pem'),schools:{jlu:{emailDomains:['school.test'],issuerKey:'unused'}},peers:[],smtp:{host:'unused',port:465,from:'test@example.test'},mua};
  const app=await build(config,{mail:async(_,value)=>{code=value;},muaFetch});
  const post=(url:string,payload:object)=>app.inject({method:'POST',url,payload});
  async function enroll(name:string){const account={email:name.toLowerCase()+'@school.test',name,school:'jlu',password:'password-for-contract-testing'};

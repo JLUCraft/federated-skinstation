@@ -44,6 +44,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS profile_remaps(old TEXT PRIMARY KEY,next TEXT NOT NULL,account TEXT NOT NULL REFERENCES accounts(id));
       CREATE TABLE IF NOT EXISTS password_resets(account TEXT PRIMARY KEY REFERENCES accounts(id),token TEXT NOT NULL,expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,window INTEGER NOT NULL,count INTEGER NOT NULL);`);
+    this.db.exec('CREATE TABLE IF NOT EXISTS identity_members(account TEXT PRIMARY KEY REFERENCES accounts(id),member TEXT NOT NULL,confirmed INTEGER NOT NULL DEFAULT 0)');
     this.db.exec('CREATE TABLE IF NOT EXISTS profile_textures(account TEXT NOT NULL REFERENCES accounts(id),kind TEXT NOT NULL,hash TEXT NOT NULL,model TEXT NOT NULL,PRIMARY KEY(account,kind))');
     this.db.exec('PRAGMA user_version=1');
   }

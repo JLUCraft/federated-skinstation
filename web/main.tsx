@@ -1,17 +1,21 @@
-import React, {useState, useEffect} from 'react';
-import {createRoot} from 'react-dom/client';
+import { t } from './i18n';
+import React, { useState, useEffect } from 'react';
+import { createRoot } from 'react-dom/client';
 import './style.css';
-import {MuaPanel} from './MuaPanel';
-import {TexturesPanel} from './TexturesPanel';
-import {apiRequest} from './api';
+import { MuaPanel } from './MuaPanel';
+import { TexturesPanel } from './TexturesPanel';
+import { WardrobePanel } from './WardrobePanel';
+import { PasskeysPanel, loginWithPasskey } from './PasskeysPanel';
+import { MicrosoftPanel } from './MicrosoftPanel';
+import { apiRequest, errorText } from './api';
 
 type MsgKind = 'success' | 'error';
 type AuthTab = 'login' | 'register' | 'reset';
 
 const TAB_LABELS: Record<AuthTab, string> = {
-  login: '登录',
-  register: '注册新账号',
-  reset: '重置密码',
+  login: t('登录'),
+  register: t('注册新账号'),
+  reset: t('重置密码'),
 };
 
 const MSG_CLASS: Record<MsgKind, string> = {
@@ -22,19 +26,27 @@ const MSG_CLASS: Record<MsgKind, string> = {
 function App() {
   const [schools, setSchools] = useState<string[]>([]);
   const [capsLoading, setCapsLoading] = useState(true);
+  const [microsoftEnabled, setMicrosoftEnabled] = useState(false);
+  const [page, setPage] = useState<
+    'textures' | 'wardrobe' | 'library' | 'account' | 'community'
+  >('textures');
+  const [displayName, setDisplayName] = useState('');
   const [muaEnabled, setMuaEnabled] = useState(false);
   const [muaMember, setMuaMember] = useState(false);
   useEffect(() => {
     void fetch('/api/capabilities')
-      .then(r => r.json())
-      .then(c => {
+      .then((r) => r.json())
+      .then((c) => {
         setMuaEnabled(c.muaOAuth === true);
+        setMicrosoftEnabled(c.microsoft === true);
         setMuaMember(c.muaMember === true);
         const list: string[] = c.schools ?? [];
         setSchools(list);
-        setSchool(current => (list.includes(current) ? current : list[0] ?? ''));
+        setSchool((current) =>
+          list.includes(current) ? current : (list[0] ?? ''),
+        );
       })
-      .catch(() => notify('无法加载站点信息，请稍后刷新重试', 'error'))
+      .catch(() => notify(t('无法加载站点信息，请稍后刷新重试'), 'error'))
       .finally(() => setCapsLoading(false));
   }, []);
 
@@ -55,15 +67,43 @@ function App() {
     setMsgKind(kind);
   };
 
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get('microsoft');
+    if (!result) return;
+    window.history.replaceState(null, '', window.location.pathname);
+    if (result !== 'complete') {
+      notify(
+        result === 'cancelled'
+          ? t('已取消 Microsoft 登录')
+          : t('Microsoft 登录未完成，请确认账号拥有 Java 版且已绑定。'),
+        'error',
+      );
+      return;
+    }
+    void action(async () => {
+      const data = await apiRequest('/api/microsoft/complete', {
+        method: 'POST',
+      });
+      setToken(data.accessToken);
+      setDisplayName((data.selectedProfile ?? data.availableProfiles[0]).name);
+      setPage('account');
+      notify(t('Microsoft 验证完成'), 'success');
+    });
+  }, []);
+
   async function request(path: string, body: unknown) {
-    return apiRequest(path, {method: 'POST', body, errorMessage: '请求被拒绝，请检查信息或稍后重试'});
+    return apiRequest(path, {
+      method: 'POST',
+      body,
+      errorMessage: t('请求被拒绝，请检查信息或稍后重试'),
+    });
   }
   async function action(fn: () => Promise<void>) {
     setBusy(true);
     try {
       await fn();
     } catch (e) {
-      notify(String(e), 'error');
+      notify(errorText(e), 'error');
     } finally {
       setBusy(false);
     }
@@ -75,11 +115,13 @@ function App() {
     document.getElementById(`tab-${next}`)?.focus();
   }
   function onTabKeyDown(e: React.KeyboardEvent) {
-    const tabs: AuthTab[] = tab === 'reset' ? ['login', 'register', 'reset'] : ['login', 'register'];
+    const tabs: AuthTab[] =
+      tab === 'reset' ? ['login', 'register', 'reset'] : ['login', 'register'];
     const index = tabs.indexOf(tab);
     let next: AuthTab | null = null;
     if (e.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
-    else if (e.key === 'ArrowLeft') next = tabs[(index - 1 + tabs.length) % tabs.length];
+    else if (e.key === 'ArrowLeft')
+      next = tabs[(index - 1 + tabs.length) % tabs.length];
     else if (e.key === 'Home') next = 'login';
     else if (e.key === 'End') next = tabs[tabs.length - 1];
     if (next) {
@@ -99,134 +141,546 @@ function App() {
     selectTab(next);
   }
 
+  function changeRegistration(update: () => void) {
+    update();
+    setCode('');
+    setCodeSent(false);
+    setMessage('');
+  }
+
   async function sendVerifyEmail() {
-    await request('/api/email/start', {email, password, name, school});
+    await request('/api/email/start', { email, password, name, school });
     setCodeSent(true);
-    notify('验证邮件已发送，15 分钟内有效', 'success');
+    notify(t('验证邮件已发送，15 分钟内有效'), 'success');
   }
   async function confirmEmail() {
-    await request('/api/email/confirm', {email, code});
+    await request('/api/email/confirm', { email, code });
     setCode('');
     setCodeSent(false);
     setTab('login');
-    notify('邮箱验证完成，请使用邮箱和密码登录', 'success');
+    notify(t('邮箱验证完成，请使用邮箱和密码登录'), 'success');
   }
   async function login() {
-    const data = await request('/authserver/authenticate', {username: email, password});
+    const data = await request('/authserver/authenticate', {
+      username: email,
+      password,
+    });
     setToken(data.accessToken);
+    setDisplayName((data.selectedProfile ?? data.availableProfiles[0]).name);
     setPassword('');
-    notify(`欢迎，${data.selectedProfile.name}`, 'success');
+    notify(t('登录成功'), 'success');
   }
 
-  const tabs: AuthTab[] = tab === 'reset' ? ['login', 'register', 'reset'] : ['login', 'register'];
+  const tabs: AuthTab[] =
+    tab === 'reset' ? ['login', 'register', 'reset'] : ['login', 'register'];
 
-  return <main className="app-main">
-    <header className="site-header">
-      <div className="brand"><span className="brand-mark" aria-hidden="true">JL</span><span className="brand-name">JLUCraft / Federation</span></div>
-      <h1 className="site-title">一个身份，连接高校社区。</h1>
-      <p className="tagline">管理游戏账号与皮肤，加入你的高校社区。</p>
-    </header>
-
-    <section className="panel" aria-labelledby="auth-title" aria-busy={capsLoading}>
-      <div className="section-head">
-        <h2 className="section-title" id="auth-title">{token ? '账号已登录' : '登录或注册'}</h2>
-        {!token && <p className="section-hint">已验证学校邮箱的账号可直接登录；新账号请在「注册新账号」标签中完成邮箱验证。</p>}
-      </div>
-      {capsLoading && <p className="loading-note" role="status">正在加载可用学校…</p>}
-
-      {!token && !capsLoading && <>
-        <div className="tabs" role="tablist" aria-label="登录或注册" onKeyDown={onTabKeyDown}>
-          {tabs.map(id => <button
-            key={id}
-            type="button"
-            role="tab"
-            id={`tab-${id}`}
-            tabIndex={tab === id ? 0 : -1}
-            aria-selected={tab === id}
-            aria-controls={`panel-${id}`}
-            className={`btn tab${tab === id ? ' tab--active' : ''}`}
-            onClick={() => selectTab(id)}
-          >{TAB_LABELS[id]}</button>)}
+  return (
+    <main className="app-main">
+      <header className="site-header">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            JL
+          </span>
+          <span className="brand-name">JLUCraft</span>
         </div>
+        <h1 className="site-title">{t('皮肤站')}</h1>
+      </header>
 
-        {tab === 'login' && <div role="tabpanel" id="panel-login" aria-labelledby="tab-login" className="tab-panel">
-          <form onSubmit={e => {e.preventDefault(); void action(login);}}>
-            <div className="field-grid">
-              <label className="field-label">学校邮箱<input className="input" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required/></label>
-              <label className="field-label">密码<input className="input" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} minLength={12} required/></label>
-            </div>
-            <div className="actions"><button className="btn btn--primary" disabled={busy} type="submit">登录</button></div>
-          </form>
-          <button type="button" className="btn btn--link" disabled={busy} onClick={enterReset}>忘记密码</button>
-        </div>}
+      {message && (
+        <p
+          className={MSG_CLASS[msgKind]}
+          role={msgKind === 'error' ? 'alert' : 'status'}
+          aria-live="polite"
+        >
+          {message}
+        </p>
+      )}
 
-        {tab === 'reset' && <div role="tabpanel" id="panel-reset" aria-labelledby="tab-reset" className="tab-panel">
-          <form onSubmit={e => {e.preventDefault(); void action(async () => {
-            if (!resetSent) {
-              await request('/api/password/start', {email});
-              setResetSent(true);
-              notify('若该邮箱已注册，你将收到重置密码邮件', 'success');
-            } else {
-              await request('/api/password/confirm', {email, code, password});
-              leaveReset('login');
-              notify('密码已更新，请重新登录', 'success');
-            }
-          });}}>
-            <div className="field-grid">
-              <label className="field-label">学校邮箱<input className="input" type="email" autoComplete="username" value={email} disabled={busy || resetSent} onChange={e => setEmail(e.target.value)} required/></label>
-              {resetSent && <>
-                <label className="field-label">邮件验证码<input className="input" value={code} onChange={e => setCode(e.target.value)} autoComplete="off" required/></label>
-                <label className="field-label">新密码<input className="input" type="password" autoComplete="new-password" minLength={12} value={password} onChange={e => setPassword(e.target.value)} required/></label>
-              </>}
-            </div>
-            <div className="actions">
-              <button className="btn btn--primary" type="submit" disabled={busy}>{resetSent ? '更新密码' : '发送重置邮件'}</button>
-              <button type="button" className="btn btn--secondary" disabled={busy} onClick={() => leaveReset('login')}>返回登录</button>
-            </div>
-          </form>
-        </div>}
+      <div className={token ? 'portal-workspace' : undefined}>
+        {token && (
+          <nav className="portal-navigation" aria-label={t('皮肤站导航')}>
+            {(
+              [
+                ['textures', t('角色外观')],
+                ['wardrobe', t('衣柜')],
+                ['library', t('皮肤库')],
+                ['account', t('账号安全')],
+                ['community', t('高校社区')],
+              ] as const
+            ).map(
+              ([key, label]) =>
+                (key !== 'community' || muaEnabled || muaMember) && (
+                  <button
+                    className={`btn portal-navigation-item${page === key ? ' portal-navigation-item--active' : ''}`}
+                    key={key}
+                    aria-current={page === key ? 'page' : undefined}
+                    onClick={() => {
+                      setPage(key);
+                      setMessage('');
+                    }}
+                  >
+                    {label}
+                  </button>
+                ),
+            )}
+          </nav>
+        )}
 
-        {tab === 'register' && <div role="tabpanel" id="panel-register" aria-labelledby="tab-register" className="tab-panel">
-          <form onSubmit={e => {e.preventDefault(); void action(sendVerifyEmail);}}>
-            <div className="field-grid">
-              <label className="field-label">学校<select className="input" aria-label="学校" value={school} onChange={e => setSchool(e.target.value)} required>{schools.map(id => <option key={id} value={id}>{id.toUpperCase()}</option>)}</select></label>
-              <label className="field-label">学校邮箱<input className="input" type="email" autoComplete="username" value={email} onChange={e => {setEmail(e.target.value); setCodeSent(false);}} required/></label>
-              <label className="field-label">游戏名称<input className="input" value={name} onChange={e => setName(e.target.value)} maxLength={16}/></label>
-              <label className="field-label">设置密码<input className="input" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} minLength={12} required/></label>
-            </div>
-            <div className="actions"><button className="btn btn--primary" disabled={busy} type="submit">发送验证邮件</button></div>
-          </form>
-          {codeSent && <div className="verify-step">
-            <div className="code-row">
-              <label className="field-label">邮件验证码<input className="input" value={code} onChange={e => setCode(e.target.value)} autoComplete="off" spellCheck={false} placeholder="粘贴邮件中的完整验证码"/></label>
-              <button className="btn btn--primary" type="button" disabled={busy || !code} onClick={() => void action(confirmEmail)}>确认邮箱</button>
-            </div>
-            <p className="section-hint">验证码是邮件中的一长串字符，请完整粘贴，15 分钟内有效。</p>
-          </div>}
-        </div>}
-      </>}
+        <div className="portal-content">
+          {(!token || page === 'account') && (
+            <section
+              className="panel"
+              aria-labelledby="auth-title"
+              aria-busy={capsLoading}
+            >
+              <div className="section-head">
+                <h2 className="section-title" id="auth-title">
+                  {token ? displayName : t('登录')}
+                </h2>
+              </div>
+              {capsLoading && (
+                <p className="loading-note" role="status">
+                  {t('正在加载可用学校…')}
+                </p>
+              )}
 
-    </section>
+              {!token && !capsLoading && (
+                <>
+                  <div
+                    className="tabs"
+                    role="tablist"
+                    aria-label={t('登录或注册')}
+                    onKeyDown={onTabKeyDown}
+                  >
+                    {tabs.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="tab"
+                        id={`tab-${id}`}
+                        tabIndex={tab === id ? 0 : -1}
+                        aria-selected={tab === id}
+                        aria-controls={`panel-${id}`}
+                        className={`btn tab${tab === id ? ' tab--active' : ''}`}
+                        onClick={() => selectTab(id)}
+                      >
+                        {TAB_LABELS[id]}
+                      </button>
+                    ))}
+                  </div>
 
-    {token && <>
-      <TexturesPanel token={token} notify={notify}/>
-      <div className="actions"><button className="btn btn--secondary" disabled={busy} onClick={() => void action(async () => {await request('/authserver/invalidate', {accessToken: token}); setToken(''); notify('已退出', 'success');})}>退出登录</button></div>
-    </>}
+                  {tab === 'login' && (
+                    <div
+                      role="tabpanel"
+                      id="panel-login"
+                      aria-labelledby="tab-login"
+                      className="tab-panel"
+                    >
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void action(login);
+                        }}
+                      >
+                        <div className="field-grid">
+                          <label className="field-label">
+                            {t('学校邮箱')}
+                            <input
+                              className="input"
+                              type="email"
+                              autoComplete="username"
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              required
+                            />
+                          </label>
+                          <label className="field-label">
+                            {t('密码')}
+                            <input
+                              className="input"
+                              type="password"
+                              autoComplete="current-password"
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              minLength={12}
+                              required
+                            />
+                          </label>
+                        </div>
+                        <div className="actions">
+                          <button
+                            className="btn btn--primary"
+                            disabled={busy}
+                            type="submit"
+                          >
+                            {t('登录')}
+                          </button>
+                          {window.PublicKeyCredential && (
+                            <button
+                              type="button"
+                              className="btn btn--secondary"
+                              disabled={busy}
+                              onClick={() =>
+                                void action(async () => {
+                                  const data = await loginWithPasskey();
+                                  setToken(data.accessToken);
+                                  setDisplayName(data.selectedProfile.name);
+                                  setPassword('');
+                                  notify(t('登录成功'), 'success');
+                                })
+                              }
+                            >
+                              {t('使用通行密钥登录')}
+                            </button>
+                          )}
+                        </div>
+                      </form>
+                      {microsoftEnabled && (
+                        <button
+                          type="button"
+                          className="btn btn--secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void action(async () => {
+                              const data = await apiRequest(
+                                '/api/microsoft/start',
+                                { method: 'POST', body: { mode: 'login' } },
+                              );
+                              window.location.assign(data.url);
+                            })
+                          }
+                        >
+                          {t('使用 Microsoft 登录')}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn--link"
+                        disabled={busy}
+                        onClick={enterReset}
+                      >
+                        {t('忘记密码')}
+                      </button>
+                    </div>
+                  )}
 
-    {token && muaEnabled && <section className="panel" aria-labelledby="mua-title">
-      <div className="section-head">
-        <h2 className="section-title" id="mua-title">MUA 账号</h2>
-        <p className="section-hint">连接跨校社区，管理你的 MUA 账号关联。</p>
+                  {tab === 'reset' && (
+                    <div
+                      role="tabpanel"
+                      id="panel-reset"
+                      aria-labelledby="tab-reset"
+                      className="tab-panel"
+                    >
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void action(async () => {
+                            if (!resetSent) {
+                              await request('/api/password/start', { email });
+                              setResetSent(true);
+                              notify(
+                                t('若该邮箱已注册，你将收到重置密码邮件'),
+                                'success',
+                              );
+                            } else {
+                              await request('/api/password/confirm', {
+                                email,
+                                code,
+                                password,
+                              });
+                              leaveReset('login');
+                              notify(t('密码已更新，请重新登录'), 'success');
+                            }
+                          });
+                        }}
+                      >
+                        <div className="field-grid">
+                          <label className="field-label">
+                            {t('学校邮箱')}
+                            <input
+                              className="input"
+                              type="email"
+                              autoComplete="username"
+                              value={email}
+                              disabled={busy || resetSent}
+                              onChange={(e) => setEmail(e.target.value)}
+                              required
+                            />
+                          </label>
+                          {resetSent && (
+                            <>
+                              <label className="field-label">
+                                {t('邮件验证码')}
+                                <input
+                                  className="input"
+                                  value={code}
+                                  onChange={(e) => setCode(e.target.value)}
+                                  autoComplete="off"
+                                  required
+                                />
+                              </label>
+                              <label className="field-label">
+                                {t('新密码')}
+                                <input
+                                  className="input"
+                                  type="password"
+                                  autoComplete="new-password"
+                                  minLength={12}
+                                  value={password}
+                                  onChange={(e) => setPassword(e.target.value)}
+                                  required
+                                />
+                              </label>
+                            </>
+                          )}
+                        </div>
+                        <div className="actions">
+                          <button
+                            className="btn btn--primary"
+                            type="submit"
+                            disabled={busy}
+                          >
+                            {resetSent ? t('更新密码') : t('发送重置邮件')}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--secondary"
+                            disabled={busy}
+                            onClick={() => leaveReset('login')}
+                          >
+                            {t('返回登录')}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
+                  {tab === 'register' && (
+                    <div
+                      role="tabpanel"
+                      id="panel-register"
+                      aria-labelledby="tab-register"
+                      className="tab-panel"
+                    >
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void action(sendVerifyEmail);
+                        }}
+                      >
+                        <div className="field-grid">
+                          <label className="field-label">
+                            {t('学校')}
+                            <select
+                              className="input"
+                              aria-label={t('学校')}
+                              value={school}
+                              disabled={busy}
+                              onChange={(e) =>
+                                changeRegistration(() =>
+                                  setSchool(e.target.value),
+                                )
+                              }
+                              required
+                            >
+                              {schools.map((id) => (
+                                <option key={id} value={id}>
+                                  {id.toUpperCase()}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="field-label">
+                            {t('学校邮箱')}
+                            <input
+                              className="input"
+                              type="email"
+                              autoComplete="username"
+                              value={email}
+                              disabled={busy}
+                              onChange={(e) =>
+                                changeRegistration(() =>
+                                  setEmail(e.target.value),
+                                )
+                              }
+                              required
+                            />
+                          </label>
+                          <label className="field-label">
+                            {t('游戏名称')}
+                            <input
+                              className="input"
+                              value={name}
+                              disabled={busy}
+                              onChange={(e) =>
+                                changeRegistration(() =>
+                                  setName(e.target.value),
+                                )
+                              }
+                              maxLength={16}
+                            />
+                          </label>
+                          <label className="field-label">
+                            {t('设置密码')}
+                            <input
+                              className="input"
+                              type="password"
+                              autoComplete="new-password"
+                              value={password}
+                              disabled={busy}
+                              onChange={(e) =>
+                                changeRegistration(() =>
+                                  setPassword(e.target.value),
+                                )
+                              }
+                              minLength={12}
+                              required
+                            />
+                          </label>
+                        </div>
+                        <div className="actions">
+                          <button
+                            className="btn btn--primary"
+                            disabled={busy}
+                            type="submit"
+                          >
+                            {t('发送验证邮件')}
+                          </button>
+                        </div>
+                      </form>
+                      {codeSent && (
+                        <div className="verify-step">
+                          <div className="code-row">
+                            <label className="field-label">
+                              {t('邮件验证码')}
+                              <input
+                                className="input"
+                                value={code}
+                                onChange={(e) => setCode(e.target.value)}
+                                autoComplete="off"
+                                spellCheck={false}
+                                placeholder={t('粘贴邮件中的完整验证码')}
+                              />
+                            </label>
+                            <button
+                              className="btn btn--primary"
+                              type="button"
+                              disabled={busy || !code}
+                              onClick={() => void action(confirmEmail)}
+                            >
+                              {t('确认邮箱')}
+                            </button>
+                          </div>
+                          <p className="section-hint">
+                            {t(
+                              '验证码是邮件中的一长串字符，请完整粘贴，15 分钟内有效。',
+                            )}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {token && (
+                <>
+                  <div className="actions">
+                    <button
+                      className="btn btn--secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        void action(async () => {
+                          await request('/authserver/invalidate', {
+                            accessToken: token,
+                          });
+                          setToken('');
+                          notify(t('已退出'), 'success');
+                        })
+                      }
+                    >
+                      {t('退出登录')}
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+
+          {token && page === 'account' && microsoftEnabled && (
+            <MicrosoftPanel token={token} notify={notify} />
+          )}
+
+          {token && (page === 'wardrobe' || page === 'library') && (
+            <WardrobePanel
+              key={page}
+              token={token}
+              library={page === 'library'}
+              notify={notify}
+            />
+          )}
+
+          {token && page === 'textures' && (
+            <TexturesPanel token={token} notify={notify} />
+          )}
+
+          {token && page === 'community' && muaEnabled && (
+            <section className="panel" aria-labelledby="mua-title">
+              <div className="section-head">
+                <h2 className="section-title" id="mua-title">
+                  {t('MUA 账号')}
+                </h2>
+                <p className="section-hint">
+                  {t('连接跨校社区，管理你的 MUA 账号关联。')}
+                </p>
+              </div>
+              <div className="actions">
+                <button
+                  className="btn btn--primary"
+                  disabled={busy}
+                  onClick={() =>
+                    void action(async () => {
+                      const r = await fetch('/api/mua/link', {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      if (!r.ok) throw new Error(t('暂时无法关联 MUA'));
+                      const data = await r.json();
+                      window.location.assign(data.url);
+                    })
+                  }
+                >
+                  {t('关联 MUA 账号')}
+                </button>
+                <button
+                  className="btn btn--secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void action(async () => {
+                      const r = await fetch('/api/mua/link', {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      if (!r.ok) throw new Error(t('解除关联失败'));
+                      notify(t('已解除 MUA 关联'), 'success');
+                    })
+                  }
+                >
+                  {t('解除关联')}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {token && page === 'account' && (
+            <PasskeysPanel token={token} notify={notify} />
+          )}
+          {token && page === 'community' && muaMember && (
+            <MuaPanel token={token} notify={notify} />
+          )}
+        </div>
       </div>
-      <div className="actions">
-        <button className="btn btn--primary" disabled={busy} onClick={() => void action(async () => {const r = await fetch('/api/mua/link', {method: 'POST', headers: {Authorization: `Bearer ${token}`}}); if (!r.ok) throw new Error('暂时无法关联 MUA'); const data = await r.json(); window.location.assign(data.url);})}>关联 MUA 账号</button>
-        <button className="btn btn--secondary" disabled={busy} onClick={() => void action(async () => {const r = await fetch('/api/mua/link', {method: 'DELETE', headers: {Authorization: `Bearer ${token}`}}); if (!r.ok) throw new Error('解除关联失败'); notify('已解除 MUA 关联', 'success');})}>解除关联</button>
-      </div>
-    </section>}
-
-    {token && muaMember && <MuaPanel token={token} notify={notify}/>}
-
-    {message && <p className={MSG_CLASS[msgKind]} role={msgKind === 'error' ? 'alert' : 'status'} aria-live="polite">{message}</p>}
-  </main>;
+    </main>
+  );
 }
-createRoot(document.getElementById('root')!).render(<App/>);
+createRoot(document.getElementById('root')!).render(<App />);

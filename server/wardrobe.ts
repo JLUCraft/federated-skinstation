@@ -1,8 +1,8 @@
 import { TEXTURE_PAGE_SIZE } from '../shared/wardrobe.js';
 import type { FastifyInstance } from 'fastify';
-import { randomUUID, sign, verify, type KeyObject } from 'node:crypto';
-import { Store, requireThat, secret, type Account } from './store.js';
-import { field, record, boundedJson, boundedBytes } from './validate.js';
+import { randomUUID } from 'node:crypto';
+import { Store, requireThat } from './store.js';
+import { field, record } from './validate.js';
 
 type Texture = {
   id: string;
@@ -11,18 +11,7 @@ type Texture = {
   hash: string;
   model: 'default' | 'slim';
 };
-interface FederationLibrary {
-  origin: string;
-  peers: { origin: string; publicKey: string }[];
-  key: KeyObject;
-  save: (account: Account, item: Texture, bytes: Buffer) => Promise<void>;
-  fetcher?: typeof fetch;
-}
-export function registerWardrobe(
-  app: FastifyInstance,
-  db: Store,
-  federation?: FederationLibrary,
-) {
+export function registerWardrobe(app: FastifyInstance, db: Store) {
   db.db
     .exec(`CREATE TABLE IF NOT EXISTS wardrobe(id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id),title TEXT NOT NULL,kind TEXT NOT NULL,hash TEXT NOT NULL,model TEXT NOT NULL,published INTEGER NOT NULL DEFAULT 0,UNIQUE(account,kind,hash,model));
     INSERT OR IGNORE INTO wardrobe(id,account,title,kind,hash,model) SELECT lower(hex(randomblob(16))),account,'',kind,hash,model FROM profile_textures;`);
@@ -82,114 +71,15 @@ export function registerWardrobe(
             'SELECT id,title,kind,hash,model FROM wardrobe WHERE published=1 ORDER BY rowid DESC LIMIT ? OFFSET ?',
           )
           .all(TEXTURE_PAGE_SIZE, offset)) as unknown as Texture[];
-  const remoteItems = async (
-    peer: { origin: string; publicKey: string },
-    offset: number,
-    id?: string,
-  ) => {
-    const nonce = secret(),
-      url = new URL(`${peer.origin}/federation/library`);
-    url.search = new URLSearchParams({
-      nonce,
-      offset: String(offset),
-      ...(id ? { id } : {}),
-    }).toString();
-    const proof = await boundedJson(
-      await (federation?.fetcher ?? fetch)(url, {
-        redirect: 'error',
-        signal: AbortSignal.timeout(5000),
-      }),
-    );
-    const payload = Buffer.from(field(proof.payload, 65536), 'base64');
-    requireThat(
-      verify(
-        'RSA-SHA256',
-        payload,
-        peer.publicKey,
-        Buffer.from(field(proof.signature, 4096), 'base64'),
-      ),
-      'Invalid library signature',
-    );
-    const data = record(JSON.parse(payload.toString())),
-      time = Math.floor(Date.now() / 1000);
-    requireThat(
-      data.nonce === nonce &&
-        typeof data.expires === 'number' &&
-        data.expires >= time &&
-        data.expires <= time + 30,
-    );
-    requireThat(
-      Array.isArray(data.items) && data.items.length <= TEXTURE_PAGE_SIZE,
-    );
-    return data.items.map((value) => {
-      const item = record(value),
-        itemId = field(item.id),
-        hash = field(item.hash, 64),
-        model = field(item.model),
-        kind = field(item.kind);
-      requireThat(
-        /^[a-f0-9]{64}$/.test(hash) &&
-          (model === 'default' || model === 'slim') &&
-          (kind === 'skin' || kind === 'cape'),
-      );
-      requireThat(
-        typeof item.title === 'string' &&
-          item.title.length <= 80 &&
-          (!id || itemId === id),
-      );
-      return { id: itemId, title: item.title, hash, model, kind } as Texture;
-    });
-  };
-  if (federation)
-    app.get('/federation/library', async (req) => {
-      const query = record(req.query),
-        nonce = field(query.nonce, 128),
-        offset = Number(query.offset ?? 0);
-      requireThat(
-        Number.isSafeInteger(offset) && offset >= 0 && offset <= 10000,
-      );
-      const payload = Buffer.from(
-        JSON.stringify({
-          nonce,
-          expires: Math.floor(Date.now() / 1000) + 15,
-          items: localItems(
-            offset,
-            query.id === undefined ? undefined : field(query.id),
-          ),
-        }),
-      );
-      return {
-        payload: payload.toString('base64'),
-        signature: sign('RSA-SHA256', payload, federation.key).toString(
-          'base64',
-        ),
-      };
-    });
   app.get('/api/library', async (req) => {
     const query = record(req.query),
       offset = Number(query.offset ?? 0);
     requireThat(Number.isSafeInteger(offset) && offset >= 0 && offset <= 10000);
-    const items = localItems(offset).map((item) => ({
-      ...item,
-      source: federation?.origin ?? '',
-      textureUrl: `/textures/${item.hash}`,
-    }));
-    const sources = await Promise.allSettled(
-      (federation?.peers ?? []).map(async (peer) =>
-        (await remoteItems(peer, offset)).map((item) => ({
-          ...item,
-          source: peer.origin,
-          textureUrl: `${peer.origin}/textures/${item.hash}`,
-        })),
-      ),
-    );
-    for (const source of sources)
-      if (source.status === 'fulfilled') items.push(...source.value);
     return {
-      items,
-      unavailableSources: sources.filter(
-        (source) => source.status === 'rejected',
-      ).length,
+      items: localItems(offset).map((item) => ({
+        ...item,
+        textureUrl: `/textures/${item.hash}`,
+      })),
     };
   });
   app.patch('/api/wardrobe/:id', async (req) => {
@@ -226,30 +116,6 @@ export function registerWardrobe(
   });
   app.post('/api/library/:id/save', async (req) => {
     const owner = account(req.headers.authorization);
-    const body = req.body === undefined ? {} : record(req.body);
-    if (body.source && body.source !== federation?.origin) {
-      const peer = federation?.peers.find(
-        (peer) => peer.origin === body.source,
-      );
-      requireThat(peer, 'Unknown federation source');
-      const items = await remoteItems(peer, 0, field(record(req.params).id));
-      requireThat(items.length === 1, 'Texture not found');
-      const item = items[0];
-      const response = await (federation?.fetcher ?? fetch)(
-        `${peer.origin}/textures/${item.hash}`,
-        { redirect: 'error', signal: AbortSignal.timeout(5000) },
-      );
-      const bytes = await boundedBytes(response, 1024 * 1024);
-      requireThat(
-        (await import('node:crypto'))
-          .createHash('sha256')
-          .update(bytes)
-          .digest('hex') === item.hash,
-        'Texture digest mismatch',
-      );
-      await federation!.save(owner, item, bytes);
-      return { ok: true };
-    }
     const item = db.db
       .prepare('SELECT * FROM wardrobe WHERE id=? AND published=1')
       .get(field(record(req.params).id));

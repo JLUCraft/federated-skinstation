@@ -7,7 +7,6 @@ import {
   createPrivateKey,
   createPublicKey,
   sign,
-  verify,
   randomUUID,
 } from 'node:crypto';
 import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
@@ -18,15 +17,15 @@ import { peerIdFromString } from '@libp2p/peer-id';
 import {
   Store,
   Rejected,
+  now,
   requireThat,
-  secret,
   digest,
   encodePassword,
   verifyPassword,
   accountId,
   type Account,
 } from './store.js';
-import { field, record, boundedJson } from './validate.js';
+import { field, record, bearer } from './validate.js';
 import { createRequire } from 'node:module';
 
 const VERSION = createRequire(import.meta.url)('../package.json')
@@ -53,7 +52,6 @@ export interface Config {
   textures: string;
   signingKey: string;
   schools: Record<string, School>;
-  peers: Array<{ origin: string; publicKey: string }>;
   smtp: { host: string; port: number; from: string };
   webRoot?: string;
   mua?: MuaConfig;
@@ -63,14 +61,8 @@ interface Profile {
   name: string;
   properties?: Array<{ name: string; value: string; signature?: string }>;
 }
-const now = () => Math.floor(Date.now() / 1000);
 const text = field;
 const obj = record;
-const bearer = (header: unknown) => {
-  const value = text(header, 2048);
-  requireThat(value.startsWith('Bearer '));
-  return value.slice(7);
-};
 export async function build(
   config: Config,
   dependencies: {
@@ -85,12 +77,6 @@ export async function build(
       origin.hostname === 'localhost',
     'HTTPS origin required',
   );
-  requireThat(config.peers.length <= 32);
-  for (const peer of config.peers) {
-    const url = new URL(peer.origin);
-    requireThat(url.protocol === 'https:' || url.hostname === '127.0.0.1');
-    createPublicKey(peer.publicKey);
-  }
   const key = createPrivateKey(await readFile(config.signingKey));
   requireThat(key.asymmetricKeyType === 'rsa', 'RSA signing key required');
   const secrets = config.mua?.member
@@ -123,7 +109,7 @@ export async function build(
     if (request.url.startsWith('/portal/'))
       reply.header(
         'Content-Security-Policy',
-        `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: ${config.peers.map((peer) => new URL(peer.origin).origin).join(' ')}; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+        `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
       );
     else if (!request.url.startsWith('/textures/'))
       reply.header('Cache-Control', 'no-store');
@@ -326,25 +312,7 @@ export async function build(
   registerProfiles(app, db);
   registerConnect(app, db, { origin: config.origin, key, authorize });
   registerPasskeys(app, db, config.origin, authorize);
-  registerWardrobe(app, db, {
-    origin: config.origin,
-    peers: config.peers,
-    key,
-    save: async (account, item, bytes) => {
-      const hash = await saveTexture(
-        account,
-        item.kind,
-        bytes,
-        item.model,
-        false,
-      );
-      db.db
-        .prepare(
-          'UPDATE wardrobe SET title=? WHERE account=? AND kind=? AND hash=? AND model=?',
-        )
-        .run(item.title, account.id, item.kind, hash, item.model);
-    },
-  });
+  registerWardrobe(app, db);
   app.get('/api/capabilities', async () => ({
     schools: Object.keys(config.schools),
     muaOAuth: !!config.mua?.oauth,
@@ -375,7 +343,6 @@ export async function build(
     skinDomains: [
       ...new Set([
         origin.hostname,
-        ...config.peers.map((p) => new URL(p.origin).hostname),
         ...muaDomains(),
       ]),
     ],
@@ -512,114 +479,19 @@ export async function build(
     );
     return reply.code(204).send();
   });
-  app.get('/federation/hasJoined', async (req, reply) => {
-    const q = obj(req.query);
-    const username = text(q.username, 16),
-      serverId = text(q.serverId, 64),
-      nonce = text(q.nonce, 128);
-    const a = db.joined(
-      username,
-      serverId,
-      now(),
-      q.ip === undefined ? undefined : text(q.ip, 64),
-    );
-    if (!a) return reply.code(204).send();
-    await authorize(a);
-    const payload = Buffer.from(
-      JSON.stringify({
-        username,
-        serverId,
-        nonce,
-        expires: now() + 15,
-        profile: profile(a, true, db.profileNamed(username)!.profile.id),
-      }),
-    );
-    return {
-      payload: payload.toString('base64'),
-      signature: sign('RSA-SHA256', payload, key).toString('base64'),
-    };
-  });
   app.get('/sessionserver/session/minecraft/hasJoined', async (req, reply) => {
     const q = obj(req.query);
     const username = text(q.username, 16),
       serverId = text(q.serverId, 64);
-    const local = db.joined(
+    const joined = db.joined(
       username,
       serverId,
       now(),
       q.ip === undefined ? undefined : text(q.ip, 64),
     );
-    if (local) await authorize(local);
-    const found: Profile[] = local
-      ? [profile(local, true, db.profileNamed(username)!.profile.id)]
-      : [];
-    const responses = await Promise.all(
-      config.peers.map(async (peer) => {
-        const nonce = secret();
-        const url = new URL(`${peer.origin}/federation/hasJoined`);
-        url.search = new URLSearchParams({
-          username,
-          serverId,
-          nonce,
-          ...(q.ip === undefined ? {} : { ip: text(q.ip, 64) }),
-        }).toString();
-        const response = await fetch(url, {
-          redirect: 'error',
-          signal: AbortSignal.timeout(5000),
-        });
-        if (response.status === 204) return undefined;
-        const proof = await boundedJson(response);
-        const payload = Buffer.from(text(proof.payload, 65536), 'base64');
-        requireThat(
-          verify(
-            'RSA-SHA256',
-            payload,
-            peer.publicKey,
-            Buffer.from(text(proof.signature, 4096), 'base64'),
-          ),
-        );
-        const claim = obj(JSON.parse(payload.toString()));
-        requireThat(
-          claim.username === username &&
-            claim.serverId === serverId &&
-            claim.nonce === nonce &&
-            typeof claim.expires === 'number' &&
-            claim.expires >= now() &&
-            claim.expires <= now() + 30,
-        );
-        const p = claim.profile as Profile;
-        requireThat(
-          p &&
-            /^[a-f0-9]{32}$/.test(p.id) &&
-            p.name === username &&
-            Array.isArray(p.properties),
-        );
-        for (const property of p.properties ?? []) {
-          if (property.name === 'uploadableTextures') continue;
-          requireThat(property.name === 'textures');
-          const texture = obj(
-            JSON.parse(Buffer.from(property.value, 'base64').toString()),
-          );
-          requireThat(texture.profileId === p.id);
-          for (const item of Object.values(obj(texture.textures))) {
-            const u = new URL(text(obj(item).url, 2048));
-            requireThat(
-              u.origin === new URL(peer.origin).origin,
-              'Foreign texture origin',
-            );
-          }
-          property.signature = sign(
-            'RSA-SHA1',
-            Buffer.from(property.value),
-            signingKey(),
-          ).toString('base64');
-        }
-        return p;
-      }),
-    );
-    found.push(...responses.filter((p): p is Profile => p !== undefined));
-    requireThat(found.length <= 1, 'Ambiguous federated identity');
-    return found[0] ?? reply.code(204).send();
+    if (!joined) return reply.code(204).send();
+    await authorize(joined);
+    return profile(joined, true, db.profileNamed(username)!.profile.id);
   });
   app.get(
     '/sessionserver/session/minecraft/profile/:id',

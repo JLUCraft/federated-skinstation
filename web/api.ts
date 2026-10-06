@@ -6,6 +6,16 @@ type ApiOptions = {
   errorMessage?: string;
 };
 
+/** A failed request; `status` lets callers explain specific cases instead of a generic refusal. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 export async function apiRequest(
   path: string,
   {
@@ -31,7 +41,7 @@ export async function apiRequest(
     headers,
     ...(payload === undefined ? {} : { body: payload }),
   });
-  if (!response.ok) throw new Error(errorMessage);
+  if (!response.ok) throw new ApiError(errorMessage, response.status);
   return response.status === 204 ? {} : response.json();
 }
 

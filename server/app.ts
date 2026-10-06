@@ -42,6 +42,7 @@ import { registerWardrobe } from './wardrobe.js';
 import { registerMicrosoft, type MicrosoftConfig } from './microsoft.js';
 import { registerPasskeys } from './passkeys.js';
 import { registerProfiles } from './profiles.js';
+import { registerConnect } from './connect.js';
 import { SecretState } from './secret-state.js';
 
 export interface Config {
@@ -326,6 +327,7 @@ export async function build(
     },
   );
   registerProfiles(app, db);
+  registerConnect(app, db, { origin: config.origin, key, authorize });
   registerPasskeys(app, db, config.origin, authorize);
   registerWardrobe(app, db, {
     origin: config.origin,
@@ -381,6 +383,7 @@ export async function build(
         homepage: config.origin + '/portal/',
         register: config.origin + '/portal/',
       },
+      'feature.openid_configuration_url': `${config.origin}/.well-known/openid-configuration`,
     },
     skinDomains: [
       ...new Set([

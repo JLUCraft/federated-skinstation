@@ -188,3 +188,7 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Micr
 
 /* 表单字段说明 */
 .field-hint{display:block;margin-top:var(--sp-4);color:var(--muted);font-size:var(--text-sm);font-weight:400}
+
+/* 窄面板与启动器授权码 */
+.panel--narrow{max-width:var(--content-max)}
+.device-code{margin:var(--sp-16) 0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--text-hero);font-weight:700;letter-spacing:.15em;text-align:center;color:var(--green-900)}

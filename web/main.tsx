@@ -7,7 +7,9 @@ import { TexturesPanel } from './TexturesPanel';
 import { WardrobePanel } from './WardrobePanel';
 import { PasskeysPanel, loginWithPasskey } from './PasskeysPanel';
 import { MicrosoftPanel } from './MicrosoftPanel';
-import { apiRequest, errorText } from './api';
+import { ConnectPanel } from './ConnectPanel';
+import { DevicePanel } from './DevicePanel';
+import { ApiError, apiRequest, errorText } from './api';
 
 type MsgKind = 'success' | 'error';
 type AuthTab = 'login' | 'register' | 'reset';
@@ -30,6 +32,9 @@ function App() {
   const [page, setPage] = useState<
     'textures' | 'wardrobe' | 'library' | 'account' | 'community'
   >('textures');
+  const [deviceCode, setDeviceCode] = useState(
+    () => new URLSearchParams(window.location.search).get('user_code') ?? '',
+  );
   const [displayName, setDisplayName] = useState('');
   const [muaEnabled, setMuaEnabled] = useState(false);
   const [muaMember, setMuaMember] = useState(false);
@@ -227,6 +232,32 @@ function App() {
         )}
 
         <div className="portal-content">
+          {!token && deviceCode && (
+            <section
+              className="panel panel--narrow"
+              aria-labelledby="device-wait-title"
+            >
+              <h2 className="section-title" id="device-wait-title">
+                {t('启动器正在等待授权')}
+              </h2>
+              <p className="section-hint">
+                {t('请先登录（没有账号请先注册），完成后会回到这里确认授权码：')}
+              </p>
+              <p className="device-code">{deviceCode}</p>
+            </section>
+          )}
+          {token && deviceCode && (
+            <DevicePanel
+              token={token}
+              userCode={deviceCode}
+              notify={notify}
+              onDone={() => {
+                window.history.replaceState(null, '', window.location.pathname);
+                setDeviceCode('');
+                setPage('textures');
+              }}
+            />
+          )}
           {(!token || page === 'account') && (
             <section
               className="panel"
@@ -684,7 +715,10 @@ function App() {
           )}
 
           {token && page === 'account' && (
-            <PasskeysPanel token={token} notify={notify} />
+            <>
+              <PasskeysPanel token={token} notify={notify} />
+              <ConnectPanel />
+            </>
           )}
           {token && page === 'community' && muaMember && (
             <MuaPanel token={token} notify={notify} />

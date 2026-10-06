@@ -39,7 +39,6 @@ import {
 } from './unified-identity.js';
 import { registerMua, type MuaConfig } from './mua.js';
 import { registerWardrobe } from './wardrobe.js';
-import { registerMicrosoft, type MicrosoftConfig } from './microsoft.js';
 import { registerPasskeys } from './passkeys.js';
 import { registerProfiles } from './profiles.js';
 import { registerConnect } from './connect.js';
@@ -58,7 +57,6 @@ export interface Config {
   smtp: { host: string; port: number; from: string };
   webRoot?: string;
   mua?: MuaConfig;
-  microsoft?: MicrosoftConfig;
 }
 interface Profile {
   id: string;
@@ -78,7 +76,6 @@ export async function build(
   dependencies: {
     mail?: (email: string, code: string) => Promise<void>;
     muaFetch?: typeof fetch;
-    microsoftFetch?: typeof fetch;
   } = {},
 ) {
   const origin = new URL(config.origin);
@@ -348,18 +345,8 @@ export async function build(
         .run(item.title, account.id, item.kind, hash, item.model);
     },
   });
-  if (config.microsoft)
-    await registerMicrosoft(
-      app,
-      db,
-      config.microsoft,
-      config.origin,
-      authorize,
-      dependencies.microsoftFetch,
-    );
   app.get('/api/capabilities', async () => ({
     schools: Object.keys(config.schools),
-    microsoft: !!config.microsoft,
     muaOAuth: !!config.mua?.oauth,
     muaMember: !!config.mua?.member,
     muaProvider: !!config.mua?.member?.oauthSigningKey,

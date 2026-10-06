@@ -6,7 +6,6 @@ import { MuaPanel } from './MuaPanel';
 import { TexturesPanel } from './TexturesPanel';
 import { WardrobePanel } from './WardrobePanel';
 import { PasskeysPanel, loginWithPasskey } from './PasskeysPanel';
-import { MicrosoftPanel } from './MicrosoftPanel';
 import { ConnectPanel } from './ConnectPanel';
 import { DevicePanel } from './DevicePanel';
 import { ApiError, apiRequest, errorText } from './api';
@@ -28,7 +27,6 @@ const MSG_CLASS: Record<MsgKind, string> = {
 function App() {
   const [schools, setSchools] = useState<string[]>([]);
   const [capsLoading, setCapsLoading] = useState(true);
-  const [microsoftEnabled, setMicrosoftEnabled] = useState(false);
   const [page, setPage] = useState<
     'textures' | 'wardrobe' | 'library' | 'account' | 'community'
   >('textures');
@@ -43,7 +41,6 @@ function App() {
       .then((r) => r.json())
       .then((c) => {
         setMuaEnabled(c.muaOAuth === true);
-        setMicrosoftEnabled(c.microsoft === true);
         setMuaMember(c.muaMember === true);
         const list: string[] = c.schools ?? [];
         setSchools(list);
@@ -71,30 +68,6 @@ function App() {
     setMessage(text);
     setMsgKind(kind);
   };
-
-  useEffect(() => {
-    const result = new URLSearchParams(window.location.search).get('microsoft');
-    if (!result) return;
-    window.history.replaceState(null, '', window.location.pathname);
-    if (result !== 'complete') {
-      notify(
-        result === 'cancelled'
-          ? t('已取消 Microsoft 登录')
-          : t('Microsoft 登录未完成，请确认账号拥有 Java 版且已绑定。'),
-        'error',
-      );
-      return;
-    }
-    void action(async () => {
-      const data = await apiRequest('/api/microsoft/complete', {
-        method: 'POST',
-      });
-      setToken(data.accessToken);
-      setDisplayName((data.selectedProfile ?? data.availableProfiles[0]).name);
-      setPage('account');
-      notify(t('Microsoft 验证完成'), 'success');
-    });
-  }, []);
 
   async function request(path: string, body: unknown) {
     return apiRequest(path, {
@@ -366,24 +339,6 @@ function App() {
                           )}
                         </div>
                       </form>
-                      {microsoftEnabled && (
-                        <button
-                          type="button"
-                          className="btn btn--secondary"
-                          disabled={busy}
-                          onClick={() =>
-                            void action(async () => {
-                              const data = await apiRequest(
-                                '/api/microsoft/start',
-                                { method: 'POST', body: { mode: 'login' } },
-                              );
-                              window.location.assign(data.url);
-                            })
-                          }
-                        >
-                          {t('使用 Microsoft 登录')}
-                        </button>
-                      )}
                       <button
                         type="button"
                         className="btn btn--link"
@@ -647,10 +602,6 @@ function App() {
                 </>
               )}
             </section>
-          )}
-
-          {token && page === 'account' && microsoftEnabled && (
-            <MicrosoftPanel token={token} notify={notify} />
           )}
 
           {token && (page === 'wardrobe' || page === 'library') && (

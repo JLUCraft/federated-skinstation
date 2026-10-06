@@ -31,7 +31,7 @@ import { createRequire } from 'node:module';
 
 const VERSION = createRequire(import.meta.url)('../package.json')
   .version as string;
-import { type School } from './federation.js';
+import { type School } from './school.js';
 import {
   identityProposal,
   confirmIdentity,

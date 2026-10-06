@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Rejected, requireThat, type Account, type Store } from './store.js';
 import { record, field } from './validate.js';
-import type { School } from './federation.js';
+import type { School } from './school.js';
 const exec = promisify(execFile);
 const MAX_OUTPUT = 8 * 1024 * 1024;
 export interface UnifiedVerification {

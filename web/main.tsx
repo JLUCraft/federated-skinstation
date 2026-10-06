@@ -12,6 +12,20 @@ import { ApiError, apiRequest, errorText } from './api';
 
 type MsgKind = 'success' | 'error';
 type AuthTab = 'login' | 'register' | 'reset';
+type Page =
+  | 'login'
+  | 'device'
+  | 'textures'
+  | 'wardrobe'
+  | 'library'
+  | 'account'
+  | 'community';
+const SUCCESS_NOTICE_MS = 6000;
+const HERO_FEATURES = [
+  [t('公共皮肤库'), t('浏览并收藏各校同学公开的皮肤与披风。')],
+  [t('三维预览'), t('旋转、行走，先看效果再使用。')],
+  [t('学校邮箱验证'), t('用学校邮箱注册，各高校共用同一个皮肤站。')],
+] as const;
 
 const TAB_LABELS: Record<AuthTab, string> = {
   login: t('登录'),
@@ -27,9 +41,7 @@ const MSG_CLASS: Record<MsgKind, string> = {
 function App() {
   const [schools, setSchools] = useState<string[]>([]);
   const [capsLoading, setCapsLoading] = useState(true);
-  const [page, setPage] = useState<
-    'textures' | 'wardrobe' | 'library' | 'account' | 'community'
-  >('textures');
+  const [page, setPage] = useState<Page>('login');
   const [deviceCode, setDeviceCode] = useState(
     () => new URLSearchParams(window.location.search).get('user_code') ?? '',
   );
@@ -68,6 +80,25 @@ function App() {
     setMessage(text);
     setMsgKind(kind);
   };
+  useEffect(() => {
+    if (!message || msgKind !== 'success') return;
+    const timer = window.setTimeout(() => setMessage(''), SUCCESS_NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [message, msgKind]);
+  const view: Page = token
+    ? deviceCode
+      ? 'device'
+      : page === 'login'
+        ? 'textures'
+        : page
+    : page === 'library'
+      ? 'library'
+      : 'login';
+  function goto(next: Page) {
+    setPage(next);
+    setMessage('');
+    window.scrollTo({ top: 0 });
+  }
 
   async function request(path: string, body: unknown) {
     try {
@@ -162,61 +193,66 @@ function App() {
   return (
     <main className="app-main">
       <header className="site-header">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            JL
-          </span>
-          <span className="brand-name">JLUCraft</span>
-        </div>
-        <h1 className="site-title">{t('皮肤站')}</h1>
-      </header>
-
-      {message && (
-        <p
-          className={MSG_CLASS[msgKind]}
-          role={msgKind === 'error' ? 'alert' : 'status'}
-          aria-live="polite"
-        >
-          {message}
-        </p>
-      )}
-
-      <div className={token ? 'portal-workspace' : undefined}>
-        {token && (
+        <div className="site-header-bar">
+          <div className="brand">
+            <span className="brand-mark" aria-hidden="true">
+              JL
+            </span>
+            <span className="brand-name">JLUCraft</span>
+            <h1 className="site-title">{t('皮肤站')}</h1>
+          </div>
           <nav className="portal-navigation" aria-label={t('皮肤站导航')}>
             {(
               [
-                ['textures', t('角色外观')],
-                ['wardrobe', t('衣柜')],
+                ...(token
+                  ? ([
+                      ['textures', t('角色外观')],
+                      ['wardrobe', t('衣柜')],
+                    ] as const)
+                  : ([['login', t('登录 / 注册')]] as const)),
                 ['library', t('皮肤库')],
-                ['account', t('账号安全')],
-                ['community', t('高校社区')],
+                ...(token ? ([['account', t('账号安全')]] as const) : []),
+                ...(token && (muaEnabled || muaMember)
+                  ? ([['community', t('高校社区')]] as const)
+                  : []),
               ] as const
-            ).map(
-              ([key, label]) =>
-                (key !== 'community' || muaEnabled || muaMember) && (
-                  <button
-                    className={`btn portal-navigation-item${page === key ? ' portal-navigation-item--active' : ''}`}
-                    key={key}
-                    aria-current={page === key ? 'page' : undefined}
-                    onClick={() => {
-                      setPage(key);
-                      setMessage('');
-                    }}
-                  >
-                    {label}
-                  </button>
-                ),
-            )}
+            ).map(([key, label]) => (
+              <button
+                className={`btn portal-navigation-item${view === key ? ' portal-navigation-item--active' : ''}`}
+                key={key}
+                aria-current={view === key ? 'page' : undefined}
+                onClick={() => goto(key)}
+              >
+                {label}
+              </button>
+            ))}
           </nav>
-        )}
+          {token && <span className="user-chip">{displayName}</span>}
+        </div>
+      </header>
 
+      {message && (
+        <div
+          className={`${MSG_CLASS[msgKind]} toast`}
+          role={msgKind === 'error' ? 'alert' : 'status'}
+          aria-live="polite"
+        >
+          <span>{message}</span>
+          <button
+            type="button"
+            className="toast-close"
+            aria-label={t('关闭提示')}
+            onClick={() => setMessage('')}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <div>
         <div className="portal-content">
-          {!token && deviceCode && (
-            <section
-              className="panel panel--narrow"
-              aria-labelledby="device-wait-title"
-            >
+          {view === 'login' && deviceCode && (
+            <section className="panel panel--narrow" aria-labelledby="device-wait-title">
               <h2 className="section-title" id="device-wait-title">
                 {t('启动器正在等待授权')}
               </h2>
@@ -226,7 +262,7 @@ function App() {
               <p className="device-code">{deviceCode}</p>
             </section>
           )}
-          {token && deviceCode && (
+          {token && view === 'device' && (
             <DevicePanel
               token={token}
               userCode={deviceCode}
@@ -238,9 +274,22 @@ function App() {
               }}
             />
           )}
-          {(!token || page === 'account') && (
+          {view === 'login' && !deviceCode && (
+            <div className="hero">
+              <p className="hero-lead">{t('一个账号，进入各高校的 Minecraft 服务器。')}</p>
+              <ul className="hero-features">
+                {HERO_FEATURES.map(([title, text]) => (
+                  <li className="hero-feature" key={title}>
+                    <strong>{title}</strong>
+                    <span>{text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(view === 'login' || (token && view === 'account')) && (
             <section
-              className="panel"
+              className={`panel${view === 'login' ? ' panel--narrow' : ''}`}
               aria-labelledby="auth-title"
               aria-busy={capsLoading}
             >
@@ -611,22 +660,22 @@ function App() {
             </section>
           )}
 
-          {token && (page === 'wardrobe' || page === 'library') && (
+          {(view === 'wardrobe' || view === 'library') && (
             <WardrobePanel
-              key={page}
+              key={view}
               token={token || undefined}
-              library={page === 'library'}
+              library={view === 'library'}
               notify={notify}
-              onRequireLogin={() => setPage('textures')}
-              onBrowseUpload={() => setPage('textures')}
+              onRequireLogin={() => goto('login')}
+              onBrowseUpload={() => goto('textures')}
             />
           )}
 
-          {token && page === 'textures' && (
+          {token && view === 'textures' && (
             <TexturesPanel token={token} notify={notify} />
           )}
 
-          {token && page === 'community' && muaEnabled && (
+          {token && view === 'community' && muaEnabled && (
             <section className="panel" aria-labelledby="mua-title">
               <div className="section-head">
                 <h2 className="section-title" id="mua-title">
@@ -674,17 +723,18 @@ function App() {
             </section>
           )}
 
-          {token && page === 'account' && (
+          {token && view === 'account' && (
             <>
               <PasskeysPanel token={token} notify={notify} />
               <ConnectPanel />
             </>
           )}
-          {token && page === 'community' && muaMember && (
+          {token && view === 'community' && muaMember && (
             <MuaPanel token={token} notify={notify} />
           )}
         </div>
       </div>
+      <footer className="site-footer">{t('JLUCraft 联邦皮肤站 · 兼容 Yggdrasil 外置登录')}</footer>
     </main>
   );
 }

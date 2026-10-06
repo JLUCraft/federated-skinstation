@@ -58,6 +58,40 @@
   --content-max:880px;
   /* 媒体查询无法消费自定义属性，仅作文档锚点；实际值在 @media (max-width:600px) */
   --bp-compact:600px;
+  --preview-height:360px;
+  --workspace-max:1120px;
+  --thumb-stage:200px;
+  --card-min:220px;
+  --dialog-max:560px;
+  --on-accent:#ffffff;
+  --scrim:rgb(0 0 0 / .5);
+  --shadow-toast:0 6px 24px rgb(0 0 0 / .18);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --green-900:#d8efe2;
+    --green-700:#2f8a63;
+    --green-600:#3aa374;
+    --blue-700:#8ab4ff;
+    --ink:#e6efe9;
+    --muted:#a4b8ad;
+    --line:#2c3d34;
+    --bg:#101915;
+    --card:#17231d;
+    --surface:#17231d;
+    --card-alt:#1c2a23;
+    --border-strong:#496556;
+    --disabled-bg:#22332a;
+    --checker-a:#2a3a31;
+    --checker-b:#1c2a23;
+    --error:#f2b8b5;
+    --error-bg:#3a1f1d;
+    --error-line:#6b3531;
+    --success:#a6dfc0;
+    --success-bg:#1f3a2c;
+    --success-line:#2f5a44;
+    --focus:#f0c644;
+  }
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg)}
@@ -65,7 +99,7 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Micr
 /* 按钮基类：所有可点击控件共享 */
 .btn{font:inherit;font-size:var(--text-lg);font-weight:600;min-height:var(--touch-target);padding:var(--pad-btn);border-radius:var(--radius-sm);border:1px solid transparent;cursor:pointer}
 .btn:disabled{opacity:.5;cursor:not-allowed}
-.btn--primary,.upload-btn{display:inline-flex;align-items:center;justify-content:center;background:var(--green-700);color:var(--surface)}
+.btn--primary,.upload-btn{display:inline-flex;align-items:center;justify-content:center;background:var(--green-700);color:var(--on-accent)}
 .btn--primary:hover,.upload-btn:hover{background:var(--green-600)}
 .btn--secondary{background:var(--surface);color:var(--green-700);border-color:var(--green-700)}
 .btn--secondary:hover{background:var(--success-bg)}
@@ -73,17 +107,18 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Micr
 .tab:focus-visible,.input:focus-visible,.btn:focus-visible,.upload-btn:focus-within{outline:var(--focus-ring) solid var(--focus);outline-offset:var(--focus-ring-offset)}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-10);margin:var(--sp-10) 0 var(--sp-12)}
 
-.app-main{max-width:var(--content-max);margin:0 auto;padding:var(--sp-40) var(--sp-20) var(--sp-64)}
+.app-main{max-width:var(--workspace-max);margin:0 auto;padding:var(--sp-40) var(--sp-20) var(--sp-64)}
 
 /* 品牌头部 */
-.site-header{margin-bottom:var(--sp-32)}
-.brand{display:flex;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-16)}
-.brand-mark{display:inline-flex;align-items:center;justify-content:center;width:var(--brand-mark-size);height:var(--brand-mark-size);border-radius:var(--radius-sm);background:var(--green-700);color:var(--surface);font-size:var(--text-lg);font-weight:700;letter-spacing:.02em}
+.site-header{margin-bottom:var(--sp-24)}
+.site-header-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-12) var(--sp-24);padding:var(--sp-8) var(--sp-16);background:var(--card);border:1px solid var(--line);border-radius:var(--radius-panel)}
+.brand{display:flex;align-items:center;gap:var(--sp-10)}
+.brand-mark{display:inline-flex;align-items:center;justify-content:center;width:var(--brand-mark-size);height:var(--brand-mark-size);border-radius:var(--radius-sm);background:var(--green-700);color:var(--on-accent);font-size:var(--text-lg);font-weight:700;letter-spacing:.02em}
 .brand-name{font-size:var(--text-lg);font-weight:600;letter-spacing:.06em;color:var(--green-900)}
-.site-title{font-size:var(--text-hero);line-height:1.2;margin:0 0 var(--sp-10);color:var(--green-900)}
-.tagline{margin:0;max-width:36em;color:var(--muted);line-height:1.7}
+.site-title{font-size:var(--text-lg);font-weight:500;margin:0;color:var(--muted)}
 
 /* 区块 */
+.panel--narrow{max-width:var(--content-max)}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-panel);padding:var(--sp-24);margin-bottom:var(--sp-20)}
 .section-head{margin-bottom:var(--sp-16)}
 .section-title{font-size:var(--text-xl);margin:0 0 var(--sp-6);color:var(--green-900)}
@@ -161,20 +196,17 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Micr
   *{transition:none!important;animation:none!important}
 }
 
-.portal-navigation{display:flex;flex-wrap:wrap;gap:var(--sp-8);padding:var(--sp-8);margin-bottom:var(--sp-24);border-radius:var(--radius-panel);background:var(--card);border:1px solid var(--line)}
-.portal-navigation-item{flex:1;background:transparent;color:var(--muted)}
+/* 顶部导航 */
+.portal-navigation{display:flex;flex:1;flex-wrap:wrap;gap:var(--sp-4)}
+.portal-navigation-item{background:transparent;color:var(--muted);border-radius:var(--radius-pill);padding:var(--sp-8) var(--sp-16)}
+.portal-navigation-item:hover{background:var(--success-bg);color:var(--green-900)}
 .portal-navigation-item--active{background:var(--success-bg);color:var(--green-900)}
+.user-chip{margin-left:auto;padding:var(--sp-4) var(--sp-12);border-radius:var(--radius-pill);background:var(--disabled-bg);color:var(--ink);font-size:var(--text-md);font-weight:600}
 
-.wardrobe-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--texture-preview-max)),1fr));gap:var(--sp-16)}
+.wardrobe-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--card-min)),1fr));gap:var(--sp-16)}
 .wardrobe-edit-trigger{min-height:var(--touch-target);display:flex;align-items:center;cursor:pointer;color:var(--green-700)}
 .wardrobe-publish{display:flex;align-items:center;gap:var(--sp-8);min-height:var(--touch-target);font-size:var(--text-md)}
 
-:root{--sidebar-width:184px;--preview-height:360px;--workspace-max:1120px}
-.app-main{max-width:var(--workspace-max)}
-.portal-workspace{display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);gap:var(--sp-24);align-items:start}
-.portal-workspace .portal-navigation{display:flex;flex-direction:column;position:sticky;top:var(--sp-24);gap:var(--sp-8);padding:var(--sp-12)}
-.portal-workspace .portal-navigation-item{text-align:left;width:100%}
-.portal-content{min-width:0}
 .profile-toolbar{display:flex;align-items:end;gap:var(--sp-12);margin-block:var(--sp-16)}
 .profile-editor{padding:var(--sp-16);background:var(--card-alt);border:1px solid var(--line);border-radius:var(--radius-sm);margin-bottom:var(--sp-16)}
 .skin-preview{margin-block:var(--sp-16)}
@@ -182,23 +214,29 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Micr
 .skin-preview-canvas{display:block;max-width:100%}
 .skin-preview-message{position:absolute;inset:var(--sp-16);pointer-events:none;color:var(--muted)}
 .skin-preview-empty{padding:var(--sp-32);text-align:center;color:var(--muted);background:var(--bg);border-radius:var(--radius-md);margin-block:var(--sp-16)}
+.preview-motion{display:flex;align-items:center;gap:var(--sp-8);font-size:var(--text-md);font-weight:500}
+.preview-motion .input{margin:0;width:auto}
 .passkey-list{padding:0;list-style:none}
 .passkey-row{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-16);padding-block:var(--sp-8);border-bottom:1px solid var(--line)}
-@media(max-width:600px){.portal-workspace{grid-template-columns:minmax(0,1fr)}.portal-workspace .portal-navigation{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.profile-toolbar{flex-wrap:wrap}}
 
-/* 表单字段说明 */
+/* 首页介绍 */
+.hero{margin-bottom:var(--sp-20)}
+.hero-lead{margin:0 0 var(--sp-16);font-size:var(--text-hero);font-weight:700;line-height:1.25;color:var(--green-900)}
+.hero-features{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--card-min)),1fr));gap:var(--sp-12);margin:0;padding:0;list-style:none}
+.hero-feature{display:flex;flex-direction:column;gap:var(--sp-4);padding:var(--sp-16);background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);color:var(--muted);font-size:var(--text-md);line-height:1.6}
+.hero-feature strong{color:var(--green-900);font-size:var(--text-lg)}
+
+/* 提示条：固定在视口底部，不挤占页面布局 */
+.toast{position:fixed;right:var(--sp-24);bottom:var(--sp-24);z-index:20;display:flex;align-items:center;gap:var(--sp-12);width:max-content;max-width:calc(100% - var(--sp-32));margin:0;box-shadow:var(--shadow-toast)}
 .field-hint{display:block;margin-top:var(--sp-4);color:var(--muted);font-size:var(--text-sm);font-weight:400}
+.toast-close{min-width:var(--touch-target);min-height:var(--touch-target);background:none;border:none;color:inherit;font:inherit;font-size:var(--text-xl);cursor:pointer;border-radius:var(--radius-sm)}
+.toast-close:focus-visible{outline:var(--focus-ring) solid var(--focus);outline-offset:var(--focus-ring-offset)}
 
-/* 窄面板与启动器授权码 */
-.panel--narrow{max-width:var(--content-max)}
-.device-code{margin:var(--sp-16) 0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--text-hero);font-weight:700;letter-spacing:.15em;text-align:center;color:var(--green-900)}
-
-/* 皮肤库筛选、缩略图与分页 */
-:root{--preview-height:360px;--thumb-stage:200px;--card-min:220px;--dialog-max:560px}
-.wardrobe-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--card-min)),1fr))}
+/* 皮肤库 / 衣柜 */
 .filter-bar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--sp-12) var(--sp-16);margin-bottom:var(--sp-16)}
 .filter-bar .field-label{margin:0}
 .filter-search{flex:1 1 220px}
+.filter-source{flex:0 1 200px}
 .chip-group{display:flex;gap:var(--sp-6);flex-wrap:wrap}
 .chip{border-radius:var(--radius-pill);background:var(--surface);color:var(--muted);border-color:var(--border-strong);padding:var(--sp-8) var(--sp-16)}
 .chip--active{background:var(--green-700);color:var(--on-accent);border-color:var(--green-700)}
@@ -212,8 +250,6 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Micr
 .empty-state{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-12);padding:var(--sp-24) 0}
 .pager{display:flex;align-items:center;justify-content:center;gap:var(--sp-16);margin-top:var(--sp-20)}
 .pager-state{color:var(--muted);font-size:var(--text-md)}
-.preview-motion{display:flex;align-items:center;gap:var(--sp-8);font-size:var(--text-md);font-weight:500}
-.preview-motion .input{margin:0;width:auto}
 
 /* 材质详情弹窗 */
 .texture-dialog{width:min(100% - var(--sp-32),var(--dialog-max));max-height:calc(100% - var(--sp-32));padding:0;border:1px solid var(--line);border-radius:var(--radius-panel);background:var(--card);color:var(--ink)}
@@ -232,3 +268,19 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Micr
 .tag-link:disabled{color:var(--muted);cursor:default}
 .tag-link:focus-visible,.like-button:focus-visible{outline:var(--focus-ring) solid var(--focus);outline-offset:var(--focus-ring-offset)}
 .like-count{align-self:center;color:var(--muted);font-size:var(--text-md)}
+
+/* 页脚 */
+.site-footer{margin-top:var(--sp-40);padding-top:var(--sp-16);border-top:1px solid var(--line);color:var(--muted);font-size:var(--text-sm);text-align:center}
+
+@media(max-width:600px){
+  .site-header-bar{padding:var(--sp-8) var(--sp-12)}
+  .portal-navigation{order:3;flex-basis:100%}
+  .portal-navigation-item{flex:1 1 auto}
+  .user-chip{margin-left:auto}
+  .profile-toolbar{flex-wrap:wrap}
+  .pager .btn{flex:1}
+  .toast{right:var(--sp-16);left:var(--sp-16);bottom:var(--sp-16);width:auto}
+}
+
+/* 启动器授权码 */
+.device-code{margin:var(--sp-16) 0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--text-hero);font-weight:700;letter-spacing:.15em;text-align:center;color:var(--green-900)}

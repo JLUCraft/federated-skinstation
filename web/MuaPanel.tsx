@@ -241,10 +241,10 @@ export function MuaPanel({
           </form>
         </div>
         <details>
-          <summary>{t('统一游戏角色 UUID')}</summary>
+          <summary>{t('统一游戏角色编号')}</summary>
           <p className="section-hint">
             {t(
-              '先完成角色绑定，再指定要使用的 UUID。变更会影响游戏存档身份，并要求重新登录。',
+              '先完成角色绑定，再指定要使用的角色编号。变更会影响游戏存档身份，并要求重新登录。',
             )}
           </p>
           <form
@@ -255,12 +255,12 @@ export function MuaPanel({
                   target,
                   uuid,
                 });
-                notify(t('UUID 变更请求已提交，请重新登录'), 'success');
+                notify(t('角色编号变更已提交，请重新登录'), 'success');
               });
             }}
           >
             <label className="field-label">
-              {t('目标 UUID')}
+              {t('目标角色编号')}
               <input
                 className="input"
                 value={target}
@@ -275,7 +275,7 @@ export function MuaPanel({
                 disabled={busy}
                 type="submit"
               >
-                {t('提交 UUID 变更')}
+                {t('提交编号变更')}
               </button>
             </div>
           </form>

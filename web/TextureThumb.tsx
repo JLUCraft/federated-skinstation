@@ -91,8 +91,8 @@ function capeUnit(image: HTMLImageElement) {
 }
 
 /**
- * Flat front view of a texture, drawn from the raw PNG so listings need no server-side
- * rendering and remote federation textures look the same as local ones.
+ * Flat front view of a texture, drawn from the raw PNG so listings need no
+ * server-side rendering.
  */
 export function TextureThumb({
   url,

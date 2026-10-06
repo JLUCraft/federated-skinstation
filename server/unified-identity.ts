@@ -1,17 +1,12 @@
 // The Rust client is the schema/signature/replay authority; this adapter only attests verified accounts.
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { Rejected, requireThat, type Account, type Store } from './store.js';
 import { record, field } from './validate.js';
 import type { School } from './school.js';
-const exec = promisify(execFile);
 const MAX_OUTPUT = 8 * 1024 * 1024;
 export interface UnifiedVerification {
-  unionctl: string; genesis: string; genesisHash: string; log: string;
-  address: string; peer: string; verifier: string; club: string;
+  endpoint: string; tokenFile: string; verifier: string; club: string;
 }
 const queues = new Map<string, Promise<unknown>>();
 async function serialized<T>(key: string, work: () => Promise<T>): Promise<T> {
@@ -23,23 +18,36 @@ function configuration(school: School): UnifiedVerification {
   requireThat(school.identity, 'Unified identity verifier is not configured');
   return school.identity;
 }
-function cache(config: UnifiedVerification): string[] {
-  return ['--genesis', config.genesis, '--genesis-hash', config.genesisHash, '--log', config.log];
-}
-function target(config: UnifiedVerification, school: School): string[] {
-  return ['--key', school.issuerKey, '--address', config.address, '--peer', config.peer];
-}
-async function invoke(config: UnifiedVerification, args: string[]): Promise<string> {
+async function run(config: UnifiedVerification, operation: 'state' | 'draft' | 'confirm', body?: unknown): Promise<unknown> {
   try {
-    return (await exec(config.unionctl, ['trust', ...args], {timeout: 30_000, maxBuffer: MAX_OUTPUT})).stdout;
+    const base = new URL(config.endpoint);
+    requireThat(base.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(base.hostname)
+      && !base.username && !base.password && !base.search && !base.hash && base.pathname === '/', 'Identity bridge must be a loopback URL');
+    const token: unknown = JSON.parse(await readFile(config.tokenFile, 'utf8'));
+    requireThat(typeof token === 'string' && token.length >= 32, 'Invalid identity bridge token');
+    const response = await fetch(new URL(operation, base), {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30_000),
+      headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'},
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (response.status === 403) throw new Rejected('Identity action is not authorized');
+    if (!response.ok) throw new Error('Identity bridge unavailable');
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Empty identity response');
+    const chunks: Uint8Array[] = []; let length = 0;
+    try {
+      for (;;) {
+        const {done, value} = await reader.read(); if (done) break;
+        length += value.length;
+        if (length > MAX_OUTPUT) throw new Error('Identity response too large');
+        chunks.push(value);
+      }
+    } finally { await reader.cancel(); }
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch (error) {
-    const stderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
-    if (stderr.trimEnd().endsWith('Error: access denied')) throw new Rejected('Identity action is not authorized');
+    if (error instanceof Rejected) throw error;
     throw new Rejected('Identity authority is temporarily unavailable; synchronize and retry', 503, 'Service Unavailable');
   }
-}
-async function run(config: UnifiedVerification, args: string[]): Promise<unknown> {
-  return JSON.parse(await invoke(config, args));
 }
 function accountMember(db: Store, account: Account, verifiedMember?: string): string {
   const existing = db.db.prepare('SELECT member FROM identity_members WHERE account=?').get(account.id) as {member: string} | undefined;
@@ -48,9 +56,8 @@ function accountMember(db: Store, account: Account, verifiedMember?: string): st
   db.db.prepare('INSERT INTO identity_members(account,member,confirmed) VALUES(?,?,0)').run(account.id, member);
   return member;
 }
-async function currentState(config: UnifiedVerification, school: School): Promise<Record<string, unknown>> {
-  await run(config, ['sync', ...cache(config), ...target(config, school)]);
-  return record(await run(config, ['inspect', ...cache(config)]));
+async function currentState(config: UnifiedVerification): Promise<Record<string, unknown>> {
+  return record(await run(config, 'state'));
 }
 function hasMembership(entries: unknown, member: string, club: string): boolean {
   requireThat(Array.isArray(entries), 'Invalid identity state');
@@ -61,8 +68,8 @@ export async function authorizeAccount(db: Store, account: Account, school: Scho
   const mapping = db.db.prepare('SELECT member,confirmed FROM identity_members WHERE account=?').get(account.id) as {member: string; confirmed: number} | undefined;
   if (!mapping) return;
   const config = configuration(school);
-  await serialized(config.log, async () => {
-    const state = await currentState(config, school);
+  await serialized(config.endpoint, async () => {
+    const state = await currentState(config);
     const revoked = hasMembership(state.revoked_memberships, mapping.member, config.club);
     const active = hasMembership(state.memberships, mapping.member, config.club);
     if (revoked || (mapping.confirmed === 1 && !active)) {
@@ -75,8 +82,8 @@ export async function identityProposal(db: Store, account: Account, holder: stri
   const config = configuration(school);
   // Email verification has no age cutoff; explicit revocation still blocks authorization.
   requireThat(account.verified_at > 0, 'Account identity has not been verified');
-  return serialized(config.log, async () => {
-    const state = await currentState(config, school);
+  return serialized(config.endpoint, async () => {
+    const state = await currentState(config);
     const devices = record(state.devices);
     const revoked = state.revoked_devices as string[];
     requireThat(Array.isArray(revoked) && !revoked.includes(holder), 'Device revoked');
@@ -84,13 +91,7 @@ export async function identityProposal(db: Store, account: Account, holder: stri
     const action = profile
       ? { type: 'bind_game_profile', member, club: config.club, profile: gameProfile }
       : { type: 'confirm_member', member, club: config.club, device: holder, evidence: 'institutional_email', verifier: config.verifier };
-    const directory = await mkdtemp(join(dirname(config.log), 'identity-proposal-'));
-    try {
-      const input = join(directory, 'action.json'), output = join(directory, 'record.json');
-      await writeFile(input, JSON.stringify(action), { mode: 0o600 });
-      await invoke(config, ['draft', ...cache(config), '--action', input, '--out', output]);
-      return JSON.parse(await readFile(output, 'utf8'));
-    } finally { await rm(directory, {recursive: true, force: true}); }
+    return run(config, 'draft', action);
   });
 }
 export async function confirmIdentity(db: Store, account: Account, school: School, proposed: unknown, gameProfile: string): Promise<unknown> {
@@ -103,8 +104,8 @@ export async function confirmIdentity(db: Store, account: Account, school: Schoo
     (action.type === 'confirm_member' && action.evidence === 'institutional_email' && action.verifier === config.verifier && typeof action.device === 'string') ||
     (action.type === 'bind_game_profile' && action.profile === gameProfile), 'Unsupported identity attestation');
   requireThat(Array.isArray(proposal.signatures) && proposal.signatures.length > 0, 'Device possession signature required');
-  return serialized(config.log, async () => {
-    const state = await currentState(config, school);
+  return serialized(config.endpoint, async () => {
+    const state = await currentState(config);
     const checkpoint = record(state.checkpoint);
     requireThat(proposal.genesis === checkpoint.genesis && proposal.previous === checkpoint.head && proposal.sequence === Number(checkpoint.sequence) + 1, 'Identity proposal is stale; create a new proposal');
     requireThat(!hasMembership(state.revoked_memberships, mapping.member, config.club), 'Federation membership revoked');
@@ -114,14 +115,8 @@ export async function confirmIdentity(db: Store, account: Account, school: Schoo
       requireThat(hasMembership(state.memberships, mapping.member, config.club), 'Federation membership required');
     }
     // Submit verifies signatures and the exact log head atomically, including later revocations.
-    const directory = await mkdtemp(join(dirname(config.log), 'identity-confirm-'));
-    try {
-      const input = join(directory, 'proposal.json'), signed = join(directory, 'signed.json');
-      await writeFile(input, JSON.stringify(proposal), {mode: 0o600});
-      await invoke(config, ['sign', '--key', school.issuerKey, '--record', input, '--out', signed]);
-      const checkpoint = await run(config, ['submit', ...cache(config), ...target(config, school), '--record', signed]);
-      db.db.prepare('UPDATE identity_members SET confirmed=1 WHERE account=? AND member=?').run(account.id, field(action.member));
-      return {member: mapping.member, checkpoint};
-    } finally { await rm(directory, {recursive: true, force: true}); }
+    const committed = await run(config, 'confirm', proposal);
+    db.db.prepare('UPDATE identity_members SET confirmed=1 WHERE account=? AND member=?').run(account.id, field(action.member));
+    return {member: mapping.member, checkpoint: committed};
   });
 }

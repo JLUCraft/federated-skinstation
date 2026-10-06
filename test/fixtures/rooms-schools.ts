@@ -7,8 +7,8 @@ import {build,type Config} from '../../server/app.js';
 
 process.umask(0o077);
 const state=process.env.ROOMS_ACCEPTANCE_STATE;
-const binary=process.env.UNIONCTL;
-if(!state||!binary)throw new Error('Set ROOMS_ACCEPTANCE_STATE and UNIONCTL');
+const binary=process.env.ACCEPTANCE_DRIVER;
+if(!state||!binary)throw new Error('Set ROOMS_ACCEPTANCE_STATE and ACCEPTANCE_DRIVER');
 const directory=resolve(state);
 await mkdir(directory,{recursive:true,mode:0o700});
 const run=(...args:string[])=>execFileSync(binary,args,{encoding:'utf8'}).trim();
@@ -23,7 +23,7 @@ try {
   const rsa=generateKeyPairSync('rsa',{modulusLength:2048});
   await writeFile(join(path,'textures.pem'),rsa.privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});
   let verification='';
-  const config:Config={listen:'127.0.0.1',port:0,origin:'http://127.0.0.1',database:join(path,'accounts.sqlite'),textures:join(path,'textures'),signingKey:join(path,'textures.pem'),schools:{[school]:{emailDomains:[school+'.test'],issuerKey:join(path,'issuer.key')}},peers:[],smtp:{host:'unused',port:465,from:'fixture@invalid.test'}};
+  const config:Config={listen:'127.0.0.1',port:0,origin:'http://127.0.0.1',database:join(path,'accounts.sqlite'),textures:join(path,'textures'),signingKey:join(path,'textures.pem'),schools:{[school]:{emailDomains:[school+'.test']}},peers:[],smtp:{host:'unused',port:465,from:'fixture@invalid.test'}};
   const app=await build(config,{mail:async(_email,code)=>{verification=code;}});
   applications.push(app);configs.push(config);
   config.origin=await app.listen({host:'127.0.0.1',port:0});

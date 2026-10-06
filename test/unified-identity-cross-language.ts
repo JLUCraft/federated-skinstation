@@ -1,4 +1,4 @@
-// Run after building federated-server and unionctl; exercises the real Rust verifier and HTTP adapter.
+// Run after building the server acceptance-driver example; exercises the real Rust verifier and HTTP adapter.
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
@@ -11,12 +11,13 @@ import assert from 'node:assert/strict';
 import { build } from '../server/app.js';
 import { Store } from '../server/store.js';
 const exec = promisify(execFile);
-const binary = resolve(process.env.UNIONCTL ?? '../federated-server/target/debug/unionctl');
-const server = resolve(process.env.FEDERATED_SERVER ?? '../federated-server/target/debug/federated-server');
+const binary = resolve(process.env.ACCEPTANCE_DRIVER ?? '../federated-server/target/debug/examples/acceptance-driver');
+const server = binary;
 const directory = await mkdtemp(join(tmpdir(), 'unified-identity-interop-'));
 const run = async (...args: string[]) => (await exec(binary, args, { timeout: 30_000, maxBuffer: 8 * 1024 * 1024 })).stdout.trim();
 const file = async (name: string, value: unknown) => { const path = join(directory, name); await writeFile(path, JSON.stringify(value), {mode: 0o600}); return path; };
 let host: ReturnType<typeof spawn> | undefined;
+let bridge: ReturnType<typeof spawn> | undefined;
 let app: Awaited<ReturnType<typeof build>> | undefined;
 let index = 0;
 try {
@@ -53,11 +54,22 @@ try {
     await run('trust', 'submit', ...cache, ...target, '--record', await file(`submit-${index++}.json`, record));
   };
   await append({type: 'authorize_verifier', id: 'skin', club: 'school', device: keys.verifier, evidence: ['institutional_email', 'game_profile']});
+  const tokenFile = join(directory, 'bridge-token.json');
+  const bridgeConfig = await file('bridge.json', {bind:'127.0.0.1:0', key:join(directory,'verifier.key'), token:tokenFile,
+    log:join(directory,'verifier-cache.jsonl'), address:status.addresses[0],peer:status.peer,club:'school',verifier:'skin'});
+  bridge = spawn(binary, ['bridge', '--config', bridgeConfig, '--genesis', genesis], {stdio:['ignore','pipe','inherit']});
+  const bridgeLines = createInterface({input:bridge.stdout!});
+  const endpoint = await new Promise<string>((resolve,reject) => {
+    const timer = setTimeout(()=>reject(new Error('bridge startup timeout')),15_000);
+    bridgeLines.once('line', line=>{clearTimeout(timer);resolve(JSON.parse(line).url);});
+    bridge!.once('exit',()=>{clearTimeout(timer);reject(new Error('bridge exited'));});
+  });
+  assert.equal((await fetch(endpoint + '/state', {method:'POST'})).status,401);
   const rsa = generateKeyPairSync('rsa', {modulusLength: 2048});
   await writeFile(join(directory, 'textures.pem'), rsa.privateKey.export({type: 'pkcs8', format: 'pem'}), {mode: 0o600});
   let code = '';
-  app = await build({listen: '127.0.0.1', port: 0, origin: 'https://skin.example.test', database: join(directory, 'accounts.sqlite'), textures: join(directory, 'textures'), signingKey: join(directory, 'textures.pem'), peers: [], smtp: {host: 'unused', port: 465, from: 'test@invalid.test'}, schools: {school: {emailDomains: ['school.test'], issuerKey: join(directory, 'verifier.key'), identity: {
-    unionctl: binary, genesis, genesisHash: pin, log: join(directory, 'verifier-cache.jsonl'), address: status.addresses[0], peer: status.peer, verifier: 'skin', club: 'school',
+  app = await build({listen: '127.0.0.1', port: 0, origin: 'https://skin.example.test', database: join(directory, 'accounts.sqlite'), textures: join(directory, 'textures'), signingKey: join(directory, 'textures.pem'),  smtp: {host: 'unused', port: 465, from: 'test@invalid.test'}, schools: {school: {emailDomains: ['school.test'], identity: {
+    endpoint, tokenFile, verifier: 'skin', club: 'school',
   }}}}, {mail: async (_, value) => { code = value; }});
   const account = {email: 'person@school.test', name: 'Person', school: 'school', password: 'isolated-test-password'};
   assert.equal((await app.inject({method: 'POST', url: '/api/email/start', payload: account})).statusCode, 202);
@@ -104,6 +116,7 @@ try {
   console.log('PASS: actual skin HTTP → Rust log; old verification retained; possession required; explicit revocation enforced; offline manual recovery and stable identity on device replacement.');
 } finally {
   await app?.close();
+  if (bridge && bridge.exitCode === null) { const exit = once(bridge, 'exit'); bridge.kill('SIGTERM'); await exit; }
   if (host && host.exitCode === null) { const exit = once(host, 'exit'); host.kill('SIGTERM'); await exit; }
   await rm(directory, {recursive: true, force: true});
 }

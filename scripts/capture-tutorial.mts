@@ -42,7 +42,7 @@ async function main() {
       database: `${temp}/db`,
       textures: `${temp}/textures`,
       signingKey: `${temp}/key.pem`,
-      schools: { jlu: { emailDomains: ['school.test'], issuerKey: 'unused' } },
+      schools: { jlu: { emailDomains: ['school.test'] } },
       peers: [],
       smtp: { host: 'unused', port: 465, from: 'test@school.test' },
       webRoot: fileURLToPath(new URL('../dist', import.meta.url)),

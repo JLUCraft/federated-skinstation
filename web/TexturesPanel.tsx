@@ -5,6 +5,7 @@ import { MAX_PROFILES, type GameProfile } from '../shared/profiles';
 import type { Texture, TextureKind } from '../shared/wardrobe';
 import { apiRequest, errorText } from './api';
 
+
 export function TexturesPanel({
   token,
   notify,

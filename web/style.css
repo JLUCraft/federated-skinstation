@@ -185,3 +185,6 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Micr
 .passkey-list{padding:0;list-style:none}
 .passkey-row{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-16);padding-block:var(--sp-8);border-bottom:1px solid var(--line)}
 @media(max-width:600px){.portal-workspace{grid-template-columns:minmax(0,1fr)}.portal-workspace .portal-navigation{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.profile-toolbar{flex-wrap:wrap}}
+
+/* 表单字段说明 */
+.field-hint{display:block;margin-top:var(--sp-4);color:var(--muted);font-size:var(--text-sm);font-weight:400}

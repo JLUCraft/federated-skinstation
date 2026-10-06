@@ -518,7 +518,14 @@ function App() {
                                 )
                               }
                               maxLength={16}
+                              pattern="[A-Za-z0-9_]+"
+                              title={t('1 到 16 位字母、数字或下划线')}
+                              required
+                              aria-describedby="name-hint"
                             />
+                            <span className="field-hint" id="name-hint">
+                              {t('1 到 16 位字母、数字或下划线')}
+                            </span>
                           </label>
                           <label className="field-label">
                             {t('设置密码')}
@@ -535,7 +542,11 @@ function App() {
                               }
                               minLength={12}
                               required
+                              aria-describedby="password-hint"
                             />
+                            <span className="field-hint" id="password-hint">
+                              {t('至少 12 位')}
+                            </span>
                           </label>
                         </div>
                         <div className="actions">

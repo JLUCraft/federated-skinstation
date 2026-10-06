@@ -614,9 +614,11 @@ function App() {
           {token && (page === 'wardrobe' || page === 'library') && (
             <WardrobePanel
               key={page}
-              token={token}
+              token={token || undefined}
               library={page === 'library'}
               notify={notify}
+              onRequireLogin={() => setPage('textures')}
+              onBrowseUpload={() => setPage('textures')}
             />
           )}
 

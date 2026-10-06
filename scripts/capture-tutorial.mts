@@ -177,9 +177,10 @@ async function main() {
       .getByRole('heading', { name: '校园披风', exact: true })
       .waitFor();
     await shot('skin-14-library', '公开材质进入皮肤库，可以下载或收藏');
-    await page.getByRole('button', { name: '收藏到衣柜', exact: true }).click();
-    await visible('操作已完成');
-    await shot('skin-15-collected', '收藏成功，同一材质不会在衣柜中重复出现');
+    // The publisher already owns it, so the library offers no second copy.
+    await page.getByRole('button', { name: '已在衣柜', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '收藏到衣柜', exact: true }).count(), 0);
+    await shot('skin-15-collected', '自己公开的材质在皮肤库里显示「已在衣柜」，不会重复收藏');
     await page.getByRole('button', { name: '角色外观', exact: true }).click();
     await page.getByAltText('当前皮肤材质').waitFor();
     await page.setViewportSize({ width: 390, height: 844 });

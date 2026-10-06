@@ -1,15 +1,42 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { SkinViewer } from 'skinview3d';
+import type { Texture } from '../shared/wardrobe';
 import { t } from './i18n';
-type Texture = { kind: 'skin' | 'cape'; hash: string; model: string };
 const TURN = Math.PI / 4;
-export function SkinPreview({ textures }: { textures: Texture[] }) {
+type Motion = 'still' | 'walk' | 'run';
+const MOTIONS: Motion[] = ['still', 'walk', 'run'];
+const MOTION_LABELS: Record<Motion, string> = {
+  still: t('静止'),
+  walk: t('行走'),
+  run: t('奔跑'),
+};
+const defaultTextureUrl = (texture: Texture) => `/textures/${texture.hash}`;
+async function applyMotion(viewer: SkinViewer, motion: Motion) {
+  const { WalkingAnimation, RunningAnimation } = await import('skinview3d');
+  viewer.animation =
+    motion === 'walk'
+      ? new WalkingAnimation()
+      : motion === 'run'
+        ? new RunningAnimation()
+        : null;
+}
+export function SkinPreview({
+  textures,
+  textureUrl = defaultTextureUrl,
+  emptyText = t('上传材质后预览角色'),
+}: {
+  textures: Texture[];
+  textureUrl?: (texture: Texture) => string;
+  emptyText?: string;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null),
     container = useRef<HTMLDivElement>(null),
-    viewer = useRef<SkinViewer | null>(null);
+    viewer = useRef<SkinViewer | null>(null),
+    motionRef = useRef<Motion>('still');
   const [failed, setFailed] = useState(false),
     [loading, setLoading] = useState(false),
-    [rotating, setRotating] = useState(false);
+    [rotating, setRotating] = useState(false),
+    [motion, setMotion] = useState<Motion>('still');
   const skin = textures.find((x) => x.kind === 'skin'),
     cape = textures.find((x) => x.kind === 'cape');
   useEffect(() => {
@@ -40,13 +67,16 @@ export function SkinPreview({ textures }: { textures: Texture[] }) {
         observer.observe(container.current);
         await Promise.all([
           skin
-            ? active.loadSkin(`/textures/${skin.hash}`, {
+            ? active.loadSkin(textureUrl(skin), {
                 model: skin.model === 'slim' ? 'slim' : 'default',
               })
             : Promise.resolve(),
-          cape ? active.loadCape(`/textures/${cape.hash}`) : Promise.resolve(),
+          cape ? active.loadCape(textureUrl(cape)) : Promise.resolve(),
         ]);
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          await applyMotion(active, motionRef.current);
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -61,8 +91,12 @@ export function SkinPreview({ textures }: { textures: Texture[] }) {
       viewer.current = null;
     };
   }, [skin?.hash, skin?.model, cape?.hash]);
+  useEffect(() => {
+    motionRef.current = motion;
+    if (viewer.current) void applyMotion(viewer.current, motion);
+  }, [motion]);
   if (!skin && !cape)
-    return <div className="skin-preview-empty">{t('上传材质后预览角色')}</div>;
+    return <div className="skin-preview-empty">{emptyText}</div>;
   return (
     <div className="skin-preview">
       <div className="skin-preview-stage" ref={container}>
@@ -84,6 +118,21 @@ export function SkinPreview({ textures }: { textures: Texture[] }) {
         )}
       </div>
       <div className="actions">
+        <label className="preview-motion">
+          {t('动作')}
+          <select
+            className="input"
+            value={motion}
+            disabled={loading || failed}
+            onChange={(e) => setMotion(e.target.value as Motion)}
+          >
+            {MOTIONS.map((id) => (
+              <option key={id} value={id}>
+                {MOTION_LABELS[id]}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           className="btn btn--secondary"
           disabled={loading || failed}

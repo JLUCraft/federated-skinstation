@@ -2,10 +2,8 @@ import { t } from './i18n';
 import React, { useEffect, useState } from 'react';
 import { SkinPreview } from './SkinPreview';
 import { MAX_PROFILES, type GameProfile } from '../shared/profiles';
+import type { Texture, TextureKind } from '../shared/wardrobe';
 import { apiRequest, errorText } from './api';
-
-type Kind = 'skin' | 'cape';
-type Texture = { kind: Kind; hash: string; model: string };
 
 export function TexturesPanel({
   token,
@@ -52,7 +50,7 @@ export function TexturesPanel({
       .finally(() => setLoading(false));
   }, [token]);
 
-  async function change(kind: Kind, file?: File) {
+  async function change(kind: TextureKind, file?: File) {
     if (!profile) return;
     setBusy(true);
     try {
@@ -210,7 +208,7 @@ export function TexturesPanel({
           )}
           <SkinPreview textures={textures} />
           <div className="texture-grid">
-            {(['skin', 'cape'] as Kind[]).map((kind) => {
+            {(['skin', 'cape'] as TextureKind[]).map((kind) => {
               const current = textures.find((t) => t.kind === kind);
               return (
                 <div key={kind} className="texture-card">

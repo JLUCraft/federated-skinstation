@@ -18,3 +18,16 @@ test('registration name conflicts are explicit and leave the existing account un
     assert.equal(db.account('email', second.email), undefined);
   } finally { db.close(); await rm(dir, {recursive:true, force:true}); }
 });
+
+test('a taken game name is reported when registration starts, before any email is sent', async () => {
+  const { site } = await import('./helpers/site.js');
+  const s = await site();
+  try {
+    await s.enroll('Taken');
+    const start = await s.post('/api/email/start', { email: 'other@school.test', name: 'taken', school: 'jlu', password: 'password-for-contract-testing' });
+    assert.equal(start.statusCode, 409);
+    assert.equal(start.json().error, 'Name Conflict');
+    const free = await s.post('/api/email/start', { email: 'other@school.test', name: 'Free', school: 'jlu', password: 'password-for-contract-testing' });
+    assert.equal(free.statusCode, 202);
+  } finally { await s.close(); }
+});

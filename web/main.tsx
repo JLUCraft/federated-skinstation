@@ -70,11 +70,18 @@ function App() {
   };
 
   async function request(path: string, body: unknown) {
-    return apiRequest(path, {
-      method: 'POST',
-      body,
-      errorMessage: t('请求被拒绝，请检查信息或稍后重试'),
-    });
+    try {
+      return await apiRequest(path, {
+        method: 'POST',
+        body,
+        errorMessage: t('请求被拒绝，请检查信息或稍后重试'),
+      });
+    } catch (e) {
+      // Only registration can clash on a game name.
+      if (e instanceof ApiError && e.status === 409 && path.startsWith('/api/email/'))
+        throw new Error(t('这个游戏名称已被使用，请换一个。'));
+      throw e;
+    }
   }
   async function action(fn: () => Promise<void>) {
     setBusy(true);

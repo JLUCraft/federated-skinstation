@@ -405,6 +405,9 @@ export async function build(
       const name = text(body.name, 16);
       requireThat(/^[a-zA-Z0-9_]+$/.test(name));
       let account = db.account('email', email);
+      // Tell the student now, not after the verification email has been read.
+      if (!account && db.profileNamed(name))
+        throw new Rejected('Profile name already in use', 409, 'Name Conflict');
       if (account) {
         requireThat(
           account.school === schoolId &&

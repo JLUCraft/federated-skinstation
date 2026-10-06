@@ -51,7 +51,6 @@ function libraryFilter(query: Record<string, unknown>): LibraryFilter {
 export function registerWardrobe(app: FastifyInstance, db: Store) {
   db.db
     .exec(`CREATE TABLE IF NOT EXISTS wardrobe(id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id),title TEXT NOT NULL,kind TEXT NOT NULL,hash TEXT NOT NULL,model TEXT NOT NULL,published INTEGER NOT NULL DEFAULT 0,UNIQUE(account,kind,hash,model));
-    INSERT OR IGNORE INTO wardrobe(id,account,title,kind,hash,model) SELECT lower(hex(randomblob(16))),account,'',kind,hash,model FROM profile_textures;
     CREATE TABLE IF NOT EXISTS texture_likes(item TEXT NOT NULL REFERENCES wardrobe(id) ON DELETE CASCADE,account TEXT NOT NULL REFERENCES accounts(id),PRIMARY KEY(item,account));
     CREATE TABLE IF NOT EXISTS texture_tags(item TEXT NOT NULL REFERENCES wardrobe(id) ON DELETE CASCADE,tag TEXT NOT NULL COLLATE NOCASE,PRIMARY KEY(item,tag));`);
   const account = (header: string | undefined) => {

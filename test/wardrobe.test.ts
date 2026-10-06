@@ -23,6 +23,9 @@ test('wardrobe publication, collection, ownership and applying survive source re
     .prepare('INSERT INTO profile_textures VALUES(?,?,?,?)')
     .run('alice', 'skin', 'a'.repeat(64), 'slim');
   registerWardrobe(app, db);
+  db.db
+    .prepare('INSERT INTO wardrobe VALUES(?,?,?,?,?,?,?)')
+    .run('item', 'alice', '', 'skin', 'a'.repeat(64), 'slim', 0);
   const headers = (user: string) => ({
     authorization: `Bearer ${db.mint(user, 'test', now)}`,
   });

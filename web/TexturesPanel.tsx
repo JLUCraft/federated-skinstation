@@ -107,7 +107,7 @@ export function TexturesPanel({
         </h2>
         <p className="section-hint">
           {t(
-            '皮肤支持 64×32、64×64 及等比例 PNG；披风支持 64×32 或 22×17 及等比例 PNG。文件不超过 1 MiB。',
+            '皮肤支持 64×32、64×64 及等比例 PNG；披风支持 64×32 或 22×17 及等比例 PNG。文件不超过 1 MB。',
           )}
         </p>
       </div>

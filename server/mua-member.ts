@@ -8,11 +8,10 @@ import {
 } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { Store, requireThat, digest, secret } from './store.js';
-import { field, record } from './validate.js';
+import { Store, requireThat, digest, secret, now } from './store.js';
+import { bearer, field, record } from './validate.js';
 import type { MuaConfig } from './mua.js';
 
-const now = () => Math.floor(Date.now() / 1000);
 const string = field;
 const object = record;
 type MemberFetch = (path: string, init?: RequestInit) => Promise<unknown>;
@@ -27,9 +26,7 @@ export async function registerMemberFeatures(
   memberKey: () => string,
 ) {
   const authenticate = (req: FastifyRequest) => {
-    const header = string(req.headers.authorization, 2048);
-    requireThat(header.startsWith('Bearer '));
-    return db.token(header.slice(7), undefined, now());
+    return db.token(bearer(req.headers.authorization), undefined, now());
   };
   const admin = (req: FastifyRequest) => {
     const a = authenticate(req);

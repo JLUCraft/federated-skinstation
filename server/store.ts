@@ -22,6 +22,8 @@ export class Rejected extends Error {
     super(message);
   }
 }
+/** Current Unix time in whole seconds; token and challenge expiry use this clock. */
+export const now = () => Math.floor(Date.now() / 1000);
 export function requireThat(
   value: unknown,
   message = 'Request rejected',

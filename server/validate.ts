@@ -8,6 +8,13 @@ export function field(value: unknown, max = 256): string {
   return value;
 }
 
+/** Token from an `Authorization: Bearer <token>` header. */
+export function bearer(header: unknown): string {
+  const value = field(header, 2048);
+  requireThat(value.startsWith('Bearer '));
+  return value.slice(7);
+}
+
 /** Plain object (not null, not an array). */
 export function record(value: unknown): Record<string, unknown> {
   requireThat(

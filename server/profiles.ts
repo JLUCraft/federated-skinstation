@@ -1,10 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { Store, requireThat } from './store.js';
-import { field, record } from './validate.js';
+import { Store, now } from './store.js';
+import { bearer, field, record } from './validate.js';
 export function registerProfiles(app: FastifyInstance, db: Store) {
   const account = (header: string | undefined) => {
-    requireThat(header && header.startsWith('Bearer '));
-    return db.token(header.slice(7), undefined, Math.floor(Date.now() / 1000));
+    return db.token(bearer(header), undefined, now());
   };
   app.get('/api/players', async (req) => ({
     profiles: db.profiles(account(req.headers.authorization)),

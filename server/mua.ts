@@ -2,8 +2,8 @@ import { createPrivateKey, createPublicKey, verify } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { isSecretName, type SecretState } from './secret-state.js';
 import { registerMemberFeatures } from './mua-member.js';
-import { boundedValue, boundedJson, field, record } from './validate.js';
-import { Store, digest, requireThat, secret, type Account } from './store.js';
+import { bearer, boundedValue, boundedJson, field, record } from './validate.js';
+import { Store, digest, now, requireThat, secret, type Account } from './store.js';
 
 export interface MuaConfig {
   apiRoot: string;
@@ -110,7 +110,6 @@ export async function registerMua(
     requireThat(secrets, 'MUA storage key required');
     secrets.validate(db);
   }
-  const now = () => Math.floor(Date.now() / 1000);
   const root = config.apiRoot.replace(/\/$/, '');
   const fetchJson = async (path: string, init?: RequestInit) =>
     boundedJson(
@@ -355,9 +354,7 @@ export async function registerMua(
   const callback = `${origin}/api/mua/callback`;
   const cookieOptions = `HttpOnly; SameSite=Lax; Path=/api/mua; Max-Age=300${new URL(origin).protocol === 'https:' ? '; Secure' : ''}`;
   app.post('/api/mua/link', async (req, reply) => {
-    const header = field(req.headers.authorization, 2048);
-    requireThat(header.startsWith('Bearer '));
-    const token = header.slice(7);
+    const token = bearer(req.headers.authorization);
     db.token(token, undefined, now());
     const state = secret(),
       cookie = secret();
@@ -455,18 +452,14 @@ export async function registerMua(
     return reply.redirect('/portal/');
   });
   app.get('/api/mua/link', async (req) => {
-    const header = field(req.headers.authorization, 2048);
-    requireThat(header.startsWith('Bearer '));
-    const account = db.token(header.slice(7), undefined, now());
+    const account = db.token(bearer(req.headers.authorization), undefined, now());
     const link = db.db
       .prepare('SELECT subject,verified_at FROM mua_links WHERE account=?')
       .get(account.id);
     return { link: link ?? null, evidence: link ? 'mua_account_only' : null };
   });
   app.delete('/api/mua/link', async (req, reply) => {
-    const header = field(req.headers.authorization, 2048);
-    requireThat(header.startsWith('Bearer '));
-    const account = db.token(header.slice(7), undefined, now());
+    const account = db.token(bearer(req.headers.authorization), undefined, now());
     db.transaction(() => {
       db.db
         .prepare(

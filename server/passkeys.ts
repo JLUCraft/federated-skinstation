@@ -12,15 +12,15 @@ import {
   requireThat,
   Rejected,
   digest,
+  now,
   secret,
   verifyPassword,
   type Account,
 } from './store.js';
-import { field, record } from './validate.js';
+import { bearer, field, record } from './validate.js';
 const CHALLENGE_SECONDS = 300;
 const MAX_PASSKEYS = 8;
 const COOKIE = 'jlucraft_passkey';
-const now = () => Math.floor(Date.now() / 1000);
 type Credential = {
   id: string;
   account: string;
@@ -39,9 +39,7 @@ export function registerPasskeys(
     .exec(`CREATE TABLE IF NOT EXISTS passkeys(id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id),public_key BLOB NOT NULL,counter INTEGER NOT NULL,name TEXT NOT NULL,created INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS passkey_challenges(cookie TEXT PRIMARY KEY,challenge TEXT NOT NULL,kind TEXT NOT NULL,token TEXT REFERENCES tokens(hash) ON DELETE CASCADE,expires INTEGER NOT NULL);`);
   const token = (req: FastifyRequest) => {
-    const h = field(req.headers.authorization, 2048);
-    requireThat(h.startsWith('Bearer '));
-    return h.slice(7);
+    return bearer(req.headers.authorization);
   };
   const cookie = (req: FastifyRequest) =>
     req.headers.cookie

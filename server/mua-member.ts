@@ -228,7 +228,7 @@ export async function registerMemberFeatures(
     const plain = Buffer.from(JSON.stringify({ userInfo, mac, signature }));
     const chunks: Buffer[] = [];
     const size = bits / 8 - 11;
-    // Union wire format uses concatenated PKCS#1 v1.5 RSA blocks, not JWT/OIDC.
+    // The Union protocol uses concatenated PKCS#1 v1.5 RSA blocks, not JWT/OIDC.
     for (let offset = 0; offset < plain.length; offset += size)
       chunks.push(
         publicEncrypt(

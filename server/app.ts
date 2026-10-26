@@ -37,6 +37,7 @@ import {
   authorizeAccount,
 } from './unified-identity.js';
 import { registerMua, type MuaConfig } from './mua.js';
+import { registerCommunity } from './community.js';
 import { registerWardrobe } from './wardrobe.js';
 import { registerPasskeys } from './passkeys.js';
 import { registerProfiles } from './profiles.js';
@@ -44,6 +45,7 @@ import { registerConnect } from './connect.js';
 import { SecretState } from './secret-state.js';
 
 export interface Config {
+  siteAdmins?: string[];
   trustProxy?: string[];
   listen: string;
   port: number;
@@ -312,9 +314,13 @@ export async function build(
   registerProfiles(app, db);
   registerConnect(app, db, { origin: config.origin, key, authorize });
   registerPasskeys(app, db, config.origin, authorize);
-  registerWardrobe(app, db);
+  registerWardrobe(app, db, config.siteAdmins ?? []);
+  registerCommunity(app, db, config.siteAdmins ?? []);
   app.get('/api/capabilities', async () => ({
-    schools: Object.keys(config.schools),
+    schools: Object.keys(config.schools).map((id) => ({
+      id,
+      emailDomains: config.schools[id].emailDomains,
+    })),
     muaOAuth: !!config.mua?.oauth,
     muaMember: !!config.mua?.member,
     muaProvider: !!config.mua?.member?.oauthSigningKey,
@@ -545,6 +551,8 @@ export async function build(
       textures: db.db
         .prepare('SELECT kind,hash,model FROM profile_textures WHERE account=?')
         .all(a.id),
+      siteAdmin: config.siteAdmins?.includes(a.id) ?? false,
+      avatar: db.db.prepare('SELECT hash FROM site_avatars WHERE account=?').get(a.id)?.hash ?? null,
       muaAdmin: config.mua?.member?.adminAccounts?.includes(a.id) ?? false,
     };
   });
@@ -719,10 +727,15 @@ export async function build(
       throw error;
     }
   }
-  if (config.webRoot)
+  if (config.webRoot) {
     await app.register(staticFiles, {
       root: resolve(config.webRoot),
       prefix: '/portal/',
     });
+    app.setNotFoundHandler((req, reply) => {
+      if (req.method === 'GET' && /^\/portal\/(?:library|u)\/[^/]+$/.test(req.url.split('?')[0])) return reply.sendFile('index.html');
+      return reply.code(404).send({ error: 'Not found' });
+    });
+  }
   return app;
 }

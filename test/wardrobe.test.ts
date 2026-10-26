@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import { Store } from '../server/store.js';
+import { registerCommunity } from '../server/community.js';
 import { registerWardrobe } from '../server/wardrobe.js';
 
 test('wardrobe publication, collection, ownership and applying survive source removal', async () => {
@@ -22,7 +23,8 @@ test('wardrobe publication, collection, ownership and applying survive source re
   db.db
     .prepare('INSERT INTO profile_textures VALUES(?,?,?,?)')
     .run('alice', 'skin', 'a'.repeat(64), 'slim');
-  registerWardrobe(app, db);
+  registerWardrobe(app, db, ['alice']);
+  registerCommunity(app, db, ['alice']);
   db.db
     .prepare('INSERT INTO wardrobe VALUES(?,?,?,?,?,?,?)')
     .run('item', 'alice', '', 'skin', 'a'.repeat(64), 'slim', 0);
@@ -70,6 +72,27 @@ test('wardrobe publication, collection, ownership and applying survive source re
           url: `/api/wardrobe/${id}`,
           headers: alice,
           payload: { title: 'Campus skin', published: true },
+        })
+      ).statusCode,
+      200,
+    );
+    assert.equal(
+      (await app.inject({ url: '/api/library' })).json().items.length,
+      0,
+    );
+    assert.equal(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/admin/reviews/${id}`,
+          headers: alice,
+          payload: {
+            state: 'approved',
+            reason: 'Reviewed',
+            submission: db.db
+              .prepare('SELECT submission FROM texture_reviews WHERE item=?')
+              .get(id)!.submission,
+          },
         })
       ).statusCode,
       200,
@@ -155,12 +178,27 @@ test('library search, tags, likes and sorting are enforced by the server', async
     };
     db.confirm(a.email, db.challenge(a, now), now);
   }
-  registerWardrobe(app, db);
-  const insert = db.db.prepare(
-    'INSERT INTO wardrobe VALUES(?,?,?,?,?,?,?)',
+  registerWardrobe(app, db, ['alice']);
+  registerCommunity(app, db, ['alice']);
+  const insert = db.db.prepare('INSERT INTO wardrobe VALUES(?,?,?,?,?,?,?)');
+  insert.run(
+    'one',
+    'alice',
+    'Campus 100% skin',
+    'skin',
+    'a'.repeat(64),
+    'default',
+    1,
   );
-  insert.run('one', 'alice', 'Campus 100% skin', 'skin', 'a'.repeat(64), 'default', 1);
-  insert.run('two', 'alice', 'Winter cape', 'cape', 'b'.repeat(64), 'default', 1);
+  insert.run(
+    'two',
+    'alice',
+    'Winter cape',
+    'cape',
+    'b'.repeat(64),
+    'default',
+    1,
+  );
   insert.run('draft', 'alice', 'Private', 'skin', 'c'.repeat(64), 'default', 0);
   const alice = { authorization: `Bearer ${db.mint('alice', 't', now)}` },
     bob = { authorization: `Bearer ${db.mint('bob', 't', now)}` };
@@ -173,12 +211,21 @@ test('library search, tags, likes and sorting are enforced by the server', async
           method: 'PATCH',
           url: '/api/wardrobe/one',
           headers: alice,
-          payload: { title: 'Campus 100% skin', published: true, tags: ['jlu', '冬季', 'jlu'] },
+          payload: {
+            title: 'Campus 100% skin',
+            published: true,
+            tags: ['jlu', '冬季', 'jlu'],
+          },
         })
       ).statusCode,
       200,
     );
-    for (const tags of [['has space'], ['a,b'], ['x'.repeat(17)], ['1', '2', '3', '4', '5', '6']])
+    for (const tags of [
+      ['has space'],
+      ['a,b'],
+      ['x'.repeat(17)],
+      ['1', '2', '3', '4', '5', '6'],
+    ])
       assert.equal(
         (
           await app.inject({
@@ -190,33 +237,122 @@ test('library search, tags, likes and sorting are enforced by the server', async
         ).statusCode,
         403,
       );
-    assert.deepEqual((await get('/api/library')).items.map((i: { id: string }) => i.id), ['two', 'one']);
-    assert.deepEqual((await get('/api/library?kind=cape')).items.map((i: { id: string }) => i.id), ['two']);
-    assert.deepEqual((await get('/api/library?q=WINTER')).items.map((i: { id: string }) => i.id), ['two']);
-    assert.deepEqual((await get('/api/library?q=%25')).items.map((i: { id: string }) => i.id), ['one']);
-    assert.deepEqual((await get('/api/library?tag=JLU')).items.map((i: { id: string }) => i.id), ['one']);
+    for (const id of ['one', 'two']) {
+      db.db
+        .prepare(
+          "INSERT OR REPLACE INTO texture_reviews VALUES(?,'pending','',NULL,?,'fixture')",
+        )
+        .run(id, now);
+      assert.equal(
+        (
+          await app.inject({
+            method: 'POST',
+            url: `/api/admin/reviews/${id}`,
+            headers: alice,
+            payload: {
+              state: 'approved',
+              reason: 'Reviewed',
+              submission: db.db
+                .prepare('SELECT submission FROM texture_reviews WHERE item=?')
+                .get(id)!.submission,
+            },
+          })
+        ).statusCode,
+        200,
+      );
+    }
+    assert.deepEqual(
+      (await get('/api/library')).items.map((i: { id: string }) => i.id),
+      ['two', 'one'],
+    );
+    assert.deepEqual(
+      (await get('/api/library?kind=cape')).items.map(
+        (i: { id: string }) => i.id,
+      ),
+      ['two'],
+    );
+    assert.deepEqual(
+      (await get('/api/library?q=WINTER')).items.map(
+        (i: { id: string }) => i.id,
+      ),
+      ['two'],
+    );
+    assert.deepEqual(
+      (await get('/api/library?q=%25')).items.map((i: { id: string }) => i.id),
+      ['one'],
+    );
+    assert.deepEqual(
+      (await get('/api/library?tag=JLU')).items.map(
+        (i: { id: string }) => i.id,
+      ),
+      ['one'],
+    );
     assert.deepEqual((await get('/api/library/tags')).tags, [
       { tag: 'jlu', count: 1 },
       { tag: '冬季', count: 1 },
     ]);
-    assert.equal((await app.inject({ url: '/api/library?sort=oldest' })).statusCode, 403);
+    assert.equal(
+      (await app.inject({ url: '/api/library?sort=oldest' })).statusCode,
+      403,
+    );
 
     const like = (id: string, liked: boolean, headers = bob) =>
-      app.inject({ method: 'POST', url: `/api/library/${id}/like`, headers, payload: { liked } });
-    assert.deepEqual((await like('one', true)).json(), { liked: true, likes: 1 });
-    assert.deepEqual((await like('one', true)).json(), { liked: true, likes: 1 });
+      app.inject({
+        method: 'POST',
+        url: `/api/library/${id}/like`,
+        headers,
+        payload: { liked },
+      });
+    assert.deepEqual((await like('one', true)).json(), {
+      liked: true,
+      likes: 1,
+    });
+    assert.deepEqual((await like('one', true)).json(), {
+      liked: true,
+      likes: 1,
+    });
     assert.equal((await like('draft', true)).statusCode, 403);
-    assert.equal((await app.inject({ method: 'POST', url: '/api/library/one/like', payload: { liked: true } })).statusCode, 403);
+    assert.equal(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/api/library/one/like',
+          payload: { liked: true },
+        })
+      ).statusCode,
+      403,
+    );
     const sorted = (await get('/api/library?sort=likes', bob)).items;
-    assert.deepEqual(sorted.map((i: { id: string }) => i.id), ['one', 'two']);
+    assert.deepEqual(
+      sorted.map((i: { id: string }) => i.id),
+      ['one', 'two'],
+    );
     assert.equal(sorted[0].liked, true);
     assert.equal((await get('/api/library')).items[1].liked, false);
     // The uploader already owns both entries; a second account owns neither.
-    assert.deepEqual((await get('/api/library', alice)).items.map((i: { owned: boolean }) => i.owned), [true, true]);
-    assert.deepEqual((await get('/api/library', bob)).items.map((i: { owned: boolean }) => i.owned), [false, false]);
+    assert.deepEqual(
+      (await get('/api/library', alice)).items.map(
+        (i: { owned: boolean }) => i.owned,
+      ),
+      [true, true],
+    );
+    assert.deepEqual(
+      (await get('/api/library', bob)).items.map(
+        (i: { owned: boolean }) => i.owned,
+      ),
+      [false, false],
+    );
     assert.equal((await get('/api/library')).items[0].owned, false);
-    assert.deepEqual((await like('one', false)).json(), { liked: false, likes: 0 });
-    assert.equal((await get('/api/wardrobe', alice)).items.find((i: { id: string }) => i.id === 'one').tags.length, 2);
+    assert.deepEqual((await like('one', false)).json(), {
+      liked: false,
+      likes: 0,
+    });
+    assert.equal(
+      (await get('/api/wardrobe', alice)).items.find(
+        (i: { id: string }) => i.id === 'one',
+      ).tags.length,
+      2,
+    );
   } finally {
     await app.close();
     db.close();

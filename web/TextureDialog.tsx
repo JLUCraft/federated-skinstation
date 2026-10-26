@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { SkinPreview } from './SkinPreview';
 import type { TextureItem } from '../shared/wardrobe';
+import { Author, TextureProvenance } from './TextureIdentity';
 import { t } from './i18n';
 
 export const textureSrc = (item: TextureItem) => `/textures/${item.hash}`;
@@ -58,27 +59,36 @@ export function TextureDialog({
           textureUrl={() => textureSrc(item)}
           emptyText={t('无法预览此材质')}
         />
+        {item.public && <Author item={item} />}
+        <TextureProvenance item={item} />
+        {item.public && (
+          <a href={`/portal/library/${item.id}`}>{t('详情与分享')}</a>
+        )}
         <dl className="detail-list">
-          <div>
-            <dt>{t('类型')}</dt>
-            <dd>{item.kind === 'skin' ? t('皮肤') : t('披风')}</dd>
+          <div className="detail-row">
+            <dt className="detail-term">{t('类型')}</dt>
+            <dd className="detail-value">
+              {item.kind === 'skin' ? t('皮肤') : t('披风')}
+            </dd>
           </div>
           {item.kind === 'skin' && (
-            <div>
-              <dt>{t('手臂模型')}</dt>
-              <dd>{item.model === 'slim' ? t('纤细') : t('标准')}</dd>
+            <div className="detail-row">
+              <dt className="detail-term">{t('手臂模型')}</dt>
+              <dd className="detail-value">
+                {item.model === 'slim' ? t('纤细') : t('标准')}
+              </dd>
             </div>
           )}
-          <div>
-            <dt>{t('材质哈希')}</dt>
-            <dd className="detail-hash">{item.hash}</dd>
+          <div className="detail-row">
+            <dt className="detail-term">{t('材质哈希')}</dt>
+            <dd className="detail-value detail-hash">{item.hash}</dd>
           </div>
         </dl>
         <div className="actions">
           {actions}
           <a
             className="btn btn--secondary"
-            href={absolute}
+            href={item.public ? `/api/library/${item.id}/download` : absolute}
             download={`${textureTitle(item)}.png`}
           >
             {t('下载')}
@@ -88,7 +98,14 @@ export function TextureDialog({
             className="btn btn--secondary"
             onClick={() =>
               void navigator.clipboard
-                ?.writeText(absolute)
+                ?.writeText(
+                  item.public
+                    ? new URL(
+                        `/portal/library/${item.id}`,
+                        window.location.origin,
+                      ).href
+                    : absolute,
+                )
                 .then(() => setCopied(true))
             }
           >

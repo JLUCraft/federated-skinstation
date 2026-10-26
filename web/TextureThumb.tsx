@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { TextureKind } from '../shared/wardrobe';
 import { t } from './i18n';
+import { normalizedSkin, SKIN_FACE } from './skin';
 
 /** Skin sheets are laid out on a 64-unit grid; every rectangle below is in those units. */
-const SKIN_GRID = 64;
+const SKIN_GRID = SKIN_FACE.grid;
 const CAPE_LEGACY_GRID = 22;
 const CAPE_LEGACY_ROWS = 17;
 const FIGURE_WIDTH = 16;
@@ -11,75 +12,59 @@ const FIGURE_HEIGHT = 32;
 const CAPE_FACE = { x: 1, y: 1, width: 10, height: 16 };
 
 type Rect = [x: number, y: number, width: number, height: number];
-/** One body part: source rectangle, destination origin, optional mirror for pre-1.8 sheets. */
-type Part = { src: Rect; at: [number, number]; mirror?: Rect };
+/** One normalized body part: source rectangle and destination origin. */
+type Part = { src: Rect; at: [number, number] };
 
-function skinParts(slim: boolean, modern: boolean): Part[] {
+function skinParts(slim: boolean): Part[] {
   const arm = slim ? 3 : 4;
   const armY = 12;
   const parts: Part[] = [
-    { src: [8, 8, 8, 8], at: [4, 0] },
+    {
+      src: [SKIN_FACE.layers[0], SKIN_FACE.top, SKIN_FACE.size, SKIN_FACE.size],
+      at: [4, 0],
+    },
     { src: [20, 20, 8, 12], at: [4, 8] },
     { src: [44, 20, arm, armY], at: [4 - arm, 8] },
     { src: [4, 20, 4, 12], at: [4, 20] },
-    modern
-      ? { src: [36, 52, arm, armY], at: [12, 8] }
-      : { src: [44, 20, arm, armY], at: [12, 8], mirror: [44, 20, arm, armY] },
-    modern
-      ? { src: [20, 52, 4, 12], at: [8, 20] }
-      : { src: [4, 20, 4, 12], at: [8, 20], mirror: [4, 20, 4, 12] },
+    { src: [36, 52, arm, armY], at: [12, 8] },
+    { src: [20, 52, 4, 12], at: [8, 20] },
   ];
-  const layers: Part[] = [{ src: [40, 8, 8, 8], at: [4, 0] }];
-  if (modern)
-    layers.push(
-      { src: [20, 36, 8, 12], at: [4, 8] },
-      { src: [44, 36, arm, armY], at: [4 - arm, 8] },
-      { src: [52, 52, arm, armY], at: [12, 8] },
-      { src: [4, 36, 4, 12], at: [4, 20] },
-      { src: [4, 52, 4, 12], at: [8, 20] },
-    );
+  const layers: Part[] = [
+    {
+      src: [SKIN_FACE.layers[1], SKIN_FACE.top, SKIN_FACE.size, SKIN_FACE.size],
+      at: [4, 0],
+    },
+  ];
+  layers.push(
+    { src: [20, 36, 8, 12], at: [4, 8] },
+    { src: [44, 36, arm, armY], at: [4 - arm, 8] },
+    { src: [52, 52, arm, armY], at: [12, 8] },
+    { src: [4, 36, 4, 12], at: [4, 20] },
+    { src: [4, 52, 4, 12], at: [8, 20] },
+  );
   return [...parts, ...layers];
 }
 
 function drawSkin(
   ctx: CanvasRenderingContext2D,
-  image: HTMLImageElement,
+  image: HTMLCanvasElement,
   slim: boolean,
 ) {
   const unit = image.width / SKIN_GRID;
-  const modern = image.height >= image.width;
-  for (const part of skinParts(slim, modern)) {
+  for (const part of skinParts(slim)) {
     const [sx, sy, sw, sh] = part.src;
     const [dx, dy] = part.at;
-    if (part.mirror) {
-      ctx.save();
-      ctx.translate((dx + sw) * unit, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(
-        image,
-        sx * unit,
-        sy * unit,
-        sw * unit,
-        sh * unit,
-        0,
-        dy * unit,
-        sw * unit,
-        sh * unit,
-      );
-      ctx.restore();
-    } else {
-      ctx.drawImage(
-        image,
-        sx * unit,
-        sy * unit,
-        sw * unit,
-        sh * unit,
-        dx * unit,
-        dy * unit,
-        sw * unit,
-        sh * unit,
-      );
-    }
+    ctx.drawImage(
+      image,
+      sx * unit,
+      sy * unit,
+      sw * unit,
+      sh * unit,
+      dx * unit,
+      dy * unit,
+      sw * unit,
+      sh * unit,
+    );
   }
 }
 
@@ -92,7 +77,8 @@ function capeUnit(image: HTMLImageElement) {
 
 /**
  * Flat front view of a texture, drawn from the raw PNG so listings need no
- * server-side rendering.
+ * server-side rendering. Callers that already name the surrounding control
+ * omit `label`, which makes the canvas decorative.
  */
 export function TextureThumb({
   url,
@@ -103,7 +89,7 @@ export function TextureThumb({
   url: string;
   kind: TextureKind;
   slim: boolean;
-  label: string;
+  label?: string;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
@@ -115,16 +101,18 @@ export function TextureThumb({
     const image = new Image();
     image.onload = () => {
       if (cancelled) return;
-      ctx.imageSmoothingEnabled = false;
       if (kind === 'skin') {
-        const unit = image.width / SKIN_GRID;
+        const skin = normalizedSkin(image);
+        const unit = skin.width / SKIN_GRID;
         target.width = FIGURE_WIDTH * unit;
         target.height = FIGURE_HEIGHT * unit;
-        drawSkin(ctx, image, slim);
+        ctx.imageSmoothingEnabled = false;
+        drawSkin(ctx, skin, slim);
       } else {
         const unit = capeUnit(image);
         target.width = CAPE_FACE.width * unit;
         target.height = CAPE_FACE.height * unit;
+        ctx.imageSmoothingEnabled = false;
         ctx.drawImage(
           image,
           CAPE_FACE.x * unit,
@@ -148,12 +136,14 @@ export function TextureThumb({
   }, [url, kind, slim]);
   return failed ? (
     <span className="thumb-fallback">{t('预览不可用')}</span>
-  ) : (
+  ) : label ? (
     <canvas
       ref={canvas}
-      className={`texture-thumb texture-thumb--${kind}`}
+      className="texture-thumb"
       role="img"
       aria-label={label}
     />
+  ) : (
+    <canvas ref={canvas} className="texture-thumb" aria-hidden="true" />
   );
 }

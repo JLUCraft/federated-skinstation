@@ -1,0 +1,130 @@
+/* 生成文件，请勿手改。
+ * 来源：brands/jlu/brand.json
+ * 生成器：brand-palette（bun run palette）
+ */
+:root {
+  --brand-50: #f2f7ff;
+  --brand-100: #e3edff;
+  --brand-200: #caddff;
+  --brand-300: #a4c5ff;
+  --brand-400: #75a4f7;
+  --brand-500: #5183df;
+  --brand-600: #3768c1;
+  --brand-700: #234e9d;
+  --brand-800: #153775;
+  --brand-900: #0c2553;
+  --brand-950: #031336;
+  --brand-base: #234e9d;
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --surface-alt: #ebedf0;
+  --line: #dadce1;
+  --line-strong: #82868e;
+  --ink: #26282b;
+  --muted: #4f5359;
+  --primary: #234e9d;
+  --primary-hover: #153775;
+  --primary-text: #234e9d;
+  --primary-subtle: #f2f7ff;
+  --primary-border: #caddff;
+  --on-primary: #ffffff;
+  --secondary: #5e6997;
+  --on-secondary: #ffffff;
+  --accent: #3768c1;
+  --focus: #3768c1;
+  --success: #03642c;
+  --on-success: #ffffff;
+  --success-bg: #e6feea;
+  --error: #932421;
+  --on-error: #ffffff;
+  --error-bg: #fff4f2;
+  --font-sans: system-ui, -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-hero: clamp(28px, 5vw, 44px);
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-14: 14px;
+  --space-16: 16px;
+  --space-18: 18px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-64: 64px;
+  --touch-target: 44px;
+  --control-sm: 36px;
+  --focus-ring: 3px;
+  --focus-ring-offset: 2px;
+  --content-max: 880px;
+  --page-max: 1120px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151619;
+    --surface: #26282b;
+    --surface-alt: #383b3f;
+    --line: #383b3f;
+    --line-strong: #82868e;
+    --ink: #f4f7fc;
+    --muted: #c0c4cb;
+    --primary: #234e9d;
+    --primary-hover: #3768c1;
+    --primary-text: #a4c5ff;
+    --primary-subtle: #031336;
+    --primary-border: #153775;
+    --on-primary: #ffffff;
+    --secondary: #97a2cf;
+    --on-secondary: #151619;
+    --accent: #a4c5ff;
+    --focus: #70a3ff;
+    --success: #98d6a4;
+    --on-success: #151619;
+    --success-bg: #003111;
+    --error: #ffaba1;
+    --on-error: #151619;
+    --error-bg: #4d0b0a;
+  }
+}
+
+/* 按 class 切模式的框架（VitePress 等）用这一段：值与上面的深色模式相同，
+   只是选择器从媒体查询换成 .dark，两者不冲突（class 声明在后，优先级相同）。 */
+.dark {
+  --bg: #151619;
+  --surface: #26282b;
+  --surface-alt: #383b3f;
+  --line: #383b3f;
+  --line-strong: #82868e;
+  --ink: #f4f7fc;
+  --muted: #c0c4cb;
+  --primary: #234e9d;
+  --primary-hover: #3768c1;
+  --primary-text: #a4c5ff;
+  --primary-subtle: #031336;
+  --primary-border: #153775;
+  --on-primary: #ffffff;
+  --secondary: #97a2cf;
+  --on-secondary: #151619;
+  --accent: #a4c5ff;
+  --focus: #70a3ff;
+  --success: #98d6a4;
+  --on-success: #151619;
+  --success-bg: #003111;
+  --error: #ffaba1;
+  --on-error: #151619;
+  --error-bg: #4d0b0a;
+}

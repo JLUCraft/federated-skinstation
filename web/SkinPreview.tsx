@@ -36,9 +36,28 @@ export function SkinPreview({
   const [failed, setFailed] = useState(false),
     [loading, setLoading] = useState(false),
     [rotating, setRotating] = useState(false),
-    [motion, setMotion] = useState<Motion>('still');
+    [motion, setMotion] = useState<Motion>('still'),
+    [reduced, setReduced] = useState(false);
   const skin = textures.find((x) => x.kind === 'skin'),
     cape = textures.find((x) => x.kind === 'cape');
+  // 系统开启「减少动态效果」时，预览只保留用户主动触发的操作，不跑任何自动动画。
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => {
+      setReduced(query.matches);
+      if (!query.matches) return;
+      motionRef.current = 'still';
+      setMotion('still');
+      setRotating(false);
+      if (viewer.current) {
+        viewer.current.autoRotate = false;
+        viewer.current.animation = null;
+      }
+    };
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
   useEffect(() => {
     if (!skin && !cape) return;
     let cancelled = false;
@@ -117,13 +136,13 @@ export function SkinPreview({
           </p>
         )}
       </div>
-      <div className="actions">
+      <div className="actions preview-controls">
         <label className="preview-motion">
           {t('动作')}
           <select
             className="input"
             value={motion}
-            disabled={loading || failed}
+            disabled={loading || failed || reduced}
             onChange={(e) => setMotion(e.target.value as Motion)}
           >
             {MOTIONS.map((id) => (
@@ -153,7 +172,7 @@ export function SkinPreview({
         </button>
         <button
           className="btn btn--secondary"
-          disabled={loading || failed}
+          disabled={loading || failed || reduced}
           aria-pressed={rotating}
           onClick={() => {
             if (viewer.current) viewer.current.autoRotate = !rotating;
@@ -163,6 +182,11 @@ export function SkinPreview({
           {t('自动旋转')}
         </button>
       </div>
+      {reduced && (
+        <p className="section-hint">
+          {t('系统已开启「减少动态效果」，角色预览保持静止')}
+        </p>
+      )}
     </div>
   );
 }

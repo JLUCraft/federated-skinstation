@@ -1,5 +1,6 @@
 import { createServer } from 'node:net';
 import { build } from '../server/app.ts';
+import { TEXTURE_PAGE_SIZE } from '../shared/wardrobe.ts';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { generateKeyPairSync } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -34,8 +35,10 @@ async function main() {
   await new Promise<void>((resolve) => reservation.close(() => resolve()));
   const origin = `http://localhost:${port}`;
   let code = '';
+  const siteAdmins: string[] = [];
   const app = await build(
     {
+      siteAdmins,
       listen: '127.0.0.1',
       port: 0,
       origin,
@@ -56,6 +59,37 @@ async function main() {
   const shots: object[] = [];
   try {
     await app.listen({ host: '127.0.0.1', port });
+    const adminAccount = {
+      email: 'moderator@school.test',
+      name: 'SiteModerator',
+      school: 'jlu',
+      password: 'Moderator-Only-2026',
+    };
+    await app.inject({
+      method: 'POST',
+      url: '/api/email/start',
+      payload: adminAccount,
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/email/confirm',
+      payload: { email: adminAccount.email, code },
+    });
+    const adminLogin = (
+      await app.inject({
+        method: 'POST',
+        url: '/authserver/authenticate',
+        payload: {
+          username: adminAccount.email,
+          password: adminAccount.password,
+        },
+      })
+    ).json();
+    const adminHeaders = { authorization: `Bearer ${adminLogin.accessToken}` };
+    const adminMe = (
+      await app.inject({ url: '/api/me', headers: adminHeaders })
+    ).json();
+    siteAdmins.push(adminMe.id);
     const address = origin;
     browser = await chromium.launch({
       ...(process.env.CHROMIUM_PATH
@@ -95,6 +129,488 @@ async function main() {
         JSON.stringify(shots, null, 2),
       );
     };
+    if (['community', 'avatar'].includes(process.env.TUTORIAL_SCOPE ?? '')) {
+      // Isolated fixtures keep this recheck focused on the changed community UI.
+      const faceSkin = (
+        height: number,
+        hat = true,
+        opaque = false,
+        scale = 1,
+      ) => {
+        const skin = new PNG({ width: 64 * scale, height: height * scale });
+        if (opaque)
+          for (let pixel = 3; pixel < skin.data.length; pixel += 4)
+            skin.data[pixel] = 255;
+        for (const [left, color] of [
+          [8, [220, 40, 20]],
+          [40, [20, 40, 240]],
+        ] as const) {
+          for (let y = 8 * scale; y < 16 * scale; y++)
+            for (let x = left * scale; x < (left + 8) * scale; x++) {
+              if (left === 40 && !hat) continue;
+              const pixel = (y * skin.width + x) * 4;
+              skin.data[pixel] = color[0];
+              skin.data[pixel + 1] = color[1];
+              skin.data[pixel + 2] = color[2];
+              skin.data[pixel + 3] = 255;
+            }
+        }
+        return PNG.sync.write(skin);
+      };
+      const uploadFace = async (
+        height: number,
+        hat = true,
+        opaque = false,
+        scale = 1,
+      ) => {
+        const boundary = 'community-browser-fixture';
+        const uploaded = await app.inject({
+          method: 'PUT',
+          url: `/api/user/profile/${adminMe.profileId}/skin`,
+          headers: {
+            ...adminHeaders,
+            'content-type': `multipart/form-data; boundary=${boundary}`,
+          },
+          payload: Buffer.concat([
+            Buffer.from(
+              `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="face.png"\r\nContent-Type: image/png\r\n\r\n`,
+            ),
+            faceSkin(height, hat, opaque, scale),
+            Buffer.from(`\r\n--${boundary}--\r\n`),
+          ]),
+        });
+        assert.equal(uploaded.statusCode, 204);
+      };
+      await uploadFace(32);
+      const entry = (
+        await app.inject({ url: '/api/wardrobe', headers: adminHeaders })
+      ).json().items[0];
+      await page.goto(`${address}/portal/`);
+      await page
+        .getByLabel('学校邮箱', { exact: true })
+        .fill(adminAccount.email);
+      await page
+        .getByLabel('密码', { exact: true })
+        .fill(adminAccount.password);
+      await page.getByRole('button', { name: '登录', exact: true }).click();
+      await page.locator('.user-chip').waitFor();
+      if (process.env.TUTORIAL_SCOPE === 'avatar') {
+        const cases = [
+          [32, true, false, [20, 40, 240, 255], 'avatar-32-hat', 1],
+          [
+            32,
+            false,
+            false,
+            [220, 40, 20, 255],
+            'avatar-32-transparent-hat',
+            1,
+          ],
+          [64, true, false, [20, 40, 240, 255], 'avatar-64-hat', 1],
+          [32, true, true, [220, 40, 20, 255], 'avatar-32-opaque', 1],
+          [64, true, true, [220, 40, 20, 255], 'avatar-64-opaque', 1],
+          [32, true, false, [20, 40, 240, 255], 'avatar-128x64-hat', 2],
+          [64, true, true, [220, 40, 20, 255], 'avatar-128x128-opaque', 2],
+        ] as const;
+        const results: object[] = [];
+        let passed = true;
+        for (const [height, hat, opaque, color, name, scale] of cases) {
+          if (process.env.AVATAR_CASES === 'opaque' && !opaque) continue;
+          if (name !== 'avatar-32-hat')
+            await uploadFace(height, hat, opaque, scale);
+          const current = (
+            await app.inject({ url: '/api/wardrobe', headers: adminHeaders })
+          ).json().items[0];
+          const selected = await app.inject({
+            method: 'PUT',
+            url: '/api/me/avatar',
+            headers: adminHeaders,
+            payload: { item: current.id },
+          });
+          assert.equal(selected.statusCode, 200);
+          await page.evaluate(() =>
+            window.dispatchEvent(new Event('avatar-changed')),
+          );
+          await page
+            .getByRole('button', { name: '角色外观', exact: true })
+            .click();
+          await page.getByRole('button', { name: '衣柜', exact: true }).click();
+          await page.waitForFunction(() => {
+            const avatar = document.querySelector<HTMLCanvasElement>(
+              '.user-chip .skin-avatar',
+            );
+            const thumb = document.querySelector<HTMLCanvasElement>(
+              '.texture-card .texture-thumb',
+            );
+            return (
+              avatar?.getContext('2d')?.getImageData(0, 0, 1, 1).data[3] ===
+                255 &&
+              thumb?.getContext('2d')?.getImageData(thumb.width / 4, 0, 1, 1)
+                .data[3] === 255
+            );
+          });
+          const actual = await page.evaluate(() => {
+            const avatar = document.querySelector<HTMLCanvasElement>(
+              '.user-chip .skin-avatar',
+            )!;
+            const thumb = document.querySelector<HTMLCanvasElement>(
+              '.texture-card .texture-thumb',
+            )!;
+            return {
+              avatar: Array.from(
+                avatar.getContext('2d')!.getImageData(0, 0, 1, 1).data,
+              ),
+              thumbnail: Array.from(
+                thumb.getContext('2d')!.getImageData(thumb.width / 4, 0, 1, 1)
+                  .data,
+              ),
+            };
+          });
+          const matches = [actual.avatar, actual.thumbnail].every((pixel) =>
+            pixel.every((value, index) => value === color[index]),
+          );
+          passed &&= matches;
+          results.push({
+            name,
+            expected: color,
+            actual,
+            status: matches ? 'passed' : 'failed',
+          });
+          await shot(
+            name,
+            `${64 * scale} by ${height * scale} skin: ${opaque ? 'fully opaque input normalizes its head overlay to show the red face' : hat ? 'a transparent background preserves the blue head overlay' : 'transparent head overlay pixels reveal the red face'}`,
+          );
+        }
+        assert.deepEqual(errors, []);
+        await writeFile(
+          `${out}/skin-result.json`,
+          JSON.stringify(
+            {
+              status: passed ? 'passed' : 'failed',
+              scope: 'avatar',
+              cases: results,
+              screenshots: shots.length,
+              browserErrors: errors,
+              finishedAt: new Date().toISOString(),
+            },
+            null,
+            2,
+          ),
+        );
+        assert.ok(
+          passed,
+          `Avatar pixels differed from normalized skin expectations; see ${out}/skin-result.json`,
+        );
+        console.log(`PASS: avatar pixels, ${shots.length} screenshots`);
+        return;
+      }
+      assert.equal(await page.locator('.user-chip .skin-avatar').count(), 0);
+      await page
+        .getByRole('button', { name: '站内通知', exact: true })
+        .waitFor();
+      await page.getByRole('button', { name: '衣柜', exact: true }).click();
+      await page.getByText('管理材质', { exact: true }).click();
+      await page.getByLabel('名称', { exact: true }).fill('Campus face');
+      await page
+        .getByLabel('材质来源', { exact: true })
+        .selectOption('original');
+      await page.getByLabel('许可与署名', { exact: true }).fill('');
+      await page.getByLabel(/^标签/).fill('campus');
+      await page.getByLabel('公开到皮肤库', { exact: true }).check();
+      siteAdmins.splice(0);
+      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await page
+        .getByRole('alert')
+        .filter({ hasText: '站点尚未配置管理员，暂时无法公开材质' })
+        .waitFor();
+      siteAdmins.push(adminMe.id);
+      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await page.getByText('待审核', { exact: true }).waitFor();
+      await page.getByRole('button', { name: '站点管理', exact: true }).click();
+      await page.getByLabel('处理理由').fill('Private moderation note');
+      await page.getByRole('button', { name: '提交审核', exact: true }).click();
+      await page.getByText('没有待处理材质', { exact: true }).waitFor();
+      await page.getByLabel('公告标题').fill('Campus notice');
+      await page.getByLabel('公告内容').fill('Announcement refresh check');
+      await page.getByLabel('默认展开').check();
+      await page.getByRole('button', { name: '发布公告', exact: true }).click();
+      await page
+        .locator('.announcement summary')
+        .filter({ hasText: 'Campus notice' })
+        .waitFor();
+      assert.equal(
+        await page
+          .locator('.announcement .disclosure-trigger')
+          .evaluate((node) => getComputedStyle(node).listStyleType),
+        'none',
+      );
+      await shot(
+        'community-announcement-disclosure',
+        'Announcements use the shared disclosure trigger without the browser marker',
+      );
+      const { DatabaseSync } = await import('node:sqlite');
+      await page.getByRole('button', { name: '衣柜', exact: true }).click();
+      await page.getByText('管理材质', { exact: true }).click();
+      await page.getByRole('button', { name: '设为头像', exact: true }).click();
+      const avatarPixel = async (expected: number[]) => {
+        await page.waitForFunction((rgba: number[]) => {
+          const canvas = document.querySelector<HTMLCanvasElement>(
+            '.user-chip .skin-avatar',
+          );
+          const pixel = canvas?.getContext('2d')?.getImageData(0, 0, 1, 1).data;
+          return pixel && rgba.every((value, index) => pixel[index] === value);
+        }, expected);
+      };
+      await avatarPixel([20, 40, 240, 255]);
+      await page.waitForFunction(() => {
+        const canvas =
+          document.querySelector<HTMLCanvasElement>('.texture-thumb');
+        const pixel = canvas?.getContext('2d')?.getImageData(4, 0, 1, 1).data;
+        return (
+          pixel?.[0] === 20 &&
+          pixel[1] === 40 &&
+          pixel[2] === 240 &&
+          pixel[3] === 255
+        );
+      });
+      await shot(
+        'community-avatar-32-overlay',
+        'A 64 by 32 avatar and thumbnail retain the head overlay',
+      );
+      await uploadFace(64);
+      const modernEntry = (
+        await app.inject({ url: '/api/wardrobe', headers: adminHeaders })
+      )
+        .json()
+        .items.find((i: { id: string }) => i.id !== entry.id);
+      assert.ok(modernEntry);
+      const avatarChanged = await app.inject({
+        method: 'PUT',
+        url: '/api/me/avatar',
+        headers: adminHeaders,
+        payload: { item: modernEntry.id },
+      });
+      assert.equal(avatarChanged.statusCode, 200);
+      await page.evaluate(() =>
+        window.dispatchEvent(new Event('avatar-changed')),
+      );
+      await avatarPixel([20, 40, 240, 255]);
+      await shot(
+        'community-avatar-overlay',
+        'A 64 by 64 skin avatar includes its face overlay',
+      );
+
+      await page.getByRole('button', { name: /^站内通知/ }).click();
+      await page
+        .getByText('Private moderation note', { exact: false })
+        .waitFor();
+      assert.equal(
+        await page
+          .getByRole('navigation', { name: '通知分页', exact: true })
+          .count(),
+        0,
+      );
+      for (const width of [390, 1440]) {
+        await page.setViewportSize({ width, height: 1000 });
+        const layout = await page
+          .locator('.notification-row')
+          .first()
+          .evaluate((row) => {
+            const meta = row
+              .querySelector('.notice-meta')!
+              .getBoundingClientRect();
+            const action = row
+              .querySelector('.notice-action')!
+              .getBoundingClientRect();
+            const bounds = row.getBoundingClientRect();
+            return {
+              overlap:
+                meta.left < action.right &&
+                action.left < meta.right &&
+                meta.top < action.bottom &&
+                action.top < meta.bottom,
+              contained:
+                action.right <= bounds.right && action.left >= bounds.left,
+              overflow:
+                document.documentElement.scrollWidth > window.innerWidth,
+            };
+          });
+        assert.deepEqual(layout, {
+          overlap: false,
+          contained: true,
+          overflow: false,
+        });
+        await shot(
+          `community-notifications-${width}`,
+          'Notifications separate text, time, and action at this viewport',
+        );
+      }
+      await page.getByRole('button', { name: '标为已读', exact: true }).click();
+      await page
+        .getByRole('button', { name: '站内通知', exact: true })
+        .waitFor();
+      assert.equal(
+        await page.getByRole('button', { name: /^站内通知 · 0$/ }).count(),
+        0,
+      );
+      const noticesDb = new DatabaseSync(`${temp}/db`);
+      try {
+        const insert = noticesDb.prepare(
+          'INSERT INTO notifications(id,account,kind,item,title,detail,created_at) VALUES(?,?,?,?,?,?,?)',
+        );
+        for (let index = 0; index < TEXTURE_PAGE_SIZE; index++)
+          insert.run(
+            `notice-${index}`,
+            adminMe.id,
+            'like',
+            entry.id,
+            `Like notice ${index}`,
+            '',
+            Math.floor(Date.now() / 1000) + index,
+          );
+      } finally {
+        noticesDb.close();
+      }
+      await page.getByRole('button', { name: '衣柜', exact: true }).click();
+      await page.getByRole('button', { name: /^站内通知/ }).click();
+      await page
+        .getByRole('navigation', { name: '通知分页', exact: true })
+        .getByRole('button', { name: '下一页', exact: true })
+        .click();
+      await page
+        .getByText('Private moderation note', { exact: false })
+        .waitFor();
+      const noticePager = page.getByRole('navigation', {
+        name: '通知分页',
+        exact: true,
+      });
+      assert.equal(
+        await noticePager
+          .getByRole('button', { name: '上一页', exact: true })
+          .isEnabled(),
+        true,
+      );
+      assert.equal(
+        await noticePager
+          .getByRole('button', { name: '下一页', exact: true })
+          .isDisabled(),
+        true,
+      );
+      await noticePager
+        .getByRole('button', { name: '上一页', exact: true })
+        .click();
+      await page
+        .getByText(`Like notice ${TEXTURE_PAGE_SIZE - 1}`, { exact: true })
+        .waitFor();
+
+      await page.getByRole('button', { name: '皮肤库', exact: true }).click();
+      await page.locator('.texture-card').waitFor();
+      assert.equal(
+        await page
+          .locator('.texture-card')
+          .getByText('审核通过', { exact: true })
+          .count(),
+        0,
+      );
+      assert.equal(
+        await page
+          .locator('.texture-card')
+          .getByText('Private moderation note', { exact: false })
+          .count(),
+        0,
+      );
+      for (const width of [390, 1440]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await shot(
+          `community-library-card-${width}`,
+          'The public library uses the shared thumbnail, provenance, and count components',
+        );
+      }
+      await page.getByRole('link', { name: '详情与分享', exact: true }).click();
+      await page
+        .getByRole('heading', { name: 'Campus face', exact: true })
+        .waitFor();
+      assert.equal(
+        (await page.locator('.texture-provenance').innerText()).trim(),
+        '原创',
+      );
+      assert.equal(
+        await page
+          .getByRole('link', { name: '下载', exact: true })
+          .getAttribute('download'),
+        'Campus face.png',
+      );
+      assert.equal(
+        await page.getByText('审核通过', { exact: true }).count(),
+        0,
+      );
+      assert.equal(
+        await page.locator('.texture-counts').innerText(),
+        '下载量 · 0 · 收藏数 · 0 · 点赞 · 0',
+      );
+      for (const width of [390, 1440]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await shot(
+          `community-public-detail-${width}`,
+          'Public detail shares provenance and counts and retains the download filename',
+        );
+      }
+      await page
+        .locator('.author-row')
+        .getByRole('link', { name: adminAccount.name, exact: true })
+        .click();
+      await page
+        .locator('.wardrobe-grid .texture-card .texture-thumb')
+        .waitFor();
+      assert.equal(
+        await page.locator('.texture-card .texture-provenance').count(),
+        1,
+      );
+      assert.equal(
+        await page
+          .locator('.texture-card .status-pill')
+          .getByText('审核通过', { exact: true })
+          .count(),
+        0,
+      );
+      assert.equal(
+        await page.locator('.texture-card .texture-flat').count(),
+        0,
+      );
+      const authorGap = await page
+        .locator('.texture-card .author-row')
+        .evaluate((row) => parseFloat(getComputedStyle(row).columnGap));
+      assert.ok(authorGap > 0);
+      for (const width of [390, 1440]) {
+        await page.setViewportSize({ width, height: 1000 });
+        assert.equal(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth > window.innerWidth,
+          ),
+          false,
+        );
+        await shot(
+          `community-public-author-${width}`,
+          'Public author uses the same thumbnail, card, badges, and counts as the library',
+        );
+      }
+      assert.deepEqual(errors, []);
+      await writeFile(
+        `${out}/skin-result.json`,
+        JSON.stringify(
+          {
+            status: 'passed',
+            scope: 'community',
+            screenshots: shots.length,
+            browserErrors: errors,
+            finishedAt: new Date().toISOString(),
+          },
+          null,
+          2,
+        ),
+      );
+      console.log(`PASS: community recheck, ${shots.length} screenshots`);
+      return;
+    }
     const visible = async (text: string) =>
       page.getByText(text, { exact: true }).waitFor();
     await page.goto(`${address}/portal/`);
@@ -171,7 +687,49 @@ async function main() {
       .first()
       .click();
     await visible('操作已完成');
-    await shot('skin-13-publish', '为材质命名并公开到本站皮肤库');
+    await shot('skin-13-publish', 'Submit a texture for human review');
+    assert.equal(
+      (await app.inject({ url: '/api/library' })).json().items.length,
+      0,
+    );
+    const moderation = await browser.newPage({
+      viewport: { width: 1440, height: 1000 },
+    });
+    await moderation.goto(`${address}/portal/`);
+    await moderation
+      .getByLabel('学校邮箱', { exact: true })
+      .fill(adminAccount.email);
+    await moderation
+      .getByLabel('密码', { exact: true })
+      .fill(adminAccount.password);
+    await moderation.getByRole('button', { name: '登录', exact: true }).click();
+    await moderation
+      .getByRole('button', { name: '站点管理', exact: true })
+      .click();
+    await moderation
+      .getByLabel('处理理由')
+      .fill('Reviewed for campus publication');
+    await moderation
+      .getByRole('button', { name: '提交审核', exact: true })
+      .click();
+    await moderation.getByText('没有待处理材质', { exact: true }).waitFor();
+    await moderation.getByLabel('公告标题').fill('校园维护通知');
+    await moderation
+      .getByLabel('公告内容')
+      .fill('Maintenance announcement for launcher and web readers.');
+    await moderation.getByLabel('严重程度').selectOption('warning');
+    await moderation.getByLabel('默认展开').check();
+    await moderation
+      .getByRole('button', { name: '发布公告', exact: true })
+      .click();
+    await moderation
+      .getByRole('button', { name: '编辑公告', exact: true })
+      .waitFor();
+    await moderation.screenshot({
+      path: `${out}/community-admin.png`,
+      fullPage: true,
+    });
+    await moderation.close();
     await page.getByRole('button', { name: '皮肤库', exact: true }).click();
     await page
       .getByRole('heading', { name: '校园披风', exact: true })
@@ -179,8 +737,70 @@ async function main() {
     await shot('skin-14-library', '公开材质进入皮肤库，可以下载或收藏');
     // The publisher already owns it, so the library offers no second copy.
     await page.getByRole('button', { name: '已在衣柜', exact: true }).waitFor();
-    assert.equal(await page.getByRole('button', { name: '收藏到衣柜', exact: true }).count(), 0);
-    await shot('skin-15-collected', '自己公开的材质在皮肤库里显示「已在衣柜」，不会重复收藏');
+    assert.equal(
+      await page
+        .getByRole('button', { name: '收藏到衣柜', exact: true })
+        .count(),
+      0,
+    );
+    await shot(
+      'skin-15-collected',
+      'Own published items remain in the wardrobe',
+    );
+    await page.getByLabel('排序', { exact: true }).selectOption('downloads');
+    await page.getByLabel('学校', { exact: true }).selectOption('jlu');
+    await page.getByRole('link', { name: '详情与分享', exact: true }).click();
+    await page.getByRole('button', { name: '举报', exact: true }).waitFor();
+    await shot(
+      'community-detail',
+      'Open a shareable texture detail without losing the web session',
+    );
+    const deepLink = page.url();
+    const guest = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+    });
+    await guest.goto(deepLink);
+    await guest
+      .getByRole('heading', { name: '校园披风', exact: true })
+      .waitFor();
+    await guest.getByRole('link', { name: 'CampusGuide', exact: true }).click();
+    await guest
+      .getByRole('heading', { name: 'CampusGuide', exact: true })
+      .waitFor();
+    assert.ok(
+      await guest.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    );
+    await guest.screenshot({
+      path: `${out}/community-author-mobile.png`,
+      fullPage: true,
+    });
+    await guest.reload();
+    await guest
+      .getByRole('heading', { name: 'CampusGuide', exact: true })
+      .waitFor();
+    await guest.close();
+    await page.getByRole('button', { name: /^站内通知/ }).click();
+    await page.getByText('审核结果', { exact: true }).waitFor();
+    await shot(
+      'community-notifications',
+      'Review notifications belong to the uploading account',
+    );
+    await page.getByRole('button', { name: '衣柜', exact: true }).click();
+    const skinCard = page.locator('.texture-card').filter({
+      has: page.getByRole('heading', { name: '皮肤', exact: true }),
+    });
+    await skinCard.getByText('管理材质', { exact: true }).click();
+    await skinCard
+      .getByRole('button', { name: '设为头像', exact: true })
+      .click();
+    await visible('操作已完成');
+    await page.locator('.user-chip .skin-avatar').waitFor();
+    await shot(
+      'community-avatar',
+      'Choose a wardrobe skin for the site avatar',
+    );
     await page.getByRole('button', { name: '角色外观', exact: true }).click();
     await page.getByAltText('当前皮肤材质').waitFor();
     await page.setViewportSize({ width: 390, height: 844 });

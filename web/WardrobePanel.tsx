@@ -1,20 +1,17 @@
 import {
-  MAX_TAGS,
-  MAX_TAG_LENGTH,
+  MAX_SEARCH_LENGTH,
   TEXTURE_PAGE_SIZE,
   type LibrarySort,
   type TextureItem,
   type TextureKind,
 } from '../shared/wardrobe';
-import React, { useEffect, useMemo, useState } from 'react';
-import { apiRequest } from './api';
+import { ReportButton } from './CommunityPanel';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { apiRequest, errorText } from './api';
 import { t, tf } from './i18n';
-import { TextureThumb } from './TextureThumb';
-import {
-  TextureDialog,
-  textureSrc,
-  textureTitle,
-} from './TextureDialog';
+import { TextureCard } from './TextureCard';
+import { TextureDialog, textureSrc, textureTitle } from './TextureDialog';
+import { TextureEditorDrawer } from './TextureEditor';
 
 type KindFilter = 'all' | TextureKind;
 const KIND_FILTERS: KindFilter[] = ['all', 'skin', 'cape'];
@@ -24,10 +21,28 @@ const KIND_FILTER_LABELS: Record<KindFilter, string> = {
   cape: t('披风'),
 };
 
-const SORTS: LibrarySort[] = ['new', 'likes'];
+const SORTS: LibrarySort[] = ['new', 'likes', 'downloads', 'saves'];
 const SORT_LABELS: Record<LibrarySort, string> = {
+  downloads: t('下载排行'),
+  saves: t('收藏排行'),
   new: t('最新'),
   likes: t('最多点赞'),
+};
+export type LibraryViewState = {
+  search: string;
+  kind: KindFilter;
+  school: string;
+  sort: LibrarySort;
+  tag: string;
+  offset: number;
+};
+const DEFAULT_VIEW: LibraryViewState = {
+  search: '',
+  kind: 'all',
+  school: '',
+  sort: 'new',
+  tag: '',
+  offset: 0,
 };
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -37,12 +52,16 @@ export function WardrobePanel({
   notify,
   onRequireLogin,
   onBrowseUpload,
+  initialState = DEFAULT_VIEW,
+  onStateChange,
 }: {
   token?: string;
   library: boolean;
   notify: (message: string, kind: 'success' | 'error') => void;
   onRequireLogin?: () => void;
   onBrowseUpload?: () => void;
+  initialState?: LibraryViewState;
+  onStateChange?: (state: LibraryViewState) => void;
 }) {
   const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
   const [profileId, setProfileId] = useState('');
@@ -50,19 +69,23 @@ export function WardrobePanel({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const [offset, setOffset] = useState(0);
-  const [search, setSearch] = useState('');
-  const [kind, setKind] = useState<KindFilter>('all');
-  const [sort, setSort] = useState<LibrarySort>('new');
-  const [tag, setTag] = useState('');
+  const [offset, setOffset] = useState(initialState.offset);
+  const [search, setSearch] = useState(initialState.search);
+  const [kind, setKind] = useState<KindFilter>(initialState.kind);
+  const [school, setSchool] = useState(initialState.school);
+  const [schools, setSchools] = useState<string[]>([]);
+  const [sort, setSort] = useState<LibrarySort>(initialState.sort);
+  const [tag, setTag] = useState(initialState.tag);
   const [popularTags, setPopularTags] = useState<
     { tag: string; count: number }[]
   >([]);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialState.search.trim());
   const [open, setOpen] = useState<TextureItem | null>(null);
+  const [editing, setEditing] = useState<TextureItem | null>(null);
 
   async function refresh() {
     const params = new URLSearchParams({ offset: String(offset), sort });
+    if (school) params.set('school', school);
     if (query) params.set('q', query);
     if (tag) params.set('tag', tag);
     if (kind !== 'all') params.set('kind', kind);
@@ -75,6 +98,11 @@ export function WardrobePanel({
     setItems(response.items);
     setFailed(false);
   }
+  useEffect(() => {
+    void apiRequest('/api/capabilities')
+      .then((r) => setSchools(r.schools.map((s: { id: string }) => s.id)))
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     if (!library && token)
       void apiRequest('/api/players', { token })
@@ -90,16 +118,23 @@ export function WardrobePanel({
     );
     return () => window.clearTimeout(timer);
   }, [search]);
+  const previousFilters = useRef([query, kind, tag, sort, school]);
   useEffect(() => {
-    setOffset(0);
-  }, [query, kind, tag, sort]);
+    const next = [query, kind, tag, sort, school];
+    if (next.some((value, index) => value !== previousFilters.current[index]))
+      setOffset(0);
+    previousFilters.current = next;
+  }, [query, kind, tag, sort, school]);
+  useEffect(() => {
+    onStateChange?.({ search, kind, school, sort, tag, offset });
+  }, [search, kind, school, sort, tag, offset, onStateChange]);
   useEffect(() => {
     if (library)
       void apiRequest('/api/library/tags')
         .then((data) => setPopularTags(data.tags))
         .catch(() => setPopularTags([]));
   }, [library]);
-  const serverFilters = library ? [query, kind, tag, sort] : [];
+  const serverFilters = library ? [query, kind, tag, sort, school] : [];
   useEffect(() => {
     setLoading(true);
     void refresh()
@@ -113,8 +148,8 @@ export function WardrobePanel({
       await refresh();
       setOpen(null);
       notify(t('操作已完成'), 'success');
-    } catch {
-      notify(t('操作失败，请重试'), 'error');
+    } catch (error) {
+      notify(errorText(error), 'error');
     } finally {
       setBusy(false);
     }
@@ -131,8 +166,12 @@ export function WardrobePanel({
     );
   }, [items, library, search, kind]);
   const filtering =
-    search.trim() !== '' || kind !== 'all' || tag !== '';
+    search.trim() !== '' || kind !== 'all' || tag !== '' || school !== '';
   const page = Math.floor(offset / TEXTURE_PAGE_SIZE) + 1;
+
+  const currentProfile = profiles.find(
+    (profile) => profile.id === (profileId || profiles[0]?.id),
+  );
 
   function primaryAction(item: TextureItem) {
     if (library && !token)
@@ -151,10 +190,16 @@ export function WardrobePanel({
           {t('已在衣柜')}
         </button>
       );
+    if (!library && item.applied === 1)
+      return (
+        <button className="btn btn--secondary" type="button" disabled>
+          {t('当前角色正在使用')}
+        </button>
+      );
     return (
       <button
         className="btn btn--primary"
-        disabled={busy || (!library && item.applied === 1)}
+        disabled={busy}
         onClick={() =>
           void action(() =>
             apiRequest(
@@ -172,7 +217,7 @@ export function WardrobePanel({
           )
         }
       >
-        {library ? t('收藏到衣柜') : t('使用')}
+        {library ? t('收藏到衣柜') : t('穿戴到当前角色')}
       </button>
     );
   }
@@ -212,24 +257,71 @@ export function WardrobePanel({
             : t('你上传或收藏的材质都在这里，选择后即可应用到角色。')}
         </p>
       </div>
+      {!library && (
+        <div className="wear-target" aria-live="polite">
+          <span className="wear-target-avatar" aria-hidden="true">
+            {currentProfile ? currentProfile.name.slice(0, 1).toUpperCase() : '—'}
+          </span>
+          <span className="wear-target-text">
+            <span className="wear-target-label">{t('当前穿戴目标角色')}</span>
+            <span className="wear-target-name">
+              {currentProfile?.name ?? t('尚未创建角色')}
+            </span>
+          </span>
+          <label className="field-label wear-target-switch">
+            {t('切换目标角色')}
+            <select
+              aria-label={t('切换目标角色')}
+              className="input"
+              value={profileId || profiles[0]?.id || ''}
+              disabled={busy || loading || !profiles.length}
+              onChange={(e) => setProfileId(e.target.value)}
+            >
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
       <div className="filter-bar">
         <label className="field-label filter-search">
           {t('搜索名称')}
           <input
             className="input"
             type="search"
+            maxLength={MAX_SEARCH_LENGTH}
             value={search}
-            placeholder={
-              library ? t('输入名称关键字') : t('在当前页中查找')
-            }
+            placeholder={library ? t('输入名称关键字') : t('在当前页中查找')}
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
+        {library && (
+          <label className="field-label">
+            {t('学校')}
+            <select
+              className="input"
+              aria-label={t('学校')}
+              value={school}
+              onChange={(e) => setSchool(e.target.value)}
+            >
+              <option value="">{t('全部学校')}</option>
+              {schools.map((id) => (
+                <option key={id} value={id}>
+                  {id.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {library && (
           <label className="field-label filter-source">
             {t('排序')}
             <select
               className="input"
+              aria-label={t('排序')}
               value={sort}
               onChange={(e) => setSort(e.target.value as LibrarySort)}
             >
@@ -254,27 +346,13 @@ export function WardrobePanel({
             </button>
           ))}
         </div>
-        {!library && profiles.length > 1 && (
-          <label className="field-label filter-source">
-            {t('使用到角色')}
-            <select
-              aria-label={t('使用到角色')}
-              className="input"
-              value={profileId || profiles[0].id}
-              disabled={busy || loading}
-              onChange={(e) => setProfileId(e.target.value)}
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
       </div>
       {library && (popularTags.length > 0 || tag) && (
-        <div className="chip-group tag-bar" role="group" aria-label={t('热门标签')}>
+        <div
+          className="chip-group tag-bar"
+          role="group"
+          aria-label={t('热门标签')}
+        >
           {tag && !popularTags.some((p) => p.tag === tag) && (
             <button
               type="button"
@@ -303,7 +381,9 @@ export function WardrobePanel({
           {t('正在加载…')}
         </p>
       ) : failed ? (
-        <p role="alert">{t('无法加载，请刷新重试')}</p>
+        <p className="msg msg--error" role="alert">
+          {t('无法加载，请刷新重试')}
+        </p>
       ) : items.length === 0 && !filtering ? (
         <div className="empty-state">
           <p className="section-hint">
@@ -334,6 +414,7 @@ export function WardrobePanel({
                 setSearch('');
                 setKind('all');
                 setTag('');
+                setSchool('');
               }}
             >
               {t('清除筛选')}
@@ -343,39 +424,12 @@ export function WardrobePanel({
       ) : (
         <div className="wardrobe-grid">
           {shown.map((item) => (
-            <article
-              className="texture-card"
+            <TextureCard
               key={item.id}
+              item={item}
+              library={library}
+              onOpen={() => setOpen(item)}
             >
-              <button
-                type="button"
-                className="thumb-button"
-                aria-label={tf('查看详情：{title}', { title: textureTitle(item) })}
-                onClick={() => setOpen(item)}
-              >
-                <TextureThumb
-                  url={textureSrc(item)}
-                  kind={item.kind}
-                  slim={item.model === 'slim'}
-                  label={textureTitle(item)}
-                />
-              </button>
-              <h3 className="texture-title">{textureTitle(item)}</h3>
-              <p className="badge-row">
-                <span className="status-pill">
-                  {item.kind === 'skin' ? t('皮肤') : t('披风')}
-                </span>
-                {item.kind === 'skin' && item.model === 'slim' && (
-                  <span className="status-pill status-pill--neutral">
-                    {t('纤细')}
-                  </span>
-                )}
-                {!library && item.published === 1 && (
-                  <span className="status-pill status-pill--neutral">
-                    {t('已公开')}
-                  </span>
-                )}
-              </p>
               {(item.tags?.length ?? 0) > 0 && (
                 <p className="badge-row">
                   {item.tags?.map((name) => (
@@ -391,124 +445,95 @@ export function WardrobePanel({
                   ))}
                 </p>
               )}
-              {item.applied === 1 && (
-                <p className="section-hint">{t('正在使用')}</p>
-              )}
               <div className="actions">
                 {primaryAction(item)}
                 {likeControl(item)}
                 <a
                   className="btn btn--secondary"
-                  href={textureSrc(item)}
+                  href={
+                    library
+                      ? `/api/library/${item.id}/download`
+                      : textureSrc(item)
+                  }
                   download={`${textureTitle(item)}.png`}
                 >
                   {t('下载')}
                 </a>
               </div>
               {!library && (
-                <details className="wardrobe-edit">
-                  <summary className="wardrobe-edit-trigger">
-                    {t('管理材质')}
-                  </summary>
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      const form = new FormData(event.currentTarget);
-                      void action(() =>
-                        apiRequest(`/api/wardrobe/${item.id}`, {
-                          method: 'PATCH',
-                          token,
-                          body: {
-                            title: form.get('title'),
-                            published: form.get('published') === 'on',
-                            tags: String(form.get('tags') ?? '')
-                              .split(/[,，\s]+/)
-                              .filter(Boolean),
-                          },
-                        }),
-                      );
-                    }}
-                  >
-                    <label className="field-label">
-                      {t('名称')}
-                      <input
-                        className="input"
-                        name="title"
-                        maxLength={80}
-                        defaultValue={item.title}
-                        disabled={busy}
-                      />
-                    </label>
-                    <label className="field-label">
-                      {tf('标签（最多 {max} 个，用空格或逗号分隔）', {
-                        max: MAX_TAGS,
-                      })}
-                      <input
-                        className="input"
-                        name="tags"
-                        defaultValue={item.tags?.join(' ')}
-                        maxLength={MAX_TAGS * (MAX_TAG_LENGTH + 1)}
-                        disabled={busy}
-                      />
-                    </label>
-                    <label className="wardrobe-publish">
-                      <input
-                        name="published"
-                        type="checkbox"
-                        defaultChecked={item.published === 1}
-                        disabled={busy}
-                      />
-                      {t('公开到皮肤库')}
-                    </label>
-                    <div className="actions">
-                      <button className="btn btn--secondary" disabled={busy}>
-                        {t('保存')}
-                      </button>
-                      <button
-                        className="btn btn--link"
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          if (window.confirm(t('从衣柜移除此材质？')))
-                            void action(() =>
-                              apiRequest(`/api/wardrobe/${item.id}`, {
-                                method: 'DELETE',
-                                token,
-                              }),
-                            );
-                        }}
-                      >
-                        {t('从衣柜移除')}
-                      </button>
-                    </div>
-                  </form>
-                </details>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  disabled={busy}
+                  onClick={() => setEditing(item)}
+                >
+                  {t('管理材质')}
+                </button>
               )}
-            </article>
+            </TextureCard>
           ))}
         </div>
       )}
-      <nav className="pager" aria-label={t('分页')}>
-        <button
-          className="btn btn--secondary"
-          disabled={busy || loading || offset === 0}
-          onClick={() =>
-            setOffset((value) => Math.max(0, value - TEXTURE_PAGE_SIZE))
+      {(offset > 0 || items.length >= TEXTURE_PAGE_SIZE) && (
+        <nav className="pager" aria-label={t('分页')}>
+          <button
+            className="btn btn--secondary"
+            disabled={busy || loading || offset === 0}
+            onClick={() =>
+              setOffset((value) => Math.max(0, value - TEXTURE_PAGE_SIZE))
+            }
+          >
+            {t('上一页')}
+          </button>
+          <span className="pager-state" aria-current="page">
+            {tf('第 {page} 页', { page })}
+          </span>
+          <button
+            className="btn btn--secondary"
+            disabled={busy || loading || items.length < TEXTURE_PAGE_SIZE}
+            onClick={() => setOffset((value) => value + TEXTURE_PAGE_SIZE)}
+          >
+            {t('下一页')}
+          </button>
+        </nav>
+      )}
+      {editing && (
+        <TextureEditorDrawer
+          key={editing.id}
+          item={editing}
+          busy={busy}
+          onClose={() => setEditing(null)}
+          onSave={(input) =>
+            void action(async () => {
+              await apiRequest(`/api/wardrobe/${editing.id}`, {
+                method: 'PATCH',
+                token,
+                body: input,
+              });
+              setEditing(null);
+            })
           }
-        >
-          {t('上一页')}
-        </button>
-        <span className="pager-state" aria-current="page">
-          {tf('第 {page} 页', { page })}
-        </span>
-        <button
-          className="btn btn--secondary"
-          disabled={busy || loading || items.length < TEXTURE_PAGE_SIZE}
-          onClick={() => setOffset((value) => value + TEXTURE_PAGE_SIZE)}
-        >
-          {t('下一页')}
-        </button>
-      </nav>
+          onSetAvatar={() =>
+            void action(async () => {
+              await apiRequest('/api/me/avatar', {
+                method: 'PUT',
+                token,
+                body: { item: editing.id },
+              });
+              window.dispatchEvent(new Event('avatar-changed'));
+            })
+          }
+          onRemove={() =>
+            void action(async () => {
+              await apiRequest(`/api/wardrobe/${editing.id}`, {
+                method: 'DELETE',
+                token,
+              });
+              setEditing(null);
+            })
+          }
+        />
+      )}
       {open && (
         <TextureDialog
           item={open}
@@ -516,6 +541,18 @@ export function WardrobePanel({
             <>
               {primaryAction(open)}
               {likeControl(open)}
+              {library && token && (
+                <ReportButton
+                  busy={busy}
+                  onReport={async (reason) => {
+                    await apiRequest(`/api/library/${open.id}/report`, {
+                      method: 'POST',
+                      token,
+                      body: { reason },
+                    });
+                  }}
+                />
+              )}
             </>
           }
           onClose={() => setOpen(null)}

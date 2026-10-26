@@ -26,6 +26,7 @@
     "pngjs": "^7.0.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "skinview-utils": "^0.7.1",
     "skinview3d": "^3.4.2"
   },
   "devDependencies": {

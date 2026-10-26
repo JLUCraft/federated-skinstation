@@ -41,7 +41,14 @@ export async function apiRequest(
     headers,
     ...(payload === undefined ? {} : { body: payload }),
   });
-  if (!response.ok) throw new ApiError(errorMessage, response.status);
+  if (!response.ok) {
+    const failure = await response.json().catch(() => null);
+    const message =
+      failure?.errorMessage === 'Publication requires a site administrator'
+        ? t('站点尚未配置管理员，暂时无法公开材质')
+        : errorMessage;
+    throw new ApiError(message, response.status);
+  }
   return response.status === 204 ? {} : response.json();
 }
 

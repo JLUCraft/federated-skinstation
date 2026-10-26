@@ -19,6 +19,8 @@ export function DevicePanel({
   const [valid, setValid] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<'approved' | 'denied' | null>(null);
+  const profileLabel =
+    profiles.find((profile) => profile.id === profileId)?.name ?? '';
   useEffect(() => {
     let active = true;
     void Promise.all([
@@ -70,7 +72,11 @@ export function DevicePanel({
           {t('正在加载…')}
         </p>
       )}
-      {valid === false && <p role="alert">{t('授权码无效或已过期，请回到启动器重新获取。')}</p>}
+      {valid === false && (
+        <p className="msg msg--error" role="alert">
+          {t('授权码无效或已过期，请回到启动器重新获取。')}
+        </p>
+      )}
       {result && (
         <>
           <p className="msg msg--success" role="status">
@@ -90,28 +96,35 @@ export function DevicePanel({
           <p className="device-code" aria-label={t('授权码')}>
             {userCode}
           </p>
-          {profiles.length === 1 && (
-            <p className="section-hint">
-              {tf('将使用角色：{name}', { name: profiles[0].name })}
-            </p>
-          )}
-          {profiles.length > 1 && (
-            <label className="field-label">
-              {t('登录使用的角色')}
-              <select
-                className="input"
-                value={profileId}
-                disabled={busy}
-                onChange={(e) => setProfileId(e.target.value)}
-              >
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <div className="device-role-card">
+            <span className="device-role-avatar" aria-hidden="true">
+              {profileLabel.slice(0, 1).toUpperCase() || '—'}
+            </span>
+            <span className="device-role-text">
+              <span className="device-role-label">{t('将使用角色')}</span>
+              <span className="device-role-name">
+                {profileLabel || t('尚未创建角色')}
+              </span>
+            </span>
+            {profiles.length > 1 && (
+              <label className="field-label device-role-switch">
+                {t('切换角色')}
+                <select
+                  aria-label={t('切换角色')}
+                  className="input"
+                  value={profileId}
+                  disabled={busy}
+                  onChange={(e) => setProfileId(e.target.value)}
+                >
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
           <div className="actions">
             <button
               className="btn btn--primary"

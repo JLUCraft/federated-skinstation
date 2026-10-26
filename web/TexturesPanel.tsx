@@ -1,4 +1,4 @@
-import { t } from './i18n';
+import { t, tf } from './i18n';
 import React, { useEffect, useState } from 'react';
 import { SkinPreview } from './SkinPreview';
 import { MAX_PROFILES, type GameProfile } from '../shared/profiles';
@@ -18,12 +18,14 @@ export function TexturesPanel({
     (GameProfile & { textures: Texture[] })[]
   >([]);
   const [newName, setNewName] = useState('');
+  const [renameName, setRenameName] = useState('');
   const [editing, setEditing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [textures, setTextures] = useState<Texture[]>([]);
   const [model, setModel] = useState('default');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const currentProfile = players.find((p) => p.id === profile);
 
   async function refresh() {
     const value = await apiRequest('/api/me', {
@@ -75,7 +77,7 @@ export function TexturesPanel({
     }
   }
 
-  async function manage(method: 'POST' | 'PATCH' | 'DELETE') {
+  async function manage(method: 'POST' | 'PATCH' | 'DELETE', name?: string) {
     setBusy(true);
     try {
       await apiRequest(
@@ -83,10 +85,14 @@ export function TexturesPanel({
         {
           method,
           token,
-          body: method === 'DELETE' ? undefined : { name: newName },
+          body:
+            method === 'DELETE'
+              ? undefined
+              : { name: name ?? newName },
         },
       );
       setNewName('');
+      setRenameName('');
       setEditing(false);
       await refresh();
       notify(t('操作已完成'), 'success');
@@ -102,24 +108,18 @@ export function TexturesPanel({
       aria-labelledby="textures-title"
       aria-busy={loading}
     >
-      <div className="section-head">
-        <h2 className="section-title" id="textures-title">
-          {t('角色外观')}
-        </h2>
-        <p className="section-hint">
-          {t(
-            '皮肤支持 64×32、64×64 及等比例 PNG；披风支持 64×32 或 22×17 及等比例 PNG。文件不超过 1 MB。',
-          )}
-        </p>
-      </div>
-      {loading && (
-        <p className="loading-note" role="status">
-          {t('正在加载角色外观…')}
-        </p>
-      )}
-      {failed && <p role="alert">{t('无法加载，请刷新重试')}</p>}
-      {!loading && !failed && (
-        <>
+      <div className="section-head section-head--row">
+        <div>
+          <h2 className="section-title" id="textures-title">
+            {t('角色外观')}
+          </h2>
+          <p className="section-hint">
+            {t(
+              '皮肤支持 64×32、64×64 及等比例 PNG；披风支持 64×32 或 22×17 及等比例 PNG。文件不超过 1 MB。',
+            )}
+          </p>
+        </div>
+        {!loading && !failed && (
           <div className="profile-toolbar">
             <label className="field-label">
               {t('当前角色')}
@@ -148,14 +148,31 @@ export function TexturesPanel({
             </label>
             <button
               className="btn btn--secondary"
+              aria-expanded={editing}
+              aria-controls="profile-editor"
               onClick={() => setEditing(!editing)}
               disabled={busy}
             >
-              {t('管理角色')}
+              {t('新建角色')}
             </button>
           </div>
+        )}
+      </div>
+      {loading && (
+        <p className="loading-note" role="status">
+          {t('正在加载角色外观…')}
+        </p>
+      )}
+      {failed && (
+        <p className="msg msg--error" role="alert">
+          {t('无法加载，请刷新重试')}
+        </p>
+      )}
+      {!loading && !failed && (
+        <>
           {editing && (
             <form
+              id="profile-editor"
               className="profile-editor"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -171,6 +188,7 @@ export function TexturesPanel({
                   maxLength={16}
                   pattern="[A-Za-z0-9_]+"
                   required
+                  autoFocus
                   disabled={busy}
                 />
               </label>
@@ -181,110 +199,160 @@ export function TexturesPanel({
                 >
                   {t('添加角色')}
                 </button>
-                {!players.find((p) => p.id === profile)?.primary && (
-                  <>
-                    <button
-                      type="button"
-                      className="btn btn--secondary"
-                      disabled={busy || !newName}
-                      onClick={() => void manage('PATCH')}
-                    >
-                      {t('重命名')}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--secondary"
-                      disabled={busy}
-                      onClick={() => {
-                        if (window.confirm(t('删除此角色及其外观设置？')))
-                          void manage('DELETE');
-                      }}
-                    >
-                      {t('删除角色')}
-                    </button>
-                  </>
-                )}
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setNewName('');
+                    setEditing(false);
+                  }}
+                >
+                  {t('取消')}
+                </button>
               </div>
+              {currentProfile && !currentProfile.primary && (
+                <div className="subsection">
+                  <h3 className="subsection-title">
+                    {tf('管理角色：{name}', { name: currentProfile.name })}
+                  </h3>
+                  <div className="profile-editor-rename">
+                    <label className="field-label">
+                      {t('新角色名称')}
+                      <input
+                        className="input"
+                        value={renameName}
+                        onChange={(e) => setRenameName(e.target.value)}
+                        maxLength={16}
+                        pattern="[A-Za-z0-9_]+"
+                        placeholder={currentProfile.name}
+                        disabled={busy}
+                      />
+                    </label>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="btn btn--secondary"
+                        disabled={busy || !renameName}
+                        onClick={() => void manage('PATCH', renameName)}
+                      >
+                        {t('重命名')}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--danger"
+                        disabled={busy}
+                        onClick={() => {
+                          if (window.confirm(t('删除此角色及其外观设置？')))
+                            void manage('DELETE');
+                        }}
+                      >
+                        {t('删除角色')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </form>
           )}
-          <SkinPreview textures={textures} />
-          <div className="texture-grid">
+          <div className="textures-workbench">
+            <div className="workbench-stage">
+              <SkinPreview textures={textures} />
+            </div>
+            <div className="texture-grid">
             {(['skin', 'cape'] as TextureKind[]).map((kind) => {
               const current = textures.find((t) => t.kind === kind);
               return (
                 <div key={kind} className="texture-card">
-                  <h3 className="texture-title">
-                    {kind === 'skin' ? t('皮肤') : t('披风')}
-                  </h3>
-                  {current ? (
-                    <img
-                      className={`texture-preview texture-preview--${kind}`}
-                      src={`/textures/${current.hash}`}
-                      alt={
-                        kind === 'skin' ? t('当前皮肤材质') : t('当前披风材质')
-                      }
-                    />
-                  ) : (
-                    <div
-                      className={`texture-preview texture-preview--${kind} texture-preview--empty`}
-                    >
-                      <p className="section-hint">{t('尚未设置')}</p>
-                    </div>
-                  )}
-                  {kind === 'skin' && (
-                    <label className="field-label">
-                      {t('手臂模型')}
-                      <select
-                        className="input"
-                        value={model}
-                        disabled={busy}
-                        onChange={(e) => setModel(e.target.value)}
+                  <div className="texture-card-head">
+                    <h3 className="texture-title">
+                      {kind === 'skin' ? t('皮肤') : t('披风')}
+                    </h3>
+                    <div className="texture-card-head-actions">
+                      <span
+                        className={`status-pill ${current ? 'status-pill--active' : 'status-pill--neutral'}`}
                       >
-                        <option value="default">{t('标准')}</option>
-                        <option value="slim">{t('纤细')}</option>
-                      </select>
-                    </label>
-                  )}
-                  <div className="actions">
-                    <label
-                      className={`btn upload-btn${busy || !profile ? ' upload-btn--disabled' : ''}`}
-                    >
-                      {kind === 'skin' ? t('上传皮肤') : t('上传披风')}
-                      <input
-                        className="upload-btn-input"
-                        type="file"
-                        accept="image/png"
-                        disabled={busy || !profile}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) void change(kind, file);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                    {current && (
-                      <button
-                        type="button"
-                        className="btn btn--secondary"
-                        disabled={busy}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              kind === 'skin'
-                                ? t('移除当前皮肤？')
-                                : t('移除当前披风？'),
+                        {current ? t('已设置') : t('尚未设置')}
+                      </span>
+                      {current && (
+                        <button
+                          type="button"
+                          className="btn btn--danger texture-card-remove"
+                          disabled={busy}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                kind === 'skin'
+                                  ? t('移除当前皮肤？')
+                                  : t('移除当前披风？'),
+                              )
                             )
-                          )
-                            void change(kind);
-                        }}
-                      >
-                        {t('移除')}
-                      </button>
-                    )}
+                              void change(kind);
+                          }}
+                        >
+                          {t('移除')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="texture-card-body">
+                    <div className="texture-card-media">
+                      {current ? (
+                        <img
+                          className={`texture-preview texture-preview--${kind}`}
+                          src={`/textures/${current.hash}`}
+                          alt={
+                            kind === 'skin'
+                              ? t('当前皮肤材质')
+                              : t('当前披风材质')
+                          }
+                        />
+                      ) : (
+                        <div
+                          className={`texture-preview texture-preview--${kind} texture-preview--empty`}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+                    <div className="texture-card-controls">
+                      {kind === 'skin' && (
+                        <label className="field-label">
+                          {t('手臂模型')}
+                          <select
+                            className="input"
+                            value={model}
+                            disabled={busy}
+                            onChange={(e) => setModel(e.target.value)}
+                          >
+                            <option value="default">{t('标准')}</option>
+                            <option value="slim">{t('纤细')}</option>
+                          </select>
+                        </label>
+                      )}
+                      <div className="actions">
+                        <label
+                          className={`btn upload-btn${busy || !profile ? ' upload-btn--disabled' : ''}`}
+                        >
+                          {kind === 'skin' ? t('上传皮肤') : t('上传披风')}
+                          <input
+                            className="upload-btn-input"
+                            type="file"
+                            accept="image/png"
+                            disabled={busy || !profile}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) void change(kind, file);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
             })}
+            </div>
           </div>
         </>
       )}

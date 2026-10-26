@@ -146,7 +146,7 @@ export async function registerMemberFeatures(
   db.db
     .exec(`CREATE TABLE IF NOT EXISTS mua_subjects(uid INTEGER PRIMARY KEY AUTOINCREMENT,account TEXT UNIQUE NOT NULL REFERENCES accounts(id));
     CREATE TABLE IF NOT EXISTS mua_provider_requests(ticket TEXT PRIMARY KEY,query TEXT NOT NULL,expires INTEGER NOT NULL);`);
-  app.get('/api/union/member/oauth2', async (_req, reply) => {
+  app.get('/api/union/member/oauth2/', async (_req, reply) => {
     reply
       .header('Access-Control-Allow-Origin', allowedOrigin)
       .header('Vary', 'Origin');

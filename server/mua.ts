@@ -159,12 +159,12 @@ export async function registerMua(
     if (response.status === 204) return {};
     return boundedValue(response);
   };
-  app.get('/api/union/member', async (_req, reply) => {
+  app.get('/api/union/member/', async (_req, reply) => {
     reply.header('Access-Control-Allow-Origin', '*');
     return {
       yggdrasilApiVersion: 'jlucraft-0.2.0',
-      serverListVersion: stored('serverListVersion') ?? null,
-      privateKeyVersion: stored('privateKeyVersion') ?? null,
+      serverListVersion: stored('serverListVersion') ?? '0',
+      privateKeyVersion: stored('privateKeyVersion') ?? '0',
       enabledFeatures: [
         'emailVerification',
         ...(config.member ? ['unionBlacklist'] : []),
@@ -262,7 +262,7 @@ export async function registerMua(
     if (config.member) {
       scope.get('/api/union/member/queryemail', async (req, reply) => {
         const query = record(req.query);
-        const account = db.account('name', field(query.username, 16));
+        const account = db.profileNamed(field(query.username, 16))?.account;
         return account ? { email: account.email } : reply.code(204).send();
       });
       scope.post('/api/union/member/updatebackendkey', async (req, reply) => {

@@ -91,6 +91,9 @@ test('signed MUA member control rotates scoped keys, syncs profiles and remaps U
   assert.equal((await command('updatebackendkey',{key:'rotated-member-secret'})).statusCode,204);
   assert.equal((await command('updatelist',{})).statusCode,204);
   assert.equal((await command('updateprivatekey',{})).statusCode,204);
+  const metadata=(await app.inject('/api/union/member/')).json();
+  assert.equal(metadata.serverListVersion,'2');
+  assert.equal(metadata.privateKeyVersion,'3');
   assert.equal((await app.inject('/')).json().signaturePublickey,texture.publicKey.export({type:'spki',format:'pem'}).toString());
   assert.equal((await command('sync',{})).statusCode,204);
   assert.deepEqual(synced,{profileList:{[old.selectedProfile.id]:'MuaTest'}});

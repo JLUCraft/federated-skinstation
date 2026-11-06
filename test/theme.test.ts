@@ -25,11 +25,8 @@ function declared(css: string): Set<string> {
   );
 }
 
-test('tokens.css 是生成文件，且包含两套模式与完整语义令牌', () => {
-  assert.ok(
-    TOKENS.includes('生成文件，请勿手改'),
-    'tokens.css 必须标明是生成物',
-  );
+test('tokens.css 是静态品牌令牌，且包含两套模式与完整语义令牌', () => {
+  assert.match(TOKENS, /^\/\* 静态品牌令牌/);
   assert.ok(TOKENS.includes('@media (prefers-color-scheme: dark)'));
   for (const token of [
     'bg',

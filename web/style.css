@@ -1,8 +1,8 @@
 :root {
-  /* 颜色来自品牌令牌（web/tokens.css，由 brand-palette 从校徽生成）。这里只保留
+  /* 颜色来自静态品牌令牌 web/tokens.css，原生成器已移除。这里只保留
      站内既有类名到语义令牌的映射与站内派生令牌，不再手写色值；深浅模式由令牌自己切换。
      尺寸类令牌（--space-*、--radius-*、--text-*、--focus-ring*、--touch-target、
-     --content-max、--page-max）由生成文件提供，本文件不再重复声明。 */
+     --content-max、--page-max）由静态令牌文件提供，本文件不再重复声明。 */
   --green-900: var(--brand-900);
   --green-700: var(--primary);
   --green-600: var(--primary-hover);

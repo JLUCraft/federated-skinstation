@@ -32,6 +32,7 @@ const VERSION = createRequire(import.meta.url)('../package.json')
   .version as string;
 import { type School } from './school.js';
 import {
+  GAME_PROFILE,
   identityProposal,
   confirmIdentity,
   authorizeAccount,
@@ -594,8 +595,8 @@ export async function build(
     const record = obj(req.body).record;
     const action = obj(obj(record).action);
     const profileId =
-      action.type === 'bind_game_profile'
-        ? db.ownProfile(account, text(action.profile, 32)).id
+      action.type === 'bind_attribute' && action.kind === GAME_PROFILE
+        ? db.ownProfile(account, text(action.value, 32)).id
         : db.profileId(account);
     return confirmIdentity(db, account, school, record, profileId);
   });

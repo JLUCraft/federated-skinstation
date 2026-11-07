@@ -5,6 +5,7 @@ import { Rejected, requireThat, type Account, type Store } from './store.js';
 import { record, field } from './validate.js';
 import type { School } from './school.js';
 const MAX_OUTPUT = 8 * 1024 * 1024;
+export const GAME_PROFILE = 'game_profile';
 export interface UnifiedVerification {
   endpoint: string; tokenFile: string; verifier: string; club: string;
 }
@@ -89,7 +90,7 @@ export async function identityProposal(db: Store, account: Account, holder: stri
     requireThat(Array.isArray(revoked) && !revoked.includes(holder), 'Device revoked');
     const member = accountMember(db, account, typeof devices[holder] === 'string' ? devices[holder] : undefined);
     const action = profile
-      ? { type: 'bind_game_profile', member, club: config.club, profile: gameProfile }
+      ? { type: 'bind_attribute', member, club: config.club, kind: GAME_PROFILE, value: gameProfile }
       : { type: 'confirm_member', member, club: config.club, device: holder, evidence: 'institutional_email', verifier: config.verifier };
     return run(config, 'draft', action);
   });
@@ -102,7 +103,7 @@ export async function confirmIdentity(db: Store, account: Account, school: Schoo
   requireThat(mapping && action.member === mapping.member && action.club === config.club, 'Account identity scope mismatch');
   requireThat(
     (action.type === 'confirm_member' && action.evidence === 'institutional_email' && action.verifier === config.verifier && typeof action.device === 'string') ||
-    (action.type === 'bind_game_profile' && action.profile === gameProfile), 'Unsupported identity attestation');
+    (action.type === 'bind_attribute' && action.kind === GAME_PROFILE && action.value === gameProfile), 'Unsupported identity attestation');
   requireThat(Array.isArray(proposal.signatures) && proposal.signatures.length > 0, 'Device possession signature required');
   return serialized(config.endpoint, async () => {
     const state = await currentState(config);

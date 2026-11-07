@@ -24,9 +24,10 @@ try {
   const keys: Record<string, string> = {};
   for (const name of ['chair', 'node', 'verifier', 'member', 'new-phone']) keys[name] = await run('keygen', '--out', join(directory, name + '.key'));
   const founder = JSON.parse(await run('trust', 'founder', '--member', 'chair-person', '--club', 'school', '--peer', keys.chair));
-  const genesis = await file('genesis.json', {federation: 'isolated-interop', founders: [founder], quorum: 1});
+  const namespace = {organization: 'jlucraft', wire_version: 1, signing_version: 1};
+  const genesis = await file('genesis.json', {namespace, founders: [founder], quorum: 1});
   const pin = await run('trust', 'digest', '--genesis', genesis);
-  const config = await file('node.json', {node: {key: join(directory, 'node.key'), listen: ['/ip4/127.0.0.1/tcp/0']}, services: {identity: {
+  const config = await file('node.json', {node: {namespace, key: join(directory, 'node.key'), listen: ['/ip4/127.0.0.1/tcp/0']}, services: {identity: {
     genesis, genesis_hash: pin, log: join(directory, 'source.jsonl'), writer: true, source: null, max_staleness_seconds: 60,
   }}});
   host = spawn(server, ['run', '--config', config], {stdio: ['ignore', 'pipe', 'pipe']});
@@ -40,6 +41,10 @@ try {
   const cache = ['--genesis', genesis, '--genesis-hash', pin, '--log', join(directory, 'chair-cache.jsonl')];
   const target = ['--key', join(directory, 'chair.key'), '--address', status.addresses[0], '--peer', status.peer];
   const synchronize = async () => JSON.parse(await run('trust', 'sync', ...cache, ...target));
+  const inspect = async () => {
+    await synchronize();
+    return JSON.parse(await run('trust', 'inspect', ...cache));
+  };
   const sign = async (record: unknown, key: string) => {
     const input = await file(`proposal-${index++}.json`, record), output = join(directory, `signed-${index++}.json`);
     await run('trust', 'sign', '--key', join(directory, key + '.key'), '--record', input, '--out', output);
@@ -55,7 +60,7 @@ try {
   };
   await append({type: 'authorize_verifier', id: 'skin', club: 'school', device: keys.verifier, evidence: ['institutional_email', 'game_profile']});
   const tokenFile = join(directory, 'bridge-token.json');
-  const bridgeConfig = await file('bridge.json', {bind:'127.0.0.1:0', key:join(directory,'verifier.key'), token:tokenFile,
+  const bridgeConfig = await file('bridge.json', {namespace, bind:'127.0.0.1:0', key:join(directory,'verifier.key'), token:tokenFile,
     log:join(directory,'verifier-cache.jsonl'), address:status.addresses[0],peer:status.peer,club:'school',verifier:'skin'});
   bridge = spawn(binary, ['bridge', '--config', bridgeConfig, '--genesis', genesis], {stdio:['ignore','pipe','inherit']});
   const bridgeLines = createInterface({input:bridge.stdout!});
@@ -89,8 +94,18 @@ try {
   const verified = await post('/api/identity/confirm', {record: await sign(membership, 'member')});
   assert.equal(verified.statusCode, 200, verified.body);
   const profile = await propose('profile');
+  assert.deepEqual(profile.action, {type: 'bind_attribute', member, club: 'school', kind: 'game_profile', value: login.selectedProfile.id});
+  const wrongKind = {...profile, action: {...profile.action, kind: 'other_attribute'}};
+  assert.equal((await post('/api/identity/confirm', {record: await sign(wrongKind, 'member')})).statusCode, 403);
+  const wrongProfile = {...profile, action: {...profile.action, value: 'f'.repeat(32)}};
+  assert.equal((await post('/api/identity/confirm', {record: await sign(wrongProfile, 'member')})).statusCode, 403);
   const bound = await post('/api/identity/confirm', {record: await sign(profile, 'member')});
   assert.equal(bound.statusCode, 200, bound.body);
+  assert.equal((await inspect()).attributes[member].game_profile, login.selectedProfile.id);
+  await append({type: 'unbind_attribute', member, kind: 'game_profile'}, ['member']);
+  assert.equal((await inspect()).attributes[member]?.game_profile, undefined);
+  const rebound = await post('/api/identity/confirm', {record: await sign(await propose('profile'), 'member')});
+  assert.equal(rebound.statusCode, 200, rebound.body);
   await append({type: 'bind_device', member, device: keys['new-phone']}, ['member', 'new-phone']);
   const devicePending = await sign(await propose('profile'), 'member');
   await append({type: 'revoke_device', member, device: keys.member}, ['new-phone']);

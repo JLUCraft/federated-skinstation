@@ -37,6 +37,7 @@ export interface Account {
   school: string;
   password: string;
   verified_at: number;
+  disabled?: number;
 }
 export async function encodePassword(password: string) {
   requireThat(
@@ -79,6 +80,30 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TABLE IF NOT EXISTS extra_profile_textures(profile TEXT NOT NULL REFERENCES extra_profiles(id) ON DELETE CASCADE,kind TEXT NOT NULL,hash TEXT NOT NULL,model TEXT NOT NULL,PRIMARY KEY(profile,kind));
       CREATE TABLE IF NOT EXISTS token_profiles(token TEXT PRIMARY KEY REFERENCES tokens(hash) ON DELETE CASCADE,profile TEXT);`);
 
+  } },
+  { version: 2, apply(db) {
+    db.exec(`
+      ALTER TABLE accounts ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0 CHECK(disabled IN (0,1));
+      ALTER TABLE identity_members ADD COLUMN legacy_member TEXT GENERATED ALWAYS AS (member) VIRTUAL;
+      CREATE TABLE clubs(id TEXT PRIMARY KEY,title TEXT NOT NULL,kind TEXT NOT NULL,school TEXT NOT NULL);
+      CREATE INDEX clubs_school ON clubs(school);
+      CREATE TABLE memberships(account TEXT NOT NULL REFERENCES accounts(id),club TEXT NOT NULL REFERENCES clubs(id),status TEXT NOT NULL CHECK(status IN ('active','revoked')),source TEXT NOT NULL CHECK(source IN ('email_domain','chair','import')),roles TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(roles) AND json_type(roles)='array'),since INTEGER NOT NULL,revoked_at INTEGER,PRIMARY KEY(account,club),CHECK((status='active' AND revoked_at IS NULL) OR (status='revoked' AND revoked_at IS NOT NULL)));
+      CREATE INDEX memberships_club_status ON memberships(club,status);
+      CREATE TRIGGER memberships_permanent BEFORE UPDATE ON memberships WHEN OLD.status='revoked' BEGIN SELECT RAISE(ABORT,'Membership revocation is permanent'); END;
+      CREATE TRIGGER memberships_no_delete BEFORE DELETE ON memberships BEGIN SELECT RAISE(ABORT,'Revoke memberships instead of deleting them'); END;
+      CREATE TABLE chairs(club TEXT PRIMARY KEY REFERENCES clubs(id),account TEXT NOT NULL REFERENCES accounts(id),epoch INTEGER NOT NULL CHECK(epoch>=1),updated_at INTEGER NOT NULL,FOREIGN KEY(account,club) REFERENCES memberships(account,club));
+      CREATE TABLE successions(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),proposed_by TEXT NOT NULL REFERENCES accounts(id),nominee TEXT NOT NULL REFERENCES accounts(id),status TEXT NOT NULL CHECK(status IN ('open','accepted','rejected')),epoch INTEGER NOT NULL CHECK(epoch>=1),created_at INTEGER NOT NULL,closed_at INTEGER);
+      CREATE INDEX successions_club_status ON successions(club,status);
+      CREATE TABLE succession_votes(id TEXT PRIMARY KEY,succession TEXT NOT NULL REFERENCES successions(id),account TEXT NOT NULL REFERENCES accounts(id),kind TEXT NOT NULL CHECK(kind IN ('approve','reject')),UNIQUE(succession,account));
+      CREATE TABLE services(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),client_id TEXT UNIQUE NOT NULL,public_key TEXT NOT NULL,created_by TEXT NOT NULL REFERENCES accounts(id),created_at INTEGER NOT NULL);
+      CREATE INDEX services_club ON services(club);
+      CREATE TABLE grants(id TEXT PRIMARY KEY,principal_kind TEXT NOT NULL CHECK(principal_kind IN ('user','service')),principal TEXT NOT NULL,scope TEXT NOT NULL,permission TEXT NOT NULL,granted_by TEXT NOT NULL,granted_at INTEGER NOT NULL,revoked_at INTEGER,revoked_by TEXT);
+      CREATE INDEX grants_principal_scope ON grants(principal_kind,principal,scope) WHERE revoked_at IS NULL;
+      CREATE TABLE audit(seq INTEGER PRIMARY KEY AUTOINCREMENT,at INTEGER NOT NULL,actor_kind TEXT NOT NULL,actor TEXT NOT NULL,scope TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,payload_digest TEXT NOT NULL,prev_hash TEXT NOT NULL,hash TEXT UNIQUE NOT NULL);
+      CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT,'Audit is append-only'); END;
+      CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT,'Audit is append-only'); END;
+      CREATE TABLE identity_seeds(name TEXT PRIMARY KEY);
+    `);
   } },
 ];
 export class Store {
@@ -159,7 +184,7 @@ export class Store {
         throw new Rejected('Profile name already in use', 409, 'Name Conflict');
       this.db
         .prepare(
-          'INSERT INTO accounts VALUES(?,?,?,?,?,?) ON CONFLICT(email) DO UPDATE SET verified_at=excluded.verified_at',
+          'INSERT INTO accounts(id,name,email,school,password,verified_at) VALUES(?,?,?,?,?,?) ON CONFLICT(email) DO UPDATE SET verified_at=excluded.verified_at',
         )
         .run(a.id, a.name, a.email, a.school, a.password, now);
       this.db.prepare('DELETE FROM challenges WHERE email=?').run(email);

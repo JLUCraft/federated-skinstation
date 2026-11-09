@@ -10,7 +10,7 @@ test('migrations initialize once and preserve existing data on reopen', () => {
   try {
     const path = join(dir, 'store.sqlite');
     let store = new Store(path);
-    assert.equal(store.db.prepare('PRAGMA user_version').get()!.user_version, 1);
+    assert.equal(store.db.prepare('PRAGMA user_version').get()!.user_version, 2);
     store.db.prepare('INSERT INTO attempts VALUES(?,?,?)').run('preserved', 10, 2);
     store.close();
     store = new Store(path);

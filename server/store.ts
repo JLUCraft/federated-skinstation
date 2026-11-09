@@ -55,50 +55,10 @@ export async function verifyPassword(password: string, encoded: string) {
   const actual = (await derive(password, salt, 64)) as Buffer;
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
-export class Store {
-  readonly db: DatabaseSync;
-  constructor(path: string) {
-    this.db = new DatabaseSync(path);
-    const version = (
-      this.db.prepare('PRAGMA user_version').get() as { user_version: number }
-    ).user_version;
-    const tables = (
-      this.db
-        .prepare(
-          "SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-        )
-        .get() as { n: number }
-    ).n;
-    if (
-      (tables > 0 && version !== 1) ||
-      (tables === 0 && version !== 0 && version !== 1)
-    ) {
-      this.db.close();
-      throw new Error('Unsupported database schema; only schema 1 is accepted');
-    }
-    if (tables > 0) {
-      const expected: Record<string, string[]> = {
-        accounts: ['id', 'name', 'email', 'school', 'password', 'verified_at'],
-        joins: ['server', 'profile', 'token', 'expires', 'ip'],
-        profile_textures: ['account', 'kind', 'hash', 'model'],
-      };
-      for (const [table, columns] of Object.entries(expected))
-        if (
-          JSON.stringify(
-            (
-              this.db.prepare(`PRAGMA table_info(${table})`).all() as {
-                name: string;
-              }[]
-            ).map((c) => c.name),
-          ) !== JSON.stringify(columns)
-        ) {
-          this.db.close();
-          throw new Error('Unsupported database schema layout');
-        }
-    }
-    this.db
-      .exec(`PRAGMA foreign_keys=ON;PRAGMA journal_mode=WAL;PRAGMA busy_timeout=5000;
-      CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,name TEXT UNIQUE COLLATE NOCASE NOT NULL,email TEXT UNIQUE COLLATE NOCASE NOT NULL,school TEXT NOT NULL,password TEXT NOT NULL,verified_at INTEGER NOT NULL);
+export const migrations: readonly { version: number; apply: (db: DatabaseSync) => void }[] = [
+  { version: 1, apply(db) {
+    db
+      .exec(`CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,name TEXT UNIQUE COLLATE NOCASE NOT NULL,email TEXT UNIQUE COLLATE NOCASE NOT NULL,school TEXT NOT NULL,password TEXT NOT NULL,verified_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS challenges(email TEXT PRIMARY KEY,token TEXT NOT NULL,expires INTEGER NOT NULL,payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tokens(hash TEXT PRIMARY KEY,client TEXT NOT NULL,account TEXT NOT NULL REFERENCES accounts(id),expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS joins(server TEXT NOT NULL,profile TEXT NOT NULL,token TEXT NOT NULL REFERENCES tokens(hash) ON DELETE CASCADE,expires INTEGER NOT NULL,ip TEXT,PRIMARY KEY(server,profile));
@@ -108,17 +68,37 @@ export class Store {
       CREATE TABLE IF NOT EXISTS profile_remaps(old TEXT PRIMARY KEY,next TEXT NOT NULL,account TEXT NOT NULL REFERENCES accounts(id));
       CREATE TABLE IF NOT EXISTS password_resets(account TEXT PRIMARY KEY REFERENCES accounts(id),token TEXT NOT NULL,expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,window INTEGER NOT NULL,count INTEGER NOT NULL);`);
-    this.db.exec(
+    db.exec(
       'CREATE TABLE IF NOT EXISTS identity_members(account TEXT PRIMARY KEY REFERENCES accounts(id),member TEXT NOT NULL,confirmed INTEGER NOT NULL DEFAULT 0)',
     );
-    this.db.exec(
+    db.exec(
       'CREATE TABLE IF NOT EXISTS profile_textures(account TEXT NOT NULL REFERENCES accounts(id),kind TEXT NOT NULL,hash TEXT NOT NULL,model TEXT NOT NULL,PRIMARY KEY(account,kind))',
     );
-    this.db
+    db
       .exec(`CREATE TABLE IF NOT EXISTS extra_profiles(id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id),name TEXT UNIQUE COLLATE NOCASE NOT NULL);
       CREATE TABLE IF NOT EXISTS extra_profile_textures(profile TEXT NOT NULL REFERENCES extra_profiles(id) ON DELETE CASCADE,kind TEXT NOT NULL,hash TEXT NOT NULL,model TEXT NOT NULL,PRIMARY KEY(profile,kind));
       CREATE TABLE IF NOT EXISTS token_profiles(token TEXT PRIMARY KEY REFERENCES tokens(hash) ON DELETE CASCADE,profile TEXT);`);
-    this.db.exec('PRAGMA user_version=1');
+
+  } },
+];
+export class Store {
+  readonly db: DatabaseSync;
+  constructor(path: string) {
+    this.db = new DatabaseSync(path);
+    try {
+      this.db.exec('PRAGMA foreign_keys=ON;PRAGMA journal_mode=WAL;PRAGMA busy_timeout=5000');
+      this.transaction(() => {
+        const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version);
+        for (const migration of migrations) {
+          if (migration.version <= version) continue;
+          migration.apply(this.db);
+          this.db.exec(`PRAGMA user_version=${migration.version}`);
+        }
+      });
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
   }
   close() {
     this.db.close();

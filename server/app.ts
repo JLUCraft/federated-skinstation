@@ -31,6 +31,7 @@ import { createRequire } from 'node:module';
 const VERSION = createRequire(import.meta.url)('../package.json')
   .version as string;
 import { type School } from './school.js';
+import { LocalIdentity } from './permissions.js';
 import {
   GAME_PROFILE,
   identityProposal,
@@ -89,6 +90,9 @@ export async function build(
     ? SecretState.fromEnvironment(config.mua.member.storageKeyEnv, organization)
     : undefined;
   const db = new Store(config.database);
+  const localIdentity = new LocalIdentity(db);
+  localIdentity.configureSchools(config.schools);
+  localIdentity.seedAdmins(config.siteAdmins ?? [], config.mua?.member?.adminAccounts ?? []);
   await mkdir(config.textures, { recursive: true });
   const app = Fastify({
     trustProxy: config.trustProxy ?? false,
@@ -412,7 +416,8 @@ export async function build(
   );
   app.post('/api/email/confirm', async (req, reply) => {
     const body = obj(req.body);
-    db.confirm(text(body.email).toLowerCase(), text(body.code), now());
+    db.confirm(text(body.email).toLowerCase(), text(body.code), now(),
+      account => localIdentity.enrollVerifiedEmail(account, config.schools));
     return reply.code(204).send();
   });
   app.post(

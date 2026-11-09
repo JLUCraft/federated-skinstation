@@ -90,6 +90,7 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TABLE memberships(account TEXT NOT NULL REFERENCES accounts(id),club TEXT NOT NULL REFERENCES clubs(id),status TEXT NOT NULL CHECK(status IN ('active','revoked')),source TEXT NOT NULL CHECK(source IN ('email_domain','chair','import')),roles TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(roles) AND json_type(roles)='array'),since INTEGER NOT NULL,revoked_at INTEGER,PRIMARY KEY(account,club),CHECK((status='active' AND revoked_at IS NULL) OR (status='revoked' AND revoked_at IS NOT NULL)));
       CREATE INDEX memberships_club_status ON memberships(club,status);
       CREATE TRIGGER memberships_permanent BEFORE UPDATE ON memberships WHEN OLD.status='revoked' BEGIN SELECT RAISE(ABORT,'Membership revocation is permanent'); END;
+      CREATE TRIGGER memberships_no_replace BEFORE INSERT ON memberships WHEN EXISTS(SELECT 1 FROM memberships WHERE account=NEW.account AND club=NEW.club) BEGIN SELECT RAISE(ABORT,'Existing memberships cannot be replaced'); END;
       CREATE TRIGGER memberships_no_delete BEFORE DELETE ON memberships BEGIN SELECT RAISE(ABORT,'Revoke memberships instead of deleting them'); END;
       CREATE TABLE chairs(club TEXT PRIMARY KEY REFERENCES clubs(id),account TEXT NOT NULL REFERENCES accounts(id),epoch INTEGER NOT NULL CHECK(epoch>=1),updated_at INTEGER NOT NULL,FOREIGN KEY(account,club) REFERENCES memberships(account,club));
       CREATE TABLE successions(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),proposed_by TEXT NOT NULL REFERENCES accounts(id),nominee TEXT NOT NULL REFERENCES accounts(id),status TEXT NOT NULL CHECK(status IN ('open','accepted','rejected')),epoch INTEGER NOT NULL CHECK(epoch>=1),created_at INTEGER NOT NULL,closed_at INTEGER);
@@ -100,6 +101,7 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TABLE grants(id TEXT PRIMARY KEY,principal_kind TEXT NOT NULL CHECK(principal_kind IN ('user','service')),principal TEXT NOT NULL,scope TEXT NOT NULL,permission TEXT NOT NULL,granted_by TEXT NOT NULL,granted_at INTEGER NOT NULL,revoked_at INTEGER,revoked_by TEXT);
       CREATE INDEX grants_principal_scope ON grants(principal_kind,principal,scope) WHERE revoked_at IS NULL;
       CREATE TABLE audit(seq INTEGER PRIMARY KEY AUTOINCREMENT,at INTEGER NOT NULL,actor_kind TEXT NOT NULL,actor TEXT NOT NULL,scope TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,payload_digest TEXT NOT NULL,prev_hash TEXT NOT NULL,hash TEXT UNIQUE NOT NULL);
+      CREATE TRIGGER audit_append BEFORE INSERT ON audit WHEN NEW.seq != (SELECT COALESCE(MAX(seq),0)+1 FROM audit) OR NEW.prev_hash != COALESCE((SELECT hash FROM audit ORDER BY seq DESC LIMIT 1),'') OR EXISTS(SELECT 1 FROM audit WHERE hash=NEW.hash) BEGIN SELECT RAISE(ABORT,'Audit must extend the current head'); END;
       CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT,'Audit is append-only'); END;
       CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT,'Audit is append-only'); END;
       CREATE TABLE identity_seeds(name TEXT PRIMARY KEY);
@@ -169,7 +171,7 @@ export class Store {
       .run(account.email, digest(code), now + 900, JSON.stringify(account));
     return code;
   }
-  confirm(email: string, code: string, now: number) {
+  confirm(email: string, code: string, now: number, onVerified?: (account: string) => void) {
     this.rate(`confirm:${digest(email)}`, now, 10, 900);
     this.transaction(() => {
       const row = this.db
@@ -188,6 +190,7 @@ export class Store {
         )
         .run(a.id, a.name, a.email, a.school, a.password, now);
       this.db.prepare('DELETE FROM challenges WHERE email=?').run(email);
+      onVerified?.(this.account('email', email)!.id);
       this.db
         .prepare(
           'UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1',

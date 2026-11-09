@@ -20,7 +20,6 @@ import {
 import { bearer, field, record } from './validate.js';
 const CHALLENGE_SECONDS = 300;
 const MAX_PASSKEYS = 8;
-const COOKIE = 'jlucraft_passkey';
 type Credential = {
   id: string;
   account: string;
@@ -33,7 +32,9 @@ export function registerPasskeys(
   db: Store,
   origin: string,
   authorize: (a: Account) => Promise<void>,
+  organization: string,
 ) {
+  const cookie = `${organization}_passkey`;
   const rpID = new URL(origin).hostname;
   db.db
     .exec(`CREATE TABLE IF NOT EXISTS passkeys(id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id),public_key BLOB NOT NULL,counter INTEGER NOT NULL,name TEXT NOT NULL,created INTEGER NOT NULL);
@@ -41,18 +42,18 @@ export function registerPasskeys(
   const token = (req: FastifyRequest) => {
     return bearer(req.headers.authorization);
   };
-  const cookie = (req: FastifyRequest) =>
+  const readCookie = (req: FastifyRequest) =>
     req.headers.cookie
       ?.split(';')
       .map((v) => v.trim())
-      .find((v) => v.startsWith(COOKIE + '='))
-      ?.slice(COOKIE.length + 1) ?? '';
+      .find((v) => v.startsWith(cookie + '='))
+      ?.slice(cookie.length + 1) ?? '';
   const originCheck = (req: FastifyRequest) =>
     requireThat(req.headers.origin === origin, 'Origin mismatch');
   const putCookie = (reply: FastifyReply, value: string, age: number) =>
     reply.header(
       'Set-Cookie',
-      `${COOKIE}=${value}; HttpOnly; SameSite=Strict; Path=/api/passkeys; Max-Age=${age}${origin.startsWith('https:') ? '; Secure' : ''}`,
+      `${cookie}=${value}; HttpOnly; SameSite=Strict; Path=/api/passkeys; Max-Age=${age}${origin.startsWith('https:') ? '; Secure' : ''}`,
     );
   const begin = (
     req: FastifyRequest,
@@ -65,7 +66,7 @@ export function registerPasskeys(
     db.transaction(() => {
       db.db
         .prepare('DELETE FROM passkey_challenges WHERE expires<=? OR cookie=?')
-        .run(now(), digest(cookie(req)));
+        .run(now(), digest(readCookie(req)));
       db.db
         .prepare('INSERT INTO passkey_challenges VALUES(?,?,?,?,?)')
         .run(
@@ -91,11 +92,11 @@ export function registerPasskeys(
         .prepare(
           'SELECT * FROM passkey_challenges WHERE cookie=? AND expires>?',
         )
-        .get(digest(cookie(req)), now()) as
+        .get(digest(readCookie(req)), now()) as
         { challenge: string; kind: string; token: string | null } | undefined;
       db.db
         .prepare('DELETE FROM passkey_challenges WHERE cookie=?')
-        .run(digest(cookie(req)));
+        .run(digest(readCookie(req)));
       requireThat(
         row &&
           row.kind === kind &&

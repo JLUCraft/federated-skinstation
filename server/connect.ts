@@ -31,8 +31,6 @@ type Scope = (typeof OAUTH_SCOPES)[number];
 const isScope = (value: string): value is Scope =>
   (OAUTH_SCOPES as readonly string[]).includes(value);
 
-/** Public client id shared by every launcher; the flow has no client secret. */
-export const SHARED_CLIENT_ID = 'jlucraft-launcher';
 const DEVICE_LIFETIME_SECONDS = 600;
 const POLL_INTERVAL_SECONDS = 5;
 const REFRESH_LIFETIME_SECONDS = 30 * 86400;
@@ -97,12 +95,15 @@ export function registerConnect(
   app: FastifyInstance,
   db: Store,
   options: {
+    organization: string;
     origin: string;
     key: KeyObject;
     authorize: (account: Account) => Promise<void>;
   },
 ) {
-  const { origin, key } = options;
+  const { origin, key, organization } = options;
+  // Public client ID shared by launchers in this organization; no client secret.
+  const clientId = `${organization}-launcher`;
   db.db.exec(`CREATE TABLE IF NOT EXISTS oauth_devices(device TEXT PRIMARY KEY,user_code TEXT UNIQUE NOT NULL,client TEXT NOT NULL,scope TEXT NOT NULL,expires INTEGER NOT NULL,account TEXT REFERENCES accounts(id) ON DELETE CASCADE,profile TEXT,denied INTEGER NOT NULL DEFAULT 0,polled INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS oauth_refresh(hash TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,profile TEXT NOT NULL,client TEXT NOT NULL,scope TEXT NOT NULL,expires INTEGER NOT NULL);`);
 
@@ -140,7 +141,7 @@ export function registerConnect(
     device_authorization_endpoint: `${origin}/api/oauth/device`,
     token_endpoint: `${origin}/api/oauth/token`,
     jwks_uri: `${origin}/api/oauth/jwks`,
-    shared_client_id: SHARED_CLIENT_ID,
+    shared_client_id: clientId,
     scopes_supported: OAUTH_SCOPES,
     response_types_supported: ['code'],
     grant_types_supported: [
@@ -159,7 +160,7 @@ export function registerConnect(
     { config: { rateLimit: { max: 10, timeWindow: 60_000 } } },
     oauth(async (req, reply) => {
       const body = record(req.body);
-      if (body.client_id !== SHARED_CLIENT_ID)
+      if (body.client_id !== clientId)
         throw new OAuthError('invalid_client');
       const scope = parseScope(body.scope);
       const device = secret();
@@ -177,7 +178,7 @@ export function registerConnect(
           .run(
             digest(device),
             userCode,
-            SHARED_CLIENT_ID,
+            clientId,
             scope.join(' '),
             now() + DEVICE_LIFETIME_SECONDS,
           );
@@ -299,7 +300,7 @@ export function registerConnect(
     { config: { rateLimit: { max: 60, timeWindow: 60_000 } } },
     oauth(async (req, reply) => {
       const body = record(req.body);
-      if (body.client_id !== SHARED_CLIENT_ID)
+      if (body.client_id !== clientId)
         throw new OAuthError('invalid_client');
       reply.header('Cache-Control', 'no-store');
       if (body.grant_type === 'urn:ietf:params:oauth:grant-type:device_code') {
@@ -308,7 +309,7 @@ export function registerConnect(
           const row = db.db
             .prepare('SELECT * FROM oauth_devices WHERE device=?')
             .get(hash) as DeviceRow | undefined;
-          if (!row || row.client !== SHARED_CLIENT_ID)
+          if (!row || row.client !== clientId)
             throw new OAuthError('invalid_grant');
           if (row.expires <= now()) {
             db.db.prepare('DELETE FROM oauth_devices WHERE device=?').run(hash);
@@ -333,7 +334,7 @@ export function registerConnect(
         const account = db.account('id', result.account);
         requireThat(account);
         await options.authorize(account);
-        return issue(account, result.profile, SHARED_CLIENT_ID, result.scope);
+        return issue(account, result.profile, clientId, result.scope);
       }
       if (body.grant_type === 'refresh_token') {
         const hash = digest(field(body.refresh_token, 128));
@@ -341,7 +342,7 @@ export function registerConnect(
           const found = db.db
             .prepare('SELECT * FROM oauth_refresh WHERE hash=? AND expires>?')
             .get(hash, now()) as RefreshRow | undefined;
-          if (!found || found.client !== SHARED_CLIENT_ID)
+          if (!found || found.client !== clientId)
             throw new OAuthError('invalid_grant');
           db.db.prepare('DELETE FROM oauth_refresh WHERE hash=?').run(hash);
           return found;
@@ -350,7 +351,7 @@ export function registerConnect(
         if (!account || !db.profiles(account).some((p) => p.id === row.profile))
           throw new OAuthError('invalid_grant');
         await options.authorize(account);
-        return issue(account, row.profile, SHARED_CLIENT_ID, row.scope);
+        return issue(account, row.profile, clientId, row.scope);
       }
       throw new OAuthError('unsupported_grant_type');
     }),

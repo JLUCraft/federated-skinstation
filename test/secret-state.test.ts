@@ -11,7 +11,7 @@ import {site} from './helpers/site.js';
 test('MUA encrypted secrets survive restart; corruption and wrong keys fail closed',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'jlu-secret-state-'));
  const name='JLU_TEST_SECRET_STORAGE';process.env[name]=randomBytes(32).toString('hex');
- const cipher=SecretState.fromEnvironment(name);let db:Store|undefined;
+ const cipher=SecretState.fromEnvironment(name,'jlucraft');let db:Store|undefined;
  try{
   db=new Store(join(dir,'db'));
   db.db.exec('CREATE TABLE mua_state(name TEXT PRIMARY KEY,value TEXT NOT NULL)');
@@ -23,12 +23,15 @@ test('MUA encrypted secrets survive restart; corruption and wrong keys fail clos
   assert.ok(value.startsWith('sealed:v1:'));assert.ok(!value.includes('PRIVATE KEY'));
   assert.equal(cipher.open('textureKey',value),privateKey);
   assert.throws(()=>cipher.open('memberKey',value));
+  const acme=SecretState.fromEnvironment(name,'acme');
+  assert.throws(()=>acme.open('textureKey',value));
+  assert.equal(acme.open('textureKey',acme.seal('textureKey',privateKey)),privateKey);
   const damaged=Buffer.from(value.slice('sealed:v1:'.length),'base64');damaged[damaged.length-1]^=1;
   assert.throws(()=>cipher.open('textureKey','sealed:v1:'+damaged.toString('base64')));
   db.close();db=new Store(join(dir,'db'));cipher.validate(db);
   assert.equal((db.db.prepare("SELECT value FROM mua_state WHERE name='textureKey'").get() as {value:string}).value,value);
-  process.env[name]=randomBytes(32).toString('hex');assert.throws(()=>SecretState.fromEnvironment(name).validate(db!));
-  delete process.env[name];assert.throws(()=>SecretState.fromEnvironment(name));
+  process.env[name]=randomBytes(32).toString('hex');assert.throws(()=>SecretState.fromEnvironment(name,'jlucraft').validate(db!));
+  delete process.env[name];assert.throws(()=>SecretState.fromEnvironment(name,'jlucraft'));
  }finally{db?.close();delete process.env[name];await rm(dir,{recursive:true,force:true});}
 });
 

@@ -16,3 +16,5 @@ bun run test
 ```
 
 Read [AGENTS.md](AGENTS.md) before making changes.
+
+The `SKIN_CONFIG` JSON accepts an optional `organization` string of 1–64 lowercase letters, digits, or hyphens, defaulting to `jlucraft`. Changing it prevents decryption of existing AAD-bound MUA secrets and changes the passkey cookie name, launcher client ID used by stored authorization records, and Yggdrasil version string; plan for these effects before changing an existing deployment.

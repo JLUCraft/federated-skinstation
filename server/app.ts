@@ -44,8 +44,10 @@ import { registerPasskeys } from './passkeys.js';
 import { registerProfiles } from './profiles.js';
 import { registerConnect } from './connect.js';
 import { SecretState } from './secret-state.js';
+import { resolveOrganization } from './organization.js';
 
 export interface Config {
+  organization?: string;
   siteAdmins?: string[];
   trustProxy?: string[];
   listen: string;
@@ -73,6 +75,7 @@ export async function build(
     muaFetch?: typeof fetch;
   } = {},
 ) {
+  const organization = resolveOrganization(config.organization);
   const origin = new URL(config.origin);
   requireThat(
     origin.protocol === 'https:' ||
@@ -83,7 +86,7 @@ export async function build(
   const key = createPrivateKey(await readFile(config.signingKey));
   requireThat(key.asymmetricKeyType === 'rsa', 'RSA signing key required');
   const secrets = config.mua?.member
-    ? SecretState.fromEnvironment(config.mua.member.storageKeyEnv)
+    ? SecretState.fromEnvironment(config.mua.member.storageKeyEnv, organization)
     : undefined;
   const db = new Store(config.database);
   await mkdir(config.textures, { recursive: true });
@@ -313,8 +316,13 @@ export async function build(
     },
   );
   registerProfiles(app, db);
-  registerConnect(app, db, { origin: config.origin, key, authorize });
-  registerPasskeys(app, db, config.origin, authorize);
+  registerConnect(app, db, {
+    origin: config.origin,
+    key,
+    authorize,
+    organization,
+  });
+  registerPasskeys(app, db, config.origin, authorize, organization);
   registerWardrobe(app, db, config.siteAdmins ?? []);
   registerCommunity(app, db, config.siteAdmins ?? []);
   app.get('/api/capabilities', async () => ({
@@ -720,6 +728,7 @@ export async function build(
         config.mua,
         config.origin,
         authorize,
+        organization,
         dependencies.muaFetch,
         secrets,
       );

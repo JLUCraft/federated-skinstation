@@ -94,6 +94,7 @@ export async function registerMua(
   config: MuaConfig,
   origin: string,
   authorize: (account: Account) => Promise<void>,
+  organization: string,
   fetcher: typeof fetch = fetch,
   secrets?: SecretState,
 ) {
@@ -162,7 +163,7 @@ export async function registerMua(
   app.get('/api/union/member/', async (_req, reply) => {
     reply.header('Access-Control-Allow-Origin', '*');
     return {
-      yggdrasilApiVersion: 'jlucraft-0.2.0',
+      yggdrasilApiVersion: `${organization}-0.2.0`,
       serverListVersion: stored('serverListVersion') ?? '0',
       privateKeyVersion: stored('privateKeyVersion') ?? '0',
       enabledFeatures: [

@@ -17,6 +17,7 @@ import {
   competitionDisputeCreatedSchema,
   competitionSeasonListSchema,
   gameScoringSessionSchema,
+  gameHostAdmissionSchema,
   type Competition,
   type CompetitionCreate,
   type CompetitionCommand,
@@ -28,6 +29,7 @@ import {
   type CompetitionDisputeRequest,
   type CompetitionDisputeList,
   type GameScoringSession,
+  type GameHostAdmission,
 } from '../shared/contracts/generated.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
 import { gameEndpoint, gameResource } from './planning-state.js';
@@ -213,6 +215,20 @@ export class Competitions {
 
   private teamOf(league: Competition, member: string) {
     return Object.keys(league.teams).find((id) => league.teams[id].members.includes(member));
+  }
+
+  hostAdmission(actor: string, id: string, profile: string): GameHostAdmission {
+    return this.store.transaction(() => {
+      this.active(actor);
+      const league = this.load(id);
+      this.delegate(league, actor, 'host');
+      const account = this.store.profile(profile);
+      requireThat(account, 'Game profile not found');
+      this.participant(league, account.id);
+      const route = this.destination(league, account.id);
+      requireThat(route.destination !== 'unavailable', 'Registered game participant required');
+      return { account: account.id, route };
+    });
   }
 
   private claimTeam(id: string, team: string, captain: string) {
@@ -624,23 +640,31 @@ export class Competitions {
       requireThat(actor === member || actor === league.host, 'Own or host route required');
       if (actor !== member) this.delegate(league, actor, 'host');
       this.participant(league, member);
-      if (league.phase !== 'playing' || league.pausedSince !== null)
-        return { destination: 'unavailable' };
-      requireEventGameCurrent(this.store, this.identity, id);
-      const team = this.teamOf(league, member);
-      if (team && !this.eligible(league, team, member)) return { destination: 'unavailable' };
-      for (const [team, seats] of Object.entries(league.seats)) {
-        const seat = seats.find((seat) => seat.player === member);
-        if (seat)
-          return {
-            destination: 'match',
-            team,
-            epoch: seat.epoch,
-            address: this.resource(league.resource).address,
-          };
-      }
-      return { destination: team && league.teams[team].registered ? 'waiting' : 'unavailable' };
+      return this.destination(league, member);
     });
+  }
+
+  private destination(league: Competition, member: string): CompetitionRoute {
+    const team = this.teamOf(league, member);
+    if (
+      !team ||
+      !league.teams[team].registered ||
+      !this.eligible(league, team, member) ||
+      league.phase === 'finished'
+    )
+      return { destination: 'unavailable' };
+    requireEventGameCurrent(this.store, this.identity, league.id);
+    if (league.phase !== 'playing' || league.pausedSince !== null)
+      return { destination: 'waiting' };
+    const seat = league.seats[team]?.find((seat) => seat.player === member);
+    return seat
+      ? {
+          destination: 'match',
+          team,
+          epoch: seat.epoch,
+          address: this.resource(league.resource).address,
+        }
+      : { destination: 'waiting' };
   }
 
   createSeason(actor: string, season: CompetitionSeason) {
@@ -845,6 +869,16 @@ export function registerCompetitions(app: FastifyInstance, store: Store, identit
     '/api/leagues/:id',
     { schema: { response: { 200: competitionSchema } } },
     async (request) => competitions.snapshot(actor(request), id(request)),
+  );
+  app.get(
+    '/api/leagues/:id/admission/:profile',
+    { schema: { response: { 200: gameHostAdmissionSchema } } },
+    async (request) =>
+      competitions.hostAdmission(
+        actor(request),
+        id(request),
+        field(record(request.params).profile, 32),
+      ),
   );
   app.get(
     '/api/leagues/:id/scoring',

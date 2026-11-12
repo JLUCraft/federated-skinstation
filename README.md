@@ -159,7 +159,16 @@ keeps its own club affiliation; when true, a team can mix club memberships.
   Only the designated host submits measured presence and health; only the
   designated scorer submits results and finishes a league.
 - `GET /api/leagues/:id/route/:member` returns the member's current destination,
-  team, and seat epoch for that member or the designated host.
+  team, and seat epoch for that member or the designated host. Registered,
+  eligible participants wait during registration or a pause; finished games
+  have no destination.
+- `GET /api/leagues/:id/admission/:profile` lets the designated host resolve a
+  current primary or extra Minecraft UUID to its account and authorized route.
+  It checks current membership, registration, event check-in and planning policy,
+  and rejects finished games. It returns the same seat epoch and address as the
+  member route. The native gateway must authenticate the Minecraft session
+  through Yggdrasil `hasJoined` before using this routing decision and repeat
+  the decision for existing connections as authority or game state changes.
 - `GET` and `POST /api/seasons` list and create seasons;
   `POST /api/leagues/:id/schedule` assigns a season and registration/start window.
   `GET /api/seasons/:id/rankings` aggregates finished results.

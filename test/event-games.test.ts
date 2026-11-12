@@ -15,6 +15,7 @@ import type {
   EventGameList,
   EventRewards,
   GameResource,
+  GameHostAdmission,
   OfficeArtifact,
   PlanCommand,
   PlanDraft,
@@ -219,6 +220,14 @@ test('event-owned games use real check-ins and league scores for exact tied rewa
       plan: event.plan.id,
       resource: 'first',
     });
+    const admissionPath = (league: string, profile: string) =>
+      `/api/leagues/${league}/admission/${profile}`;
+    assert.equal(
+      (await call<GameHostAdmission>(coChair, 'GET', admissionPath(first.id, alice.user.id))).route
+        .destination,
+      'waiting',
+    );
+    await call(coChair, 'GET', admissionPath(first.id, bob.user.id), undefined, 403);
     await call(
       chair,
       'PUT',
@@ -297,6 +306,14 @@ test('event-owned games use real check-ins and league scores for exact tied rewa
         action: 'start',
       });
       assert.equal(started.played.length, 3);
+      await service.restart();
+      const admitted = await call<GameHostAdmission>(
+        coChair,
+        'GET',
+        admissionPath(league.id, bob.user.id),
+      );
+      assert.equal(admitted.account, bob.user.id);
+      assert.equal(admitted.route.destination, 'match');
       assert.equal(
         Object.values(started.teams).find((team) => team.members.includes(bob.user.id))!.club,
         'other',

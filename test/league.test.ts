@@ -10,6 +10,7 @@ import type {
   CompetitionDisputeCreated,
   CompetitionRankings,
   GameScoringSession,
+  GameHostAdmission,
 } from '../shared/contracts/generated.js';
 
 test('central league journey keeps team identity, replacement epochs, scores and dispute corrections in SQLite', async (context) => {
@@ -52,6 +53,16 @@ test('central league journey keeps team identity, replacement epochs, scores and
     await action(captain, { action: 'register', team: 'alpha' });
     const captainAccount = store.account('id', captain.user.id)!;
     const extraProfile = store.createProfile(captainAccount, 'CaptainExtra');
+    const admissionPath = (profile: string) => `/api/leagues/round/admission/${profile}`;
+    const admission = (profile: string) =>
+      call<GameHostAdmission>(host, 'GET', admissionPath(profile));
+    assert.deepEqual(await admission(extraProfile.id), {
+      account: captain.user.id,
+      route: { destination: 'waiting' },
+    });
+    await call(admin, 'GET', admissionPath(captain.user.id), undefined, 403);
+    await call(scorer, 'GET', admissionPath(captain.user.id), undefined, 403);
+    await call(host, 'GET', admissionPath(host.user.id), undefined, 403);
     const scoring = () => call<GameScoringSession>(scorer, 'GET', '/api/leagues/round/scoring');
     let scoringSession = await scoring();
     assert.equal(scoringSession.league.id, 'round');
@@ -65,7 +76,10 @@ test('central league journey keeps team identity, replacement epochs, scores and
       .run(captain.user.id, '1'.repeat(32));
     scoringSession = await scoring();
     assert.deepEqual(scoringSession.profiles[captain.user.id], ['1'.repeat(32), extraProfile.id]);
+    await call(host, 'GET', admissionPath(captain.user.id), undefined, 403);
+    assert.equal((await admission('1'.repeat(32))).account, captain.user.id);
     store.deleteProfile(captainAccount, extraProfile.id);
+    await call(host, 'GET', admissionPath(extraProfile.id), undefined, 403);
     assert.deepEqual((await scoring()).profiles[captain.user.id], ['1'.repeat(32)]);
     await action(host, {
       action: 'presence',
@@ -85,6 +99,17 @@ test('central league journey keeps team identity, replacement epochs, scores and
     const original = league.seats.alpha[0];
     const originalLogin = original.player === captain.user.id ? captain : reserve;
     const replacementLogin = original.player === captain.user.id ? reserve : captain;
+    const originalProfile = original.player === captain.user.id ? '1'.repeat(32) : reserve.user.id;
+    const replacementProfile =
+      replacementLogin.user.id === captain.user.id ? '1'.repeat(32) : reserve.user.id;
+    const initialAdmission = await admission(originalProfile);
+    assert.equal(initialAdmission.account, original.player);
+    assert.deepEqual(initialAdmission.route, {
+      destination: 'match',
+      team: 'alpha',
+      epoch: original.epoch,
+      address: resource.address,
+    });
     assert.equal(league.played.length, 1);
     assert.equal(
       (
@@ -103,6 +128,7 @@ test('central league journey keeps team identity, replacement epochs, scores and
       health: { rttMs: 20, jitterMs: 0, recoveryMs: 0 },
     });
     await action(admin, { action: 'pause', paused: true });
+    assert.deepEqual((await admission(originalProfile)).route, { destination: 'waiting' });
     time += 5000;
     league = await action(host, { action: 'tick' });
     assert.equal(league.seats.alpha[0].player, original.player);
@@ -115,6 +141,13 @@ test('central league journey keeps team identity, replacement epochs, scores and
     league = await action(host, { action: 'tick' });
     assert.equal(league.seats.alpha[0].player, replacementLogin.user.id);
     assert.ok(league.seats.alpha[0].epoch > original.epoch);
+    assert.equal((await admission(originalProfile)).route.destination, 'waiting');
+    assert.deepEqual((await admission(replacementProfile)).route, {
+      destination: 'match',
+      team: 'alpha',
+      epoch: league.seats.alpha[0].epoch,
+      address: resource.address,
+    });
     await action(host, {
       action: 'presence',
       member: original.player,
@@ -154,7 +187,20 @@ test('central league journey keeps team identity, replacement epochs, scores and
       store.db.prepare("SELECT 1 FROM league_scores WHERE event='invalid'").get(),
       undefined,
     );
+    store.db.prepare('UPDATE accounts SET disabled=1 WHERE id=?').run(reserve.user.id);
+    await call(host, 'GET', admissionPath(reserve.user.id), undefined, 403);
+    store.db.prepare('UPDATE accounts SET disabled=0 WHERE id=?').run(reserve.user.id);
+    store.db
+      .prepare(
+        "UPDATE memberships SET status='revoked',revoked_at=? WHERE account=? AND club='jlu'",
+      )
+      .run(now(), host.user.id);
+    await call(host, 'GET', admissionPath('1'.repeat(32)), undefined, 403);
     await action(scorer, { action: 'finish' });
+    assert.deepEqual(
+      await call<CompetitionRoute>(captain, 'GET', `/api/leagues/round/route/${captain.user.id}`),
+      { destination: 'unavailable' },
+    );
     await action(scorer, score);
     const dispute = await call<CompetitionDisputeCreated>(
       captain,

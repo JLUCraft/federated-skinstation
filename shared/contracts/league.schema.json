@@ -286,6 +286,15 @@
         "leagues": { "type": "array", "items": { "$ref": "#/definitions/Competition" } }
       }
     },
+    "GameHostAdmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "route"],
+      "properties": {
+        "account": { "type": "string" },
+        "route": { "$ref": "#/definitions/CompetitionRoute" }
+      }
+    },
     "GameScoringSession": {
       "type": "object",
       "additionalProperties": false,

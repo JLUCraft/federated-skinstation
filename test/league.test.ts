@@ -9,6 +9,7 @@ import type {
   CompetitionRoute,
   CompetitionDisputeCreated,
   CompetitionRankings,
+  GameScoringSession,
 } from '../shared/contracts/generated.js';
 
 test('central league journey keeps team identity, replacement epochs, scores and dispute corrections in SQLite', async (context) => {
@@ -49,6 +50,23 @@ test('central league journey keeps team identity, replacement epochs, scores and
     await action(captain, { action: 'invite', team: 'alpha', member: reserve.user.id });
     await action(reserve, { action: 'accept', team: 'alpha' });
     await action(captain, { action: 'register', team: 'alpha' });
+    const captainAccount = store.account('id', captain.user.id)!;
+    const extraProfile = store.createProfile(captainAccount, 'CaptainExtra');
+    const scoring = () => call<GameScoringSession>(scorer, 'GET', '/api/leagues/round/scoring');
+    let scoringSession = await scoring();
+    assert.equal(scoringSession.league.id, 'round');
+    assert.deepEqual(scoringSession.profiles[captain.user.id], [captain.user.id, extraProfile.id]);
+    assert.deepEqual(scoringSession.profiles[reserve.user.id], [reserve.user.id]);
+    assert.equal(scoringSession.profiles[host.user.id], undefined);
+    await call(admin, 'GET', '/api/leagues/round/scoring', undefined, 403);
+    await call(host, 'GET', '/api/leagues/round/scoring', undefined, 403);
+    store.db
+      .prepare('INSERT INTO profile_mappings VALUES(?,?)')
+      .run(captain.user.id, '1'.repeat(32));
+    scoringSession = await scoring();
+    assert.deepEqual(scoringSession.profiles[captain.user.id], ['1'.repeat(32), extraProfile.id]);
+    store.deleteProfile(captainAccount, extraProfile.id);
+    assert.deepEqual((await scoring()).profiles[captain.user.id], ['1'.repeat(32)]);
     await action(host, {
       action: 'presence',
       member: captain.user.id,
@@ -163,6 +181,18 @@ test('central league journey keeps team identity, replacement epochs, scores and
     assert.equal(persisted.teams.alpha.captain, captain.user.id);
     assert.equal(persisted.teamScores.alpha, 12);
     assert.equal(persisted.phase, 'finished');
+    store.db.prepare('UPDATE accounts SET disabled=1 WHERE id=?').run(reserve.user.id);
+    assert.equal((await scoring()).profiles[reserve.user.id], undefined);
+    store.db.prepare("INSERT INTO clubs VALUES('other','Other','school','other')").run();
+    store.db
+      .prepare("INSERT INTO memberships VALUES(?,'other','active','import','[]',?,NULL)")
+      .run(scorer.user.id, now());
+    store.db
+      .prepare(
+        "UPDATE memberships SET status='revoked',revoked_at=? WHERE account=? AND club='jlu'",
+      )
+      .run(now(), scorer.user.id);
+    await call(scorer, 'GET', '/api/leagues/round/scoring', undefined, 403);
   } finally {
     store.close();
     await service.close();

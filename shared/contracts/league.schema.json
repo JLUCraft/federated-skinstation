@@ -286,6 +286,22 @@
         "leagues": { "type": "array", "items": { "$ref": "#/definitions/Competition" } }
       }
     },
+    "GameScoringSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["league", "profiles"],
+      "properties": {
+        "league": { "$ref": "#/definitions/Competition" },
+        "profiles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
     "GameResourceList": {
       "type": "object",
       "additionalProperties": false,

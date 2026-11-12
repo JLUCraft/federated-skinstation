@@ -150,6 +150,10 @@ keeps its own club affiliation; when true, a team can mix club memberships.
   using it is unfinished.
 - `GET` and `POST /api/leagues` list and create competitions.
   `GET /api/leagues/:id` returns a snapshot.
+- `GET /api/leagues/:id/scoring` returns the designated scorer's competition
+  snapshot and an account-to-UUID-list map for eligible registered participants.
+  The map includes current primary and extra profiles and follows admission,
+  membership, account disablement, and profile changes.
 - `POST /api/leagues/:id/actions` accepts the schema's team, attendance,
   presence, start, tick, infrastructure, pause, score, and finish commands.
   Only the designated host submits measured presence and health; only the

@@ -16,6 +16,7 @@ import {
   competitionDisputeListSchema,
   competitionDisputeCreatedSchema,
   competitionSeasonListSchema,
+  gameScoringSessionSchema,
   type Competition,
   type CompetitionCreate,
   type CompetitionCommand,
@@ -26,6 +27,7 @@ import {
   type CompetitionRoute,
   type CompetitionDisputeRequest,
   type CompetitionDisputeList,
+  type GameScoringSession,
 } from '../shared/contracts/generated.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
 import { gameEndpoint, gameResource } from './planning-state.js';
@@ -186,6 +188,27 @@ export class Competitions {
   snapshot(actor: string, id: string) {
     this.active(actor);
     return this.load(id);
+  }
+
+  scoringSession(actor: string, id: string): GameScoringSession {
+    this.active(actor);
+    const league = this.load(id);
+    this.delegate(league, actor, 'scorer');
+    const profiles: GameScoringSession['profiles'] = {};
+    for (const [team, roster] of Object.entries(league.teams)) {
+      if (!roster.registered) continue;
+      for (const member of roster.members) {
+        if (
+          (league.admitted !== null && !league.admitted.includes(member)) ||
+          !this.eligible(league, team, member)
+        )
+          continue;
+        const account = this.store.account('id', member);
+        requireThat(account, 'Participant account not found');
+        profiles[member] = this.store.profiles(account).map((profile) => profile.id);
+      }
+    }
+    return { league, profiles };
   }
 
   private teamOf(league: Competition, member: string) {
@@ -822,6 +845,11 @@ export function registerCompetitions(app: FastifyInstance, store: Store, identit
     '/api/leagues/:id',
     { schema: { response: { 200: competitionSchema } } },
     async (request) => competitions.snapshot(actor(request), id(request)),
+  );
+  app.get(
+    '/api/leagues/:id/scoring',
+    { schema: { response: { 200: gameScoringSessionSchema } } },
+    async (request) => competitions.scoringSession(actor(request), id(request)),
   );
   app.post<{ Body: CompetitionCommand }>(
     '/api/leagues/:id/actions',

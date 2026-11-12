@@ -140,6 +140,20 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE UNIQUE INDEX league_disputes_open ON league_disputes(league,account) WHERE resolution IS NULL;
     `);
   } },
+  { version: 6, apply(db) {
+    db.exec(`
+      CREATE TABLE office_artifacts(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),owner TEXT NOT NULL REFERENCES accounts(id),title TEXT NOT NULL,mime TEXT NOT NULL,content BLOB NOT NULL,parent TEXT REFERENCES office_artifacts(id),created_at INTEGER NOT NULL);
+      CREATE TRIGGER office_artifacts_no_update BEFORE UPDATE ON office_artifacts BEGIN SELECT RAISE(ABORT,'Artifacts are immutable'); END;
+      CREATE TABLE activities(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),state TEXT NOT NULL CHECK(json_valid(state)));
+      CREATE TABLE event_artifacts(event TEXT NOT NULL REFERENCES activities(id),artifact TEXT NOT NULL REFERENCES office_artifacts(id),PRIMARY KEY(event,artifact));
+      CREATE TABLE event_attendance(event TEXT NOT NULL REFERENCES activities(id),account TEXT NOT NULL REFERENCES accounts(id),club TEXT NOT NULL REFERENCES clubs(id),signed_up_at INTEGER NOT NULL,checked_in_at INTEGER,PRIMARY KEY(event,account));
+      CREATE TABLE activity_tasks(id TEXT PRIMARY KEY,event TEXT NOT NULL REFERENCES activities(id),title TEXT NOT NULL,due_ms INTEGER,assignee TEXT REFERENCES accounts(id),done INTEGER NOT NULL DEFAULT 0 CHECK(done IN (0,1)));
+      CREATE TABLE activity_notices(id TEXT PRIMARY KEY,event TEXT NOT NULL REFERENCES activities(id),task TEXT UNIQUE NOT NULL REFERENCES activity_tasks(id),account TEXT NOT NULL REFERENCES accounts(id),due_ms INTEGER NOT NULL,acknowledged_at INTEGER);
+      CREATE TABLE approval_templates(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),definition TEXT NOT NULL CHECK(json_valid(definition)));
+      CREATE TABLE workflows(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),event TEXT NOT NULL REFERENCES activities(id),state TEXT NOT NULL CHECK(json_valid(state)));
+      CREATE INDEX workflows_event ON workflows(event);
+    `);
+  } },
 ];
 export class Store {
   readonly db: DatabaseSync;

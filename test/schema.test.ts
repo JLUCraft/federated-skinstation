@@ -12,7 +12,7 @@ test('migrations initialize once and preserve existing data on reopen', () => {
   try {
     const path = join(dir, 'store.sqlite');
     let store = new Store(path);
-    assert.equal(store.db.prepare('PRAGMA user_version').get()!.user_version, 5);
+    assert.equal(store.db.prepare('PRAGMA user_version').get()!.user_version, 6);
     store.db.prepare('INSERT INTO attempts VALUES(?,?,?)').run('preserved', 10, 2);
     store.close();
     store = new Store(path);
@@ -41,7 +41,7 @@ test('schema one migration retains accounts, profile data, sessions and legacy m
     for (let open = 0; open < 2; open++) {
       const store = new Store(path);
       try {
-        assert.equal(store.db.prepare('PRAGMA user_version').get()!.user_version, 5);
+        assert.equal(store.db.prepare('PRAGMA user_version').get()!.user_version, 6);
         assert.equal(store.account('id', 'alice')!.disabled, 0);
         assert.equal(store.account('id', 'alice')!.verified_at, 10);
         assert.equal(store.db.prepare('SELECT legacy_member FROM identity_members').get()!.legacy_member, 'legacy-alice');

@@ -3,7 +3,7 @@ import {
   PERMISSIONS, createAuthorizer, isPermission, parseScope, type Scope, type Permission, type PermissionSource,
 } from '../shared/permissions.js';
 import type { ClubDirectory, ClubMembers, GrantList, IdentitySnapshot } from '../shared/contracts/generated.js';
-import { digest, now, requireThat, Rejected, type Store } from './store.js';
+import { digest, now, requireThat, type Store } from './store.js';
 import type { School } from './school.js';
 
 interface Membership { status: IdentitySnapshot['memberships'][number]['status']; roles: string }
@@ -202,12 +202,17 @@ export class LocalIdentity {
       const league = this.store.db.prepare('SELECT club FROM leagues WHERE id=?').get(parsed.id!);
       return league ? `club:${league.club}` : undefined;
     }
+    if (parsed.kind === 'event' || parsed.kind === 'workflow') {
+      const table = parsed.kind === 'event' ? 'activities' : 'workflows';
+      const resource = this.store.db.prepare(`SELECT club FROM ${table} WHERE id=?`).get(parsed.id!);
+      return resource ? `club:${resource.club}` : undefined;
+    }
     return undefined;
   }
   authorize(account: string, scope: string, permission: string): boolean {
     return this.store.transaction(() => this.decide(account, scope, permission));
   }
-  private decide(account: string, scope: string, permission: string): boolean {
+  decide(account: string, scope: string, permission: string): boolean {
       const source: PermissionSource = {
         enabled: a => this.enabled(a),
         parent: s => this.parent(s),
@@ -226,9 +231,33 @@ export class LocalIdentity {
 
   /** Keep the decision and mutation under one write lock, retaining failed decisions. */
   authorized<T>(actor: string, scope: string, permission: string | readonly string[], action: () => T): T {
+    return this.guarded(() => {
+      for (const required of typeof permission === 'string' ? [permission] : permission)
+        requireThat(this.decide(actor, scope, required), 'Local authority required');
+      return action;
+    });
+  }
+
+  action<T>(actor: string, scope: string, action: string, prepare: () => () => T): T {
+    return this.guarded(() => {
+      try {
+        const mutation = prepare();
+        appendAudit(this.store, actor, scope, 'authorize_action', action, { allowed: true });
+        return mutation;
+      } catch (error) {
+        appendAudit(this.store, actor, scope, 'authorize_action', action, { allowed: false });
+        throw error;
+      }
+    });
+  }
+
+  private guarded<T>(prepare: () => () => T): T {
     const result = this.store.transaction((): { value: T } | { error: unknown } => {
-      for (const required of typeof permission === 'string' ? [permission] : permission) {
-        if (!this.decide(actor, scope, required)) return { error: new Rejected('Local authority required') };
+      let action: () => T;
+      try {
+        action = prepare();
+      } catch (error) {
+        return { error };
       }
       const hadAdministrator = this.hasSiteAdministrator();
       this.store.db.exec('SAVEPOINT identity_action');
@@ -303,8 +332,8 @@ export class LocalIdentity {
         .run(now(), account, club);
       // Keep the chair epoch as history; an inactive chair derives no authority.
       this.store.db.prepare(
-        "UPDATE grants SET revoked_at=?,revoked_by=? WHERE revoked_at IS NULL AND principal_kind='user' AND principal=? AND (scope=? OR scope IN (SELECT 'service:'||id FROM services WHERE club=?) OR scope IN (SELECT 'league:'||id FROM leagues WHERE club=?))",
-      ).run(now(), actor, account, `club:${club}`, club, club);
+        "UPDATE grants SET revoked_at=?,revoked_by=? WHERE revoked_at IS NULL AND principal_kind='user' AND principal=? AND (scope=? OR scope IN (SELECT 'service:'||id FROM services WHERE club=?) OR scope IN (SELECT 'league:'||id FROM leagues WHERE club=?) OR scope IN (SELECT 'event:'||id FROM activities WHERE club=?) OR scope IN (SELECT 'workflow:'||id FROM workflows WHERE club=?))",
+      ).run(now(), actor, account, `club:${club}`, club, club, club, club);
       if (!this.store.db.prepare("SELECT 1 FROM memberships WHERE account=? AND status='active'").get(account)) {
         this.store.revokeSessions(account);
       }

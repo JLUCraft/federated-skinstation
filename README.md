@@ -43,8 +43,7 @@ cannot authorize. Global administrators bypass membership checks. Other scoped
 permissions require active membership in the owning club, including service scopes.
 Service permissions inherit from their club and then global; clubs inherit from global.
 The built-in `service:mua` scope inherits directly from global.
-League scopes inherit from their owning club. Event and workflow scopes
-deny scoped authorization until their ownership is implemented.
+League, event, and workflow scopes inherit from their owning club.
 
 The catalog contains `admin`, `manage`, `president`, `read`, `write`,
 `members.manage`, `chairs.manage`, `grants.manage`, `services.manage`, `accounts.recover`, and
@@ -165,3 +164,46 @@ epoch for each assignment. Pauses preserve remaining reconnection time, includin
 overlapping infrastructure and manual pauses. Score event IDs are replayable only
 with the same deltas; failed mutations roll back scores and receipts together.
 Membership revocation removes league grants and blocks future participation.
+
+## Activities and approvals
+
+`server/office.ts` owns activities, tasks, enrollment, check-in, notices, artifacts,
+and human approval workflows. Migration 6 stores these records centrally.
+`shared/contracts/office.schema.json` references the league contract's scheduling
+definition; the generator supplies the same schema references to TypeScript and
+Fastify. Canonical schemas are registered once at service startup.
+
+- `POST /api/artifacts` accepts a club, title, MIME type, and base64 content up to
+  2 MiB. Uploads are immutable; an authorized revision supplies `parent`.
+  `GET /api/artifacts/:id/content` downloads authorized content.
+- `GET` and `POST /api/events` list visible events and create drafts.
+  `GET` and `PUT /api/events/:id` read and revise an event.
+  `POST /api/events/:id/actions` submits, publishes, finishes, or cancels it,
+  or lets a member sign up, cancel signup, or check in.
+  Managers read enrollment through `GET /api/events/:id/attendance`.
+- `GET` and `POST /api/events/:id/tasks` list and create tasks.
+  `POST /api/tasks/:id/actions` assigns, completes, or schedules a notice.
+  `GET /api/notices` lists personal notices;
+  `POST /api/notices/:id/acknowledge` acknowledges one after its due time.
+- `POST /api/approval-templates` installs or retires a club's current template.
+  `GET /api/clubs/:id/approval-templates` lists them.
+  `POST /api/workflows` starts an event review with its current epoch and an
+  optional template. `GET /api/events/:id/workflows` lists review history.
+  `POST /api/workflows/:id/actions` approves, rejects, delegates,
+  advances an elapsed deadline, cancels, or executes the approved review.
+
+Templates select individual members, club roles, club quorums, or current chairs.
+Instances snapshot their stages and input artifact. Every event review ends with
+mandatory consent from each organizing club's current chair, with no automatic
+timeout or delegation for that final stage. Other stages can delegate within a
+club and use explicit timeout policies. Execution rechecks the proposer and all
+approvals against current authority. Revising an event advances its epoch and
+cancels pending reviews; earlier artifacts and completed review records remain
+historical data.
+
+Drafts and their briefs are visible to participating clubs and assigned reviewers;
+published activities are readable by active members. Only the current brief is
+shared through an event. Attendance uses the authenticated account and service
+time. Assigned tasks require current participating-club membership. Authorization
+preparation and mutations share one write lock; rejected preparation retains its
+decision audit while failed mutations roll back business changes.

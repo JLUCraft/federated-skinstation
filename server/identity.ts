@@ -13,7 +13,6 @@ export function registerIdentity(
   app: FastifyInstance, store: Store, identity: LocalIdentity,
   schools: Record<string, School>, mail: (email: string, confirmation: string) => Promise<void>,
 ) {
-  app.addSchema(identitySnapshotSchema);
   const recovery = new AccountRecovery(store, identity, schools);
   const actor = (request: FastifyRequest) =>
     store.token(bearer(request.headers.authorization), undefined, now()).id;

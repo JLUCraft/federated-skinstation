@@ -33,6 +33,8 @@ import { type School } from './school.js';
 import { LocalIdentity } from './permissions.js';
 import { registerIdentity } from './identity.js';
 import { registerCompetitions } from './league.js';
+import { registerOffice } from './office.js';
+import { contractSchemas } from '../shared/contracts/generated.js';
 import { registerMua, type MuaConfig } from './mua.js';
 import { registerCommunity } from './community.js';
 import { registerWardrobe } from './wardrobe.js';
@@ -100,6 +102,7 @@ export async function build(
     },
     bodyLimit: 64 * 1024,
   });
+  for (const schema of contractSchemas) app.addSchema(schema);
   app.addHook('onClose', async () => db.close());
   app.addHook('onSend', async (request, reply, payload) => {
     reply
@@ -320,6 +323,7 @@ export async function build(
   registerIdentity(app, db, localIdentity, config.schools,
     (email, confirmation) => mail(email, confirmation, '账号恢复'));
   registerCompetitions(app, db, localIdentity);
+  registerOffice(app, db, localIdentity);
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);
   app.get('/api/capabilities', async () => ({

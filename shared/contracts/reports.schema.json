@@ -1,0 +1,175 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/reports",
+  "title": "ClubReportSnapshot",
+  "$ref": "#/definitions/ClubReport",
+  "definitions": {
+    "ReportKind": { "enum": ["mua_annual", "club_annual_review"] },
+    "ReportDestination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirements", "recipient"],
+      "properties": {
+        "requirements": {
+          "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId"
+        },
+        "recipient": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "ClubReportPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["club", "mua", "annual"],
+      "properties": {
+        "club": { "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId" },
+        "mua": { "$ref": "#/definitions/ReportDestination" },
+        "annual": { "anyOf": [{ "$ref": "#/definitions/ReportDestination" }, { "type": "null" }] }
+      }
+    },
+    "ReportDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "club", "kind", "periodStartMs", "periodEndMs"],
+      "properties": {
+        "id": { "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId" },
+        "club": { "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId" },
+        "kind": { "$ref": "#/definitions/ReportKind" },
+        "periodStartMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "periodEndMs": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "ClubReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "club",
+        "kind",
+        "periodStartMs",
+        "periodEndMs",
+        "creator",
+        "recipient",
+        "requirements",
+        "evidence",
+        "sources",
+        "output",
+        "status",
+        "version",
+        "currentJob",
+        "createdAt"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "club": { "type": "string" },
+        "kind": { "$ref": "#/definitions/ReportKind" },
+        "periodStartMs": { "type": "integer" },
+        "periodEndMs": { "type": "integer" },
+        "creator": { "type": "string" },
+        "recipient": { "type": "string" },
+        "requirements": { "type": "string" },
+        "evidence": { "type": "string" },
+        "sources": { "type": "array", "items": { "type": "string" } },
+        "output": { "type": ["string", "null"] },
+        "status": { "enum": ["draft", "generating", "published"] },
+        "version": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "currentJob": { "type": ["string", "null"] },
+        "createdAt": { "type": "integer" }
+      }
+    },
+    "ReportGenerationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "model", "maxTokens", "maxPoints"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "maxTokens": {
+          "$ref": "https://skin.jlucraft.com/contracts/ai#/definitions/AiOutputTokens"
+        },
+        "maxPoints": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        }
+      }
+    },
+    "ReportView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report", "job"],
+      "properties": {
+        "report": { "$ref": "#/definitions/ClubReport" },
+        "job": {
+          "anyOf": [
+            { "$ref": "https://skin.jlucraft.com/contracts/ai#/definitions/AiJob" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "ReportList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reports"],
+      "properties": {
+        "reports": { "type": "array", "items": { "$ref": "#/definitions/ClubReport" } }
+      }
+    },
+    "ReportPublication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "club",
+        "kind",
+        "periodStartMs",
+        "periodEndMs",
+        "recipient",
+        "version",
+        "output",
+        "publishedAt"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "club": { "type": "string" },
+        "kind": { "$ref": "#/definitions/ReportKind" },
+        "periodStartMs": { "type": "integer" },
+        "periodEndMs": { "type": "integer" },
+        "recipient": { "type": "string" },
+        "version": { "type": "integer" },
+        "output": { "type": "string" },
+        "publishedAt": { "type": "integer" }
+      }
+    },
+    "ReportPublicationList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reports"],
+      "properties": {
+        "reports": { "type": "array", "items": { "$ref": "#/definitions/ReportPublication" } }
+      }
+    },
+    "ReportCommand": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "version"],
+          "properties": {
+            "action": { "enum": ["apply", "publish"] },
+            "version": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "version", "content"],
+          "properties": {
+            "action": { "const": "revise" },
+            "version": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            "content": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}

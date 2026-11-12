@@ -129,10 +129,7 @@
           "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
         },
         "scope": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256,
-          "pattern": "^(member|event):[^:\\s]+$"
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointSpendingScope"
         }
       }
     },

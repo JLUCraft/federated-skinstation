@@ -21,6 +21,7 @@ import {
   setPolishedPlan,
 } from './planning-state.js';
 import { privateOfficeAiArtifact } from './office-ai-state.js';
+import { privateReportArtifact } from './report-state.js';
 import { points } from './points.js';
 import { now, requireThat, type Store } from './store.js';
 import { bearer, field, record } from './validate.js';
@@ -322,6 +323,7 @@ export class Planning {
             requireThat(
               ['text/plain', 'text/markdown'].includes(artifact.metadata.mime) &&
                 !privateOfficeAiArtifact(this.store, command.document) &&
+                !privateReportArtifact(this.store, command.document) &&
                 !this.store.db
                   .prepare('SELECT 1 FROM planning_documents WHERE artifact=?')
                   .get(command.document),

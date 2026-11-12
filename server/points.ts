@@ -389,8 +389,7 @@ export class Points {
         this.identity.requireMembership(actor, input.club);
         requireThat(
           input.scope === `member:${actor}` ||
-            (input.scope.startsWith('event:') &&
-              this.identity.decide(actor, input.scope, 'manage')),
+            this.identity.managesSpendingScope(actor, input.scope, input.club),
           'Point spending scope authority required',
         );
         requireThat(

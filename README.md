@@ -48,7 +48,7 @@ cannot authorize. Global administrators bypass membership checks. Other scoped
 permissions require active membership in the owning club, including service scopes.
 Service permissions inherit from their club and then global; clubs inherit from global.
 The built-in `service:mua` scope inherits directly from global.
-League, event, and workflow scopes inherit from their owning club.
+League, event, workflow, and report scopes inherit from their owning club.
 
 The catalog contains `admin`, `manage`, `president`, `read`, `write`,
 `members.manage`, `chairs.manage`, `grants.manage`, `services.manage`, `accounts.recover`, and
@@ -311,7 +311,7 @@ active club selection are shared through `LocalIdentity`.
 - `GET /api/points/me` returns the caller's club balances, today's measured
   activity, and the latest 100 ledger entries.
 - `GET` and `POST /api/points/allowances` list and authorize the caller's spending
-  budgets for a personal request or managed event. Replacement advances the
+  budgets for a personal request, managed event, or managed report. Replacement advances the
   authorization epoch. An owner can revoke an existing budget after losing its
   club membership; a fresh authorization requires current membership and scope
   authority. Authorization alone does not debit a balance.
@@ -337,7 +337,7 @@ the service. Provider addresses and credentials stay outside HTTP responses.
 - `POST /api/ai/jobs` selects readable input artifacts, a club balance, provider
   and model, generation/review mode, purpose, output-token cap, and point limit.
   A personal request authorizes its bounded spend directly. An optional
-  personal/event `scope` consumes a matching point authorization; event requests
+  personal/event/report `scope` consumes a matching point authorization; event and report requests
   require current management authority from both requester and payer.
 - `GET /api/ai/jobs` lists readable jobs; `GET /api/ai/jobs/:id` returns one.
   `POST /api/ai/jobs/:id/actions` runs, cancels, retries, or advances an elapsed
@@ -399,3 +399,42 @@ ownership alone grants no access. Private review details stay outside shared
 workflow records. Revision fences old jobs and their private artifacts by plan
 and event epoch. Work already running still settles measured usage through the
 gateway, while its stale output cannot be applied.
+
+## Club reports
+
+`server/reports.ts` owns annual MUA reports and official clubs' school annual
+reviews. Migration 12 stores report policies, drafts, AI job bindings, private
+document links, and published versions. Club kind comes from the existing
+planning profile.
+
+- `GET` and `PUT /api/clubs/:id/report-policy` read and set each destination's
+  recipient and requirements artifact. Setting the policy copies requirements
+  into private club-managed documents. Official clubs must provide the school
+  annual-review destination.
+- `POST /api/reports` creates a report with its ID, club, kind, and closed
+  reporting period. School annual reviews require an official club. Creation
+  freezes the destination and evidence: published activities starting within the
+  period, their public brief and published summary, and the reporting club's
+  attendance, awards, and assigned tasks. Private planning documents and other
+  clubs' member records stay outside the report. Binary public documents become
+  frozen attachments; text documents appear in the evidence itself.
+  Task assignment records the assignee's club independently of enrollment, so
+  organizers' work is included even when they do not sign up as participants.
+- Authorize a point budget for `report:<id>`, then call
+  `POST /api/reports/:id/generate` with the current version and AI settings.
+  Run the returned job through the AI actions and send `apply` with the version
+  to `POST /api/reports/:id/actions`. Matching pending generation requests reuse
+  their job.
+- Send `revise` with the current version and replacement `content` to create a
+  private text revision. Revision advances the version and supersedes pending
+  generation. Generating again from existing output also advances the version.
+  Send `publish` with the current version to share its output with active members.
+- `GET /api/reports` lists managed reports; `GET /api/reports/:id` returns the
+  draft and current job. `GET /api/reports/public` lists immutable publications.
+  Earlier publications remain readable while later revisions are private.
+
+Evidence and unpublished output follow current report management before uploader,
+payer, or requester ownership. Current club managers retain access to requirements
+after chair succession. Superseded jobs cannot start or retry; running work still
+settles measured usage and its output stays private. Cancel queued jobs through
+the AI actions to refund their reserved points.

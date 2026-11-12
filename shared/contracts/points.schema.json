@@ -4,6 +4,12 @@
   "title": "PointOverview",
   "$ref": "#/definitions/MemberPoints",
   "definitions": {
+    "PointSpendingScope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(member|event|report):[^:\\s]+$"
+    },
     "PointAmount": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,19})$" },
     "PointLimit": { "type": "string", "const": "18446744073709551615" },
     "ActivityLimits": {
@@ -195,12 +201,7 @@
       "additionalProperties": false,
       "required": ["scope", "club", "budget"],
       "properties": {
-        "scope": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256,
-          "pattern": "^(event|member):[^:\\s]+$"
-        },
+        "scope": { "$ref": "#/definitions/PointSpendingScope" },
         "club": { "type": "string", "minLength": 1, "maxLength": 128 },
         "budget": { "$ref": "#/definitions/PointAmount" }
       }

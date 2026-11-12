@@ -24,6 +24,7 @@ import { POINT_LIMIT } from '../shared/points.js';
 import { AiGateway, type AiMaterial, type AiCompletion } from './ai-gateway.js';
 import type { Office } from './office.js';
 import { requireOfficeAiJobCurrent, restrictOfficeAiOutput } from './office-ai-state.js';
+import { requireReportJobCurrent, restrictReportOutput } from './report-state.js';
 import { PointLedger, points } from './points.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
 import { now, requireThat, type Store } from './store.js';
@@ -179,19 +180,18 @@ export class Ai {
       actor === job.proposer ||
       this.providerCurrent(job, actor) ||
       this.identity.isGlobalAdministrator(actor) ||
-      (job.allowance?.scope.startsWith('event:') &&
-        this.identity.decide(actor, job.allowance.scope, 'manage'))
+      (job.allowance && this.identity.managesSpendingScope(actor, job.allowance.scope, job.club))
     );
   }
 
   private spendingAuthority(job: StoredJob) {
     this.identity.requireMembership(job.payer, job.club);
     this.identity.authenticate(job.proposer);
-    if (job.allowance?.scope.startsWith('event:')) {
+    if (job.allowance && !job.allowance.scope.startsWith('member:')) {
       requireThat(
-        this.identity.decide(job.payer, job.allowance.scope, 'manage') &&
-          this.identity.decide(job.proposer, job.allowance.scope, 'manage'),
-        'Current AI event authority required',
+        this.identity.managesSpendingScope(job.payer, job.allowance.scope, job.club) &&
+          this.identity.managesSpendingScope(job.proposer, job.allowance.scope, job.club),
+        'Current AI spending authority required',
       );
     }
   }
@@ -263,7 +263,7 @@ export class Ai {
       payer = String(current.account);
       requireThat(
         (input.scope === `member:${actor}` && payer === actor) ||
-          (input.scope.startsWith('event:') && this.identity.decide(actor, input.scope, 'manage')),
+          this.identity.managesSpendingScope(actor, input.scope, input.club),
         'AI budget scope authority required',
       );
       allowance = { scope: input.scope, epoch: Number(current.epoch) };
@@ -462,22 +462,16 @@ export class Ai {
           );
         }
       }
-      const output = randomUUID();
-      this.store.db
-        .prepare(
-          "INSERT INTO office_artifacts(id,club,owner,title,mime,content,parent,created_at,visibility) VALUES(?,?,?,?,?,?,NULL,?,'private')",
-        )
-        .run(
-          output,
-          job.club,
-          job.payer,
-          'AI output',
-          job.request.mode === 'review' ? 'application/json' : 'text/markdown',
-          Buffer.from(content),
-          Date.now(),
-        );
+      const output = this.office.storeDocument(
+        job.payer,
+        job.club,
+        'AI output',
+        job.request.mode === 'review' ? 'application/json' : 'text/markdown',
+        Buffer.from(content),
+      );
       this.store.db.prepare('INSERT INTO artifact_readers VALUES(?,?)').run(output, job.proposer);
       restrictOfficeAiOutput(this.store, job.id, output);
+      restrictReportOutput(this.store, job.id, output);
       return this.release(job, completion.usage, output, null, completion.truncated, 'completed');
     });
   }
@@ -491,6 +485,7 @@ export class Ai {
         'Current queued AI job required',
       );
       requireOfficeAiJobCurrent(this.store, id);
+      requireReportJobCurrent(this.store, id);
       this.spendingAuthority(job);
       this.identity.requireMembership(job.providerAccount, job.providerClub);
       const materials = this.materials(job.proposer, job.request);
@@ -548,12 +543,13 @@ export class Ai {
         actor === job.payer ||
           actor === job.proposer ||
           this.identity.isGlobalAdministrator(actor) ||
-          (job.allowance?.scope.startsWith('event:') &&
-            this.identity.decide(actor, job.allowance.scope, 'manage')),
+          (job.allowance &&
+            this.identity.managesSpendingScope(actor, job.allowance.scope, job.club)),
         'AI job control authority required',
       );
       if (action === 'retry') {
         requireOfficeAiJobCurrent(this.store, id);
+        requireReportJobCurrent(this.store, id);
         requireThat(
           job.status === 'failed' && job.attempts.length < AI_LIMITS.maxAttempts,
           'Retryable AI job required',

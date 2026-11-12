@@ -12,11 +12,11 @@ export const PERMISSIONS = {
   'accounts.recover': { globalOnly: false },
 } as const;
 export type Permission = keyof typeof PERMISSIONS;
-export type ScopeKind = 'club' | 'service' | 'league' | 'event' | 'workflow';
+export type ScopeKind = 'club' | 'service' | 'league' | 'event' | 'workflow' | 'report';
 export type Scope = 'global' | `${ScopeKind}:${string}`;
 export function parseScope(value: string): { kind: 'global' | ScopeKind; id?: string } | undefined {
   if (value === 'global') return { kind: 'global' };
-  const match = /^(club|service|league|event|workflow):([^:\s]+)$/.exec(value);
+  const match = /^(club|service|league|event|workflow|report):([^:\s]+)$/.exec(value);
   return match ? { kind: match[1] as ScopeKind, id: match[2] } : undefined;
 }
 export function isPermission(value: string): value is Permission {

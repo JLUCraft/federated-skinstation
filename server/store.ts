@@ -228,6 +228,21 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
     `);
     },
   },
+  {
+    version: 12,
+    apply(db) {
+      db.exec(`
+      ALTER TABLE activity_tasks ADD COLUMN assignee_club TEXT REFERENCES clubs(id);
+      CREATE TABLE club_report_policies(club TEXT PRIMARY KEY REFERENCES clubs(id),state TEXT NOT NULL CHECK(json_valid(state)));
+      CREATE TABLE report_policy_artifacts(artifact TEXT PRIMARY KEY REFERENCES office_artifacts(id),club TEXT NOT NULL REFERENCES clubs(id));
+      CREATE TABLE club_reports(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),state TEXT NOT NULL CHECK(json_valid(state)));
+      CREATE INDEX club_reports_club ON club_reports(club);
+      CREATE TABLE report_ai_jobs(job TEXT PRIMARY KEY REFERENCES ai_jobs(id),report TEXT NOT NULL REFERENCES club_reports(id),version INTEGER NOT NULL);
+      CREATE TABLE report_artifacts(artifact TEXT NOT NULL REFERENCES office_artifacts(id),report TEXT NOT NULL REFERENCES club_reports(id),PRIMARY KEY(artifact,report));
+      CREATE TABLE report_publications(report TEXT NOT NULL REFERENCES club_reports(id),version INTEGER NOT NULL,output TEXT NOT NULL REFERENCES office_artifacts(id),state TEXT NOT NULL CHECK(json_valid(state)),PRIMARY KEY(report,version));
+    `);
+    },
+  },
 ];
 export class Store {
   readonly db: DatabaseSync;

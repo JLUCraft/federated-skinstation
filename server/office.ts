@@ -41,6 +41,7 @@ import {
   type OfficeAiTask,
 } from '../shared/contracts/generated.js';
 import { points } from './points.js';
+import { privateReportArtifact, reportArtifactAccess } from './report-state.js';
 import {
   approvedAiStage,
   officeAiArtifactAccess,
@@ -134,6 +135,7 @@ export class Office {
     requireThat(this.readableArtifact(actor, draft.brief), 'Readable event brief required');
     requireThat(
       !privateOfficeAiArtifact(this.store, draft.brief) &&
+        !privateReportArtifact(this.store, draft.brief) &&
         !this.store.db
           .prepare('SELECT 1 FROM planning_documents WHERE artifact=?')
           .get(draft.brief),
@@ -176,6 +178,8 @@ export class Office {
 
   private readableArtifact(actor: string, id: string) {
     const row = this.artifact(id);
+    const reportAccess = reportArtifactAccess(this.store, this.identity, actor, id);
+    if (reportAccess !== undefined) return reportAccess;
     const documentAccess = officeAiArtifactAccess(this.store, this.identity, actor, id);
     if (documentAccess !== undefined) return documentAccess;
     if (
@@ -269,7 +273,16 @@ export class Office {
   }
 
   storeSnapshot(actor: string, club: string, title: string, value: unknown) {
-    const content = Buffer.from(JSON.stringify(value));
+    return this.storeDocument(
+      actor,
+      club,
+      title,
+      'application/json',
+      Buffer.from(JSON.stringify(value)),
+    );
+  }
+
+  storeDocument(actor: string, club: string, title: string, mime: string, content: Buffer) {
     requireThat(
       content.byteLength > 0 && content.byteLength <= MAX_ARTIFACT_BYTES,
       'Document snapshot exceeds artifact limit',
@@ -277,9 +290,9 @@ export class Office {
     const id = randomUUID();
     this.store.db
       .prepare(
-        "INSERT INTO office_artifacts(id,club,owner,title,mime,content,parent,created_at,visibility) VALUES(?,?,?,?,'application/json',?,NULL,?,'private')",
+        "INSERT INTO office_artifacts(id,club,owner,title,mime,content,parent,created_at,visibility) VALUES(?,?,?,?,?,?,NULL,?,'private')",
       )
-      .run(id, club, actor, title, content, Date.now());
+      .run(id, club, actor, title, mime, content, Date.now());
     return id;
   }
 
@@ -552,16 +565,24 @@ export class Office {
       this.mutable(event);
       requireThat(!current.done, 'Open task required');
       switch (command.action) {
-        case 'assign':
+        case 'assign': {
           requireThat(
             this.clubs(event).some((club) => this.active(command.account, club)),
             'Participating task assignee required',
           );
+          const enrollment = this.store.db
+            .prepare('SELECT club FROM event_attendance WHERE event=? AND account=?')
+            .get(event.id, command.account);
+          const club =
+            enrollment && this.active(command.account, String(enrollment.club))
+              ? String(enrollment.club)
+              : this.identity.affiliation(command.account, this.clubs(event));
           this.store.db
-            .prepare('UPDATE activity_tasks SET assignee=? WHERE id=?')
-            .run(command.account, id);
+            .prepare('UPDATE activity_tasks SET assignee=?,assignee_club=? WHERE id=?')
+            .run(command.account, club, id);
           this.store.db.prepare('DELETE FROM activity_notices WHERE task=?').run(id);
           break;
+        }
         case 'notify':
           requireThat(
             current.assignee &&

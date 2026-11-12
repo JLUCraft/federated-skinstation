@@ -327,14 +327,27 @@ export class LocalIdentity {
       const league = this.store.db.prepare('SELECT club FROM leagues WHERE id=?').get(parsed.id!);
       return league ? `club:${String(league.club)}` : undefined;
     }
-    if (parsed.kind === 'event' || parsed.kind === 'workflow') {
-      const table = parsed.kind === 'event' ? 'activities' : 'workflows';
+    if (parsed.kind === 'event' || parsed.kind === 'workflow' || parsed.kind === 'report') {
+      const table =
+        parsed.kind === 'event'
+          ? 'activities'
+          : parsed.kind === 'workflow'
+            ? 'workflows'
+            : 'club_reports';
       const resource = this.store.db
         .prepare(`SELECT club FROM ${table} WHERE id=?`)
         .get(parsed.id!);
       return resource ? `club:${String(resource.club)}` : undefined;
     }
     return undefined;
+  }
+  managesSpendingScope(account: string, scope: string, club: string) {
+    const parsed = parseScope(scope);
+    return (
+      (parsed?.kind === 'event' || parsed?.kind === 'report') &&
+      this.parent(scope as Scope) === `club:${club}` &&
+      this.decide(account, scope, 'manage')
+    );
   }
   authorize(account: string, scope: string, permission: string): boolean {
     return this.store.transaction(() => this.decide(account, scope, permission));
@@ -495,9 +508,9 @@ export class LocalIdentity {
       // Keep the chair epoch as history; an inactive chair derives no authority.
       this.store.db
         .prepare(
-          "UPDATE grants SET revoked_at=?,revoked_by=? WHERE revoked_at IS NULL AND principal_kind='user' AND principal=? AND (scope=? OR scope IN (SELECT 'service:'||id FROM services WHERE club=?) OR scope IN (SELECT 'league:'||id FROM leagues WHERE club=?) OR scope IN (SELECT 'event:'||id FROM activities WHERE club=?) OR scope IN (SELECT 'workflow:'||id FROM workflows WHERE club=?))",
+          "UPDATE grants SET revoked_at=?,revoked_by=? WHERE revoked_at IS NULL AND principal_kind='user' AND principal=? AND (scope=? OR scope IN (SELECT 'service:'||id FROM services WHERE club=?) OR scope IN (SELECT 'league:'||id FROM leagues WHERE club=?) OR scope IN (SELECT 'event:'||id FROM activities WHERE club=?) OR scope IN (SELECT 'workflow:'||id FROM workflows WHERE club=?) OR scope IN (SELECT 'report:'||id FROM club_reports WHERE club=?))",
         )
-        .run(now(), actor, account, `club:${club}`, club, club, club, club);
+        .run(now(), actor, account, `club:${club}`, club, club, club, club, club);
       if (
         !this.store.db
           .prepare("SELECT 1 FROM memberships WHERE account=? AND status='active'")

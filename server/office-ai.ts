@@ -130,7 +130,10 @@ export class OfficeAi {
       if (
         job.status === 'queued' ||
         job.status === 'running' ||
-        (job.status === 'completed' && !attempt?.truncated)
+        (job.status === 'completed' &&
+          !attempt?.truncated &&
+          (kind !== 'review' ||
+            this.identity.isActiveMember(job.providerAccount, job.providerClub)))
       ) {
         requireThat(
           job.request.model === settings.model &&

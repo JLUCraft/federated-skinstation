@@ -427,7 +427,7 @@ test('event documents share point escrow and private source evidence from polish
   }
 });
 
-test('in-flight document outputs stay private after management and epoch changes, and failed AI reviews retry without skipping requested changes', async (context) => {
+test('in-flight documents and AI review replacement preserve privacy, current authority, and requested changes', async (context) => {
   const started = deferred<void>();
   const pending = deferred<Response>();
   let fetchResponse = async () => {
@@ -435,7 +435,7 @@ test('in-flight document outputs stay private after management and epoch changes
     return pending.promise;
   };
   const fixture = await officeSite(async () => fetchResponse());
-  const { store, root, chair, provider, stranger, member, call, ledger } = fixture;
+  const { service, store, root, chair, provider, stranger, member, call, ledger } = fixture;
   try {
     let time = Date.now();
     context.mock.method(Date, 'now', () => time);
@@ -558,7 +558,43 @@ test('in-flight document outputs stay private after management and epoch changes
       );
     const accepted = await call<OfficeAiTaskView>(root, 'POST', `/api/workflows/${next.id}/ai`, {});
     await call(root, 'POST', `/api/ai/jobs/${accepted.job.id}/actions`, { action: 'run' });
-    await call(root, 'POST', `/api/document-tasks/${accepted.task.id}/actions`, {
+    await call(root, 'POST', `/api/clubs/jlu/members/${provider.user.id}/revoke`, {}, 204);
+    await call(
+      root,
+      'POST',
+      `/api/document-tasks/${accepted.task.id}/actions`,
+      { action: 'apply' },
+      403,
+    );
+    assert.ok(service.config.ai);
+    service.config.ai.providers[0].account = stranger.user.id;
+    await service.restart();
+    const replacement = await call<OfficeAiTaskView>(
+      root,
+      'POST',
+      `/api/workflows/${next.id}/ai`,
+      {},
+    );
+    assert.notEqual(replacement.task.id, accepted.task.id);
+    assert.notEqual(replacement.job.id, accepted.job.id);
+    assert.equal(replacement.job.providerAccount, stranger.user.id);
+    assert.equal(
+      (await call<OfficeAiTaskView>(root, 'POST', `/api/workflows/${next.id}/ai`, {})).task.id,
+      replacement.task.id,
+    );
+    const replaced = await call<AiJob>(root, 'GET', `/api/ai/jobs/${accepted.job.id}`);
+    const replacedOutput = replaced.attempts.at(-1)?.output;
+    assert.ok(replacedOutput);
+    await call(member, 'GET', `/api/artifacts/${replacedOutput}/content`, undefined, 403);
+    await call(stranger, 'POST', `/api/ai/jobs/${replacement.job.id}/actions`, { action: 'run' });
+    await call(
+      root,
+      'POST',
+      `/api/document-tasks/${accepted.task.id}/actions`,
+      { action: 'apply' },
+      403,
+    );
+    await call(root, 'POST', `/api/document-tasks/${replacement.task.id}/actions`, {
       action: 'apply',
     });
     await call(root, 'POST', `/api/workflows/${next.id}/actions`, {
@@ -566,9 +602,10 @@ test('in-flight document outputs stay private after management and epoch changes
       club: 'jlu',
       comment: 'Current chair consents',
     });
-    await call(root, 'POST', `/api/clubs/jlu/members/${provider.user.id}/revoke`, {}, 204);
+    await call(root, 'POST', `/api/clubs/jlu/members/${stranger.user.id}/revoke`, {}, 204);
     await call(root, 'POST', `/api/workflows/${next.id}/actions`, { action: 'execute' }, 403);
-    assert.equal(ledger.balance(root.user.id, 'jlu'), 7n);
+    assert.equal(ledger.balance(root.user.id, 'jlu'), 6n);
+    assert.equal(ledger.balance(stranger.user.id, 'jlu'), 1n);
   } finally {
     pending.resolve(response('Cancelled fixture response.'));
     await fixture.close();

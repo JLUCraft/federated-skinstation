@@ -386,6 +386,8 @@ summaries. The document contract references the gateway's model and token limits
   to the following stage, including the mandatory current-chair consent.
   Rejection or `changes_requested` closes that workflow; managers revise the
   event and start a new review. Execution rechecks the provider's membership.
+  If the provider loses membership before application, a new stage request
+  creates replacement evidence using the currently configured provider.
 - Applied summaries remain private until a manager sends `publish` to the
   document task actions. Publication shares the output through the event.
 

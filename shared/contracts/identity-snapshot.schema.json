@@ -127,7 +127,15 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "principal", "principalKind", "name", "permission", "grantedBy", "grantedAt"],
+            "required": [
+              "id",
+              "principal",
+              "principalKind",
+              "name",
+              "permission",
+              "grantedBy",
+              "grantedAt"
+            ],
             "properties": {
               "id": { "type": "string" },
               "principal": { "type": "string" },

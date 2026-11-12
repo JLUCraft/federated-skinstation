@@ -1,5 +1,8 @@
 import {
-  activityLimitsSchema, pointAmountSchema, pointLimitSchema, type ActivityLimits,
+  activityLimitsSchema,
+  pointAmountSchema,
+  pointLimitSchema,
+  type ActivityLimits,
 } from './contracts/generated.js';
 
 export const ACTIVITY_LIMITS: ActivityLimits = {

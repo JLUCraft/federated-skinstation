@@ -45,11 +45,7 @@ function skinParts(slim: boolean): Part[] {
   return [...parts, ...layers];
 }
 
-function drawSkin(
-  ctx: CanvasRenderingContext2D,
-  image: HTMLCanvasElement,
-  slim: boolean,
-) {
+function drawSkin(ctx: CanvasRenderingContext2D, image: HTMLCanvasElement, slim: boolean) {
   const unit = image.width / SKIN_GRID;
   for (const part of skinParts(slim)) {
     const [sx, sy, sw, sh] = part.src;
@@ -137,12 +133,7 @@ export function TextureThumb({
   return failed ? (
     <span className="thumb-fallback">{t('预览不可用')}</span>
   ) : label ? (
-    <canvas
-      ref={canvas}
-      className="texture-thumb"
-      role="img"
-      aria-label={label}
-    />
+    <canvas ref={canvas} className="texture-thumb" role="img" aria-label={label} />
   ) : (
     <canvas ref={canvas} className="texture-thumb" aria-hidden="true" />
   );

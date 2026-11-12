@@ -23,6 +23,12 @@ import { SkinPreview } from './SkinPreview';
 import { TextureCard } from './TextureCard';
 import { textureSrc, textureTitle } from './TextureDialog';
 import { TextureThumb } from './TextureThumb';
+import type {
+  Announcements as AnnouncementList,
+  Notifications as NotificationList,
+  PublicAuthor,
+  Reviews,
+} from '../shared/http';
 
 const SEVERITY_LABELS: Record<Announcement['severity'], string> = {
   info: t('信息'),
@@ -36,9 +42,7 @@ export function Announcements() {
   const [items, setItems] = useState<Announcement[]>([]);
   const [failed, setFailed] = useState(false);
   // 移动端首屏高度有限：公告默认折叠为单行，用户可自行展开。
-  const [compact, setCompact] = useState(
-    () => window.matchMedia(COMPACT_HEADER_QUERY).matches,
-  );
+  const [compact, setCompact] = useState(() => window.matchMedia(COMPACT_HEADER_QUERY).matches);
   useEffect(() => {
     const query = window.matchMedia(COMPACT_HEADER_QUERY);
     const sync = () => setCompact(query.matches);
@@ -49,7 +53,7 @@ export function Announcements() {
   useEffect(() => {
     let active = true;
     const refresh = () => {
-      void apiRequest('/api/announcements')
+      void apiRequest<AnnouncementList>('/api/announcements')
         .then((r) => {
           if (active) {
             setItems(r.announcements);
@@ -85,13 +89,7 @@ export function Announcements() {
     </div>
   );
 }
-export function Notifications({
-  token,
-  onRead,
-}: {
-  token: string;
-  onRead: () => void;
-}) {
+export function Notifications({ token, onRead }: { token: string; onRead: () => void }) {
   const [items, setItems] = useState<Notice[]>([]),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(true),
@@ -99,7 +97,7 @@ export function Notifications({
     [unread, setUnread] = useState(0),
     [offset, setOffset] = useState(0);
   const load = () =>
-    apiRequest(`/api/notifications?offset=${offset}`, { token }).then((r) => {
+    apiRequest<NotificationList>(`/api/notifications?offset=${offset}`, { token }).then((r) => {
       setItems(r.items);
       setUnread(r.unread);
       setError('');
@@ -107,7 +105,7 @@ export function Notifications({
   useEffect(() => {
     let active = true;
     setLoading(true);
-    void apiRequest(`/api/notifications?offset=${offset}`, { token })
+    void apiRequest<NotificationList>(`/api/notifications?offset=${offset}`, { token })
       .then((r) => {
         if (active) {
           setItems(r.items);
@@ -160,17 +158,10 @@ export function Notifications({
           const href = n.item ? `/portal/library/${n.item}` : null;
           const label = n.item_title || n.title;
           return (
-            <article
-              className={`notice-card${n.read_at ? '' : ' notice-card--unread'}`}
-              key={n.id}
-            >
+            <article className={`notice-card${n.read_at ? '' : ' notice-card--unread'}`} key={n.id}>
               <div className="notice-card-media" aria-hidden="true">
                 {n.hash && n.item_kind ? (
-                  <TextureThumb
-                    url={`/textures/${n.hash}`}
-                    kind={n.item_kind}
-                    slim={false}
-                  />
+                  <TextureThumb url={`/textures/${n.hash}`} kind={n.item_kind} slim={false} />
                 ) : (
                   <span className="notice-card-placeholder">·</span>
                 )}
@@ -191,11 +182,7 @@ export function Notifications({
                   <span className="notice-link">{label}</span>
                 )}
                 {n.kind === 'review' && (
-                  <p>
-                    {[n.state && STATE_LABELS[n.state], n.detail]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
+                  <p>{[n.state && STATE_LABELS[n.state], n.detail].filter(Boolean).join(' · ')}</p>
                 )}
                 <time
                   className="notice-meta"
@@ -225,38 +212,29 @@ export function Notifications({
           );
         })
       )}
-      {!loading &&
-        !error &&
-        (offset > 0 || items.length === TEXTURE_PAGE_SIZE) && (
-          <nav className="actions" aria-label={t('通知分页')}>
-            <button
-              className="btn btn--secondary"
-              disabled={loading || offset === 0}
-              onClick={() => setOffset(offset - TEXTURE_PAGE_SIZE)}
-            >
-              {t('上一页')}
-            </button>
-            <button
-              className="btn btn--secondary"
-              disabled={loading || items.length < TEXTURE_PAGE_SIZE}
-              onClick={() => setOffset(offset + TEXTURE_PAGE_SIZE)}
-            >
-              {t('下一页')}
-            </button>
-          </nav>
-        )}
+      {!loading && !error && (offset > 0 || items.length === TEXTURE_PAGE_SIZE) && (
+        <nav className="actions" aria-label={t('通知分页')}>
+          <button
+            className="btn btn--secondary"
+            disabled={loading || offset === 0}
+            onClick={() => setOffset(offset - TEXTURE_PAGE_SIZE)}
+          >
+            {t('上一页')}
+          </button>
+          <button
+            className="btn btn--secondary"
+            disabled={loading || items.length < TEXTURE_PAGE_SIZE}
+            onClick={() => setOffset(offset + TEXTURE_PAGE_SIZE)}
+          >
+            {t('下一页')}
+          </button>
+        </nav>
+      )}
     </section>
   );
 }
 export function PublicPage({ path, token }: { path: string; token?: string }) {
-  const [data, setData] = useState<{
-      id: string;
-      name: string;
-      school: string;
-      avatar?: string;
-      saves: number;
-      items: TextureItem[];
-    } | null>(null),
+  const [data, setData] = useState<PublicAuthor | null>(null),
     [item, setItem] = useState<TextureItem | null>(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
@@ -267,19 +245,17 @@ export function PublicPage({ path, token }: { path: string; token?: string }) {
     setData(null);
     setItem(null);
     setError('');
-    void apiRequest(
-      `/api/${author ? 'users' : 'library'}/${encodeURIComponent(path.split('/')[2])}?offset=${offset}`,
-      { token },
-    )
-      .then((r) => {
-        if (active) {
-          if (author) setData(r);
-          else setItem(r);
-        }
-      })
-      .catch((e) => {
-        if (active) setError(errorText(e));
-      });
+    const url = `/api/${author ? 'users' : 'library'}/${encodeURIComponent(path.split('/')[2])}?offset=${offset}`;
+    const request = author
+      ? apiRequest<PublicAuthor>(url, { token }).then((value) => {
+          if (active) setData(value);
+        })
+      : apiRequest<TextureItem>(url, { token }).then((value) => {
+          if (active) setItem(value);
+        });
+    void request.catch((e) => {
+      if (active) setError(errorText(e));
+    });
     return () => {
       active = false;
     };
@@ -292,8 +268,7 @@ export function PublicPage({ path, token }: { path: string; token?: string }) {
         token,
         body,
       });
-      if (suffix !== 'report')
-        setItem(await apiRequest(`/api/library/${item!.id}`, { token }));
+      if (suffix !== 'report') setItem(await apiRequest(`/api/library/${item!.id}`, { token }));
       setError('');
       return true;
     } catch (e) {
@@ -397,10 +372,7 @@ export function PublicPage({ path, token }: { path: string; token?: string }) {
             </div>
             {token && (
               <div className="detail-danger">
-                <ReportButton
-                  busy={busy}
-                  onReport={(reason) => act('report', { reason })}
-                />
+                <ReportButton busy={busy} onReport={(reason) => act('report', { reason })} />
               </div>
             )}
           </div>
@@ -470,9 +442,7 @@ export function ReportButton({
 }
 export function AdminPanel({ token }: { token: string }) {
   const [items, setItems] = useState<TextureItem[]>([]),
-    [reports, setReports] = useState<
-      { id: string; item: string; reason: string }[]
-    >([]),
+    [reports, setReports] = useState<{ id: string; item: string; reason: string }[]>([]),
     [announcements, setAnnouncements] = useState<Announcement[]>([]),
     [announcementOffset, setAnnouncementOffset] = useState(0),
     [edit, setEdit] = useState<Announcement | null>(null),
@@ -483,10 +453,10 @@ export function AdminPanel({ token }: { token: string }) {
     [offset, setOffset] = useState(0);
   const load = async () => {
     const [r, a] = await Promise.all([
-      apiRequest(`/api/admin/reviews?state=${state}&offset=${offset}`, {
+      apiRequest<Reviews>(`/api/admin/reviews?state=${state}&offset=${offset}`, {
         token,
       }),
-      apiRequest(`/api/admin/announcements?offset=${announcementOffset}`, {
+      apiRequest<AnnouncementList>(`/api/admin/announcements?offset=${announcementOffset}`, {
         token,
       }),
     ]);
@@ -548,11 +518,7 @@ export function AdminPanel({ token }: { token: string }) {
             <h3>
               {textureTitle(i)} · {i.authorName}
             </h3>
-            <img
-              className="texture-flat"
-              src={textureSrc(i)}
-              alt={textureTitle(i)}
-            />
+            <img className="texture-flat" src={textureSrc(i)} alt={textureTitle(i)} />
             <p>
               {SOURCE_LABELS[i.source ?? 'unknown']} · {i.license}
             </p>
@@ -621,9 +587,7 @@ export function AdminPanel({ token }: { token: string }) {
             <div className="admin-announcement-info">
               <h4 className="admin-announcement-title">{a.title}</h4>
               <div className="badge-row">
-                <span
-                  className={`status-pill severity-pill severity-pill--${a.severity}`}
-                >
+                <span className={`status-pill severity-pill severity-pill--${a.severity}`}>
                   {SEVERITY_LABELS[a.severity]}
                 </span>
                 <span className="status-pill status-pill--neutral">
@@ -632,10 +596,7 @@ export function AdminPanel({ token }: { token: string }) {
               </div>
             </div>
             <div className="admin-announcement-actions">
-              <button
-                className="btn btn--secondary"
-                onClick={() => setEdit(a)}
-              >
+              <button className="btn btn--secondary" onClick={() => setEdit(a)}>
                 {t('编辑公告')}
               </button>
               <button
@@ -643,11 +604,7 @@ export function AdminPanel({ token }: { token: string }) {
                 disabled={busy}
                 onClick={() => {
                   if (window.confirm(t('删除此公告？')))
-                    void action(
-                      `/api/admin/announcements/${a.id}`,
-                      undefined,
-                      'DELETE',
-                    );
+                    void action(`/api/admin/announcements/${a.id}`, undefined, 'DELETE');
                 }}
               >
                 {t('删除公告')}
@@ -660,18 +617,14 @@ export function AdminPanel({ token }: { token: string }) {
         <button
           className="btn btn--secondary"
           disabled={busy || loading || announcementOffset === 0}
-          onClick={() =>
-            setAnnouncementOffset(announcementOffset - TEXTURE_PAGE_SIZE)
-          }
+          onClick={() => setAnnouncementOffset(announcementOffset - TEXTURE_PAGE_SIZE)}
         >
           {t('上一页')}
         </button>
         <button
           className="btn btn--secondary"
           disabled={busy || loading || announcements.length < TEXTURE_PAGE_SIZE}
-          onClick={() =>
-            setAnnouncementOffset(announcementOffset + TEXTURE_PAGE_SIZE)
-          }
+          onClick={() => setAnnouncementOffset(announcementOffset + TEXTURE_PAGE_SIZE)}
         >
           {t('下一页')}
         </button>
@@ -700,9 +653,7 @@ export function AdminPanel({ token }: { token: string }) {
         }}
       >
         <h3 className="subsection-title" id="announcement-form-title">
-          {edit
-            ? tf('编辑公告：{title}', { title: edit.title })
-            : t('发布新公告')}
+          {edit ? tf('编辑公告：{title}', { title: edit.title }) : t('发布新公告')}
         </h3>
         <label className="field-label">
           {t('公告标题')}
@@ -727,11 +678,7 @@ export function AdminPanel({ token }: { token: string }) {
         <div className="announcement-form-row">
           <label className="field-label">
             {t('严重程度')}
-            <select
-              name="severity"
-              className="input"
-              defaultValue={edit?.severity ?? 'info'}
-            >
+            <select name="severity" className="input" defaultValue={edit?.severity ?? 'info'}>
               <option value="info">{t('信息')}</option>
               <option value="warning">{t('提醒')}</option>
               <option value="danger">{t('紧急')}</option>
@@ -751,11 +698,7 @@ export function AdminPanel({ token }: { token: string }) {
           </label>
         </div>
         <label className="wardrobe-publish">
-          <input
-            name="expand"
-            type="checkbox"
-            defaultChecked={edit?.expand === 1}
-          />
+          <input name="expand" type="checkbox" defaultChecked={edit?.expand === 1} />
           {t('默认展开')}
         </label>
         <div className="actions">
@@ -763,11 +706,7 @@ export function AdminPanel({ token }: { token: string }) {
             {edit ? t('保存公告') : t('发布公告')}
           </button>
           {edit && (
-            <button
-              type="button"
-              className="btn btn--secondary"
-              onClick={() => setEdit(null)}
-            >
+            <button type="button" className="btn btn--secondary" onClick={() => setEdit(null)}>
               {t('取消编辑')}
             </button>
           )}

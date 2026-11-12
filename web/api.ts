@@ -6,7 +6,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   'Active club membership required': t('请重新验证学校邮箱'),
   'Account disabled': t('账号已停用'),
   'Credentials changed; sign in again': t('登录凭据已更新，请重新登录'),
-  'Self-nomination requires chair or site administrator authority': t('仅现任会长或站点管理员可以提名自己'),
+  'Self-nomination requires chair or site administrator authority': t(
+    '仅现任会长或站点管理员可以提名自己',
+  ),
   'Recovery belongs to the account home club': t('请联系账号所属社团处理恢复'),
   'Site administrator required to recover global authority': t('此账号需要站点管理员恢复'),
   'Active recovery membership required': t('恢复账号的成员资格已撤销'),
@@ -31,15 +33,10 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiRequest(
+export async function apiRequest<Result = unknown>(
   path: string,
-  {
-    method = 'GET',
-    token,
-    body,
-    errorMessage = t('请求未完成，请稍后重试'),
-  }: ApiOptions = {},
-) {
+  { method = 'GET', token, body, errorMessage = t('请求未完成，请稍后重试') }: ApiOptions = {},
+): Promise<Result> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload: BodyInit | undefined;
@@ -57,14 +54,18 @@ export async function apiRequest(
     ...(payload === undefined ? {} : { body: payload }),
   });
   if (!response.ok) {
-    const failure = await response.json().catch(() => null);
+    const failure: unknown = await response.json().catch(() => null);
     const message =
-      typeof failure?.errorMessage === 'string' && Object.hasOwn(ERROR_MESSAGES, failure.errorMessage)
+      failure !== null &&
+      typeof failure === 'object' &&
+      'errorMessage' in failure &&
+      typeof failure.errorMessage === 'string' &&
+      Object.hasOwn(ERROR_MESSAGES, failure.errorMessage)
         ? ERROR_MESSAGES[failure.errorMessage]
         : errorMessage;
     throw new ApiError(message, response.status);
   }
-  return response.status === 204 ? {} : response.json();
+  return (response.status === 204 ? {} : await response.json()) as Result;
 }
 
 export function errorText(error: unknown) {

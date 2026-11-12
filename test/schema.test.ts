@@ -16,7 +16,10 @@ test('migrations initialize once and preserve existing data on reopen', () => {
     store.db.prepare('INSERT INTO attempts VALUES(?,?,?)').run('preserved', 10, 2);
     store.close();
     store = new Store(path);
-    assert.equal(store.db.prepare('SELECT count FROM attempts WHERE key=?').get('preserved')!.count, 2);
+    assert.equal(
+      store.db.prepare('SELECT count FROM attempts WHERE key=?').get('preserved')!.count,
+      2,
+    );
     store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -44,13 +47,20 @@ test('schema one migration retains accounts, profile data, sessions and legacy m
         assert.equal(store.db.prepare('PRAGMA user_version').get()!.user_version, 7);
         assert.equal(store.account('id', 'alice')!.disabled, 0);
         assert.equal(store.account('id', 'alice')!.verified_at, 10);
-        assert.equal(store.db.prepare('SELECT legacy_member FROM identity_members').get()!.legacy_member, 'legacy-alice');
+        assert.equal(
+          store.db.prepare('SELECT legacy_member FROM identity_members').get()!.legacy_member,
+          'legacy-alice',
+        );
         assert.equal(store.db.prepare('SELECT hash FROM profile_textures').get()!.hash, 'texture');
         assert.equal(store.db.prepare('SELECT token FROM joins').get()!.token, 'token');
         assert.equal(store.db.prepare('SELECT account FROM tokens').get()!.account, 'alice');
-      } finally { store.close(); }
+      } finally {
+        store.close();
+      }
     }
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('splitting configuration seed markers retains completed imports including revoked grants', () => {
@@ -71,9 +81,21 @@ test('splitting configuration seed markers retains completed imports including r
     try {
       new LocalIdentity(store).seedAdmins(['site', 'another'], ['mua', 'other']);
       assert.equal(store.db.prepare('SELECT count(*) AS total FROM grants').get()!.total, 2);
-      assert.equal(store.db.prepare("SELECT revoked_at FROM grants WHERE id='site'").get()!.revoked_at, 2);
-      assert.deepEqual(store.db.prepare('SELECT name FROM identity_seeds ORDER BY name').all().map(row => row.name),
-        ['mua_admins', 'site_admins']);
-    } finally { store.close(); }
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+      assert.equal(
+        store.db.prepare("SELECT revoked_at FROM grants WHERE id='site'").get()!.revoked_at,
+        2,
+      );
+      assert.deepEqual(
+        store.db
+          .prepare('SELECT name FROM identity_seeds ORDER BY name')
+          .all()
+          .map((row) => row.name),
+        ['mua_admins', 'site_admins'],
+      );
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

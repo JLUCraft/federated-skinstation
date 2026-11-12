@@ -20,3 +20,11 @@ Generate TypeScript with `bun run contracts` and Rust with the host's `typify`
 build script. Never edit generated types.
 
 Change only the affected subsystem. Use existing dependencies and build directories. Finish each batch before validation; select one validation channel and reuse successful evidence for unchanged inputs. Report skipped checks and device execution limits explicitly.
+
+Every batch must pass `bun run check` before review and commit. It runs Oxfmt
+format checking, strict TypeScript checking, and type-aware Oxlint with zero
+warnings. Run `bun run format` to apply formatting, then `bun run build` and
+`bun run test`. Include all authored TypeScript in the project, including shared
+types, scripts, and tests. Do not use `any` or suppress unsafe-value rules to make
+checks pass. Keep external JSON as `unknown` until narrowed or parsed through a
+declared contract. Generated contracts remain owned by their JSON Schemas.

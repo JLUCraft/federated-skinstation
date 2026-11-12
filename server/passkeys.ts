@@ -79,28 +79,18 @@ export function registerPasskeys(
     });
     putCookie(reply, value, CHALLENGE_SECONDS);
   };
-  const consume = (
-    req: FastifyRequest,
-    reply: FastifyReply,
-    kind: string,
-    session?: string,
-  ) => {
+  const consume = (req: FastifyRequest, reply: FastifyReply, kind: string, session?: string) => {
     originCheck(req);
     putCookie(reply, '', 0);
     return db.transaction(() => {
       const row = db.db
-        .prepare(
-          'SELECT * FROM passkey_challenges WHERE cookie=? AND expires>?',
-        )
+        .prepare('SELECT * FROM passkey_challenges WHERE cookie=? AND expires>?')
         .get(digest(readCookie(req)), now()) as
-        { challenge: string; kind: string; token: string | null } | undefined;
-      db.db
-        .prepare('DELETE FROM passkey_challenges WHERE cookie=?')
-        .run(digest(readCookie(req)));
+        | { challenge: string; kind: string; token: string | null }
+        | undefined;
+      db.db.prepare('DELETE FROM passkey_challenges WHERE cookie=?').run(digest(readCookie(req)));
       requireThat(
-        row &&
-          row.kind === kind &&
-          row.token === (session ? digest(session) : null),
+        row && row.kind === kind && row.token === (session ? digest(session) : null),
         'Challenge expired',
       );
       return row.challenge;
@@ -110,9 +100,7 @@ export function registerPasskeys(
     const a = db.token(token(req), undefined, now());
     return {
       items: db.db
-        .prepare(
-          'SELECT id,name,created FROM passkeys WHERE account=? ORDER BY created',
-        )
+        .prepare('SELECT id,name,created FROM passkeys WHERE account=? ORDER BY created')
         .all(a.id),
     };
   });
@@ -122,13 +110,10 @@ export function registerPasskeys(
       a = db.token(session, undefined, now()),
       b = record(req.body);
     db.rate(`passkey-register:${a.id}`, now(), 5, 60);
-    requireThat(
-      await verifyPassword(field(b.password, 1024), a.password),
-      'Invalid credentials',
-    );
-    const keys = db.db
-      .prepare('SELECT id FROM passkeys WHERE account=?')
-      .all(a.id) as { id: string }[];
+    requireThat(await verifyPassword(field(b.password, 1024), a.password), 'Invalid credentials');
+    const keys = db.db.prepare('SELECT id FROM passkeys WHERE account=?').all(a.id) as {
+      id: string;
+    }[];
     requireThat(keys.length < MAX_PASSKEYS, 'Passkey limit reached');
     const options = await generateRegistrationOptions({
       rpName: 'JLUCraft',
@@ -164,18 +149,15 @@ export function registerPasskeys(
     } catch {
       throw new Rejected('Passkey verification failed');
     }
-    requireThat(
-      result.verified && result.registrationInfo,
-      'Passkey verification failed',
-    );
+    requireThat(result.verified && result.registrationInfo, 'Passkey verification failed');
     const name = field(b.name, 80).trim();
     requireThat(name.length > 0);
     await authorize(a);
     db.transaction(() => {
       db.token(session, undefined, now());
-      const { n } = db.db
-        .prepare('SELECT COUNT(*) n FROM passkeys WHERE account=?')
-        .get(a.id) as { n: number };
+      const { n } = db.db.prepare('SELECT COUNT(*) n FROM passkeys WHERE account=?').get(a.id) as {
+        n: number;
+      };
       requireThat(n < MAX_PASSKEYS);
       const c = result.registrationInfo!.credential;
       requireThat(
@@ -199,19 +181,16 @@ export function registerPasskeys(
   });
   app.post('/api/passkeys/login/verify', async (req, reply) => {
     const challenge = consume(req, reply, 'login'),
-      response = record(
-        record(req.body).response,
-      ) as unknown as AuthenticationResponseJSON;
-    const c = db.db
-      .prepare('SELECT * FROM passkeys WHERE id=?')
-      .get(field(response.id, 2048)) as Credential | undefined;
+      response = record(record(req.body).response) as unknown as AuthenticationResponseJSON;
+    const c = db.db.prepare('SELECT * FROM passkeys WHERE id=?').get(field(response.id, 2048)) as
+      | Credential
+      | undefined;
     requireThat(c, 'Passkey verification failed');
     const a = db.account('id', c.account);
     requireThat(a);
     requireThat(
       response.response?.userHandle &&
-        Buffer.from(response.response.userHandle, 'base64url').toString() ===
-          a.id,
+        Buffer.from(response.response.userHandle, 'base64url').toString() === a.id,
       'Passkey user mismatch',
     );
     let result;

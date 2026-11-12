@@ -1,8 +1,15 @@
 {
   "compilerOptions": {
-    "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler",
-    "strict": true, "esModuleInterop": true, "skipLibCheck": true,
-    "jsx": "react-jsx", "noEmit": true, "types": ["node", "vite/client"]
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "types": ["node", "vite/client"],
+    "allowImportingTsExtensions": true
   },
-  "include": ["server", "web", "test", "vite.config.ts"]
+  "include": ["server", "shared", "web", "test", "scripts", "vite.config.ts"]
 }

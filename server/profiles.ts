@@ -9,10 +9,7 @@ export function registerProfiles(app: FastifyInstance, db: Store) {
     profiles: db.profiles(account(req.headers.authorization)),
   }));
   app.post('/api/players', async (req) =>
-    db.createProfile(
-      account(req.headers.authorization),
-      field(record(req.body).name, 16),
-    ),
+    db.createProfile(account(req.headers.authorization), field(record(req.body).name, 16)),
   );
   app.patch('/api/players/:id', async (req) => {
     db.renameProfile(
@@ -23,10 +20,7 @@ export function registerProfiles(app: FastifyInstance, db: Store) {
     return { ok: true };
   });
   app.delete('/api/players/:id', async (req) => {
-    db.deleteProfile(
-      account(req.headers.authorization),
-      field(record(req.params).id, 32),
-    );
+    db.deleteProfile(account(req.headers.authorization), field(record(req.params).id, 32));
     return { ok: true };
   });
 }

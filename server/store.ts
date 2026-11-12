@@ -1,18 +1,12 @@
 import { MAX_PROFILES, type GameProfile } from '../shared/profiles.js';
 import { PASSWORD_RULES } from '../shared/identity.js';
+import type { Texture } from '../shared/wardrobe.js';
 import { DatabaseSync } from 'node:sqlite';
-import {
-  createHash,
-  randomBytes,
-  randomUUID,
-  scrypt,
-  timingSafeEqual,
-} from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 
 const derive = promisify(scrypt);
-export const digest = (value: string) =>
-  createHash('sha256').update(value).digest('hex');
+export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 export const secret = () => randomBytes(32).toString('hex');
 export class Rejected extends Error {
   constructor(
@@ -25,10 +19,7 @@ export class Rejected extends Error {
 }
 /** Current Unix time in whole seconds; token and challenge expiry use this clock. */
 export const now = () => Math.floor(Date.now() / 1000);
-export function requireThat(
-  value: unknown,
-  message = 'Request rejected',
-): asserts value {
+export function requireThat(value: unknown, message = 'Request rejected'): asserts value {
   if (!value) throw new Rejected(message);
 }
 export interface Account {
@@ -43,7 +34,8 @@ export interface Account {
 }
 export async function encodePassword(password: string) {
   requireThat(
-    password.length >= PASSWORD_RULES.minLength && Buffer.byteLength(password) <= PASSWORD_RULES.maxLength,
+    password.length >= PASSWORD_RULES.minLength &&
+      Buffer.byteLength(password) <= PASSWORD_RULES.maxLength,
     `Use a password of ${PASSWORD_RULES.minLength}–${PASSWORD_RULES.maxLength} bytes`,
   );
   const salt = randomBytes(16).toString('hex');
@@ -59,9 +51,10 @@ export async function verifyPassword(password: string, encoded: string) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 export const migrations: readonly { version: number; apply: (db: DatabaseSync) => void }[] = [
-  { version: 1, apply(db) {
-    db
-      .exec(`CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,name TEXT UNIQUE COLLATE NOCASE NOT NULL,email TEXT UNIQUE COLLATE NOCASE NOT NULL,school TEXT NOT NULL,password TEXT NOT NULL,verified_at INTEGER NOT NULL);
+  {
+    version: 1,
+    apply(db) {
+      db.exec(`CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,name TEXT UNIQUE COLLATE NOCASE NOT NULL,email TEXT UNIQUE COLLATE NOCASE NOT NULL,school TEXT NOT NULL,password TEXT NOT NULL,verified_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS challenges(email TEXT PRIMARY KEY,token TEXT NOT NULL,expires INTEGER NOT NULL,payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tokens(hash TEXT PRIMARY KEY,client TEXT NOT NULL,account TEXT NOT NULL REFERENCES accounts(id),expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS joins(server TEXT NOT NULL,profile TEXT NOT NULL,token TEXT NOT NULL REFERENCES tokens(hash) ON DELETE CASCADE,expires INTEGER NOT NULL,ip TEXT,PRIMARY KEY(server,profile));
@@ -71,20 +64,21 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TABLE IF NOT EXISTS profile_remaps(old TEXT PRIMARY KEY,next TEXT NOT NULL,account TEXT NOT NULL REFERENCES accounts(id));
       CREATE TABLE IF NOT EXISTS password_resets(account TEXT PRIMARY KEY REFERENCES accounts(id),token TEXT NOT NULL,expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY,window INTEGER NOT NULL,count INTEGER NOT NULL);`);
-    db.exec(
-      'CREATE TABLE IF NOT EXISTS identity_members(account TEXT PRIMARY KEY REFERENCES accounts(id),member TEXT NOT NULL,confirmed INTEGER NOT NULL DEFAULT 0)',
-    );
-    db.exec(
-      'CREATE TABLE IF NOT EXISTS profile_textures(account TEXT NOT NULL REFERENCES accounts(id),kind TEXT NOT NULL,hash TEXT NOT NULL,model TEXT NOT NULL,PRIMARY KEY(account,kind))',
-    );
-    db
-      .exec(`CREATE TABLE IF NOT EXISTS extra_profiles(id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id),name TEXT UNIQUE COLLATE NOCASE NOT NULL);
+      db.exec(
+        'CREATE TABLE IF NOT EXISTS identity_members(account TEXT PRIMARY KEY REFERENCES accounts(id),member TEXT NOT NULL,confirmed INTEGER NOT NULL DEFAULT 0)',
+      );
+      db.exec(
+        'CREATE TABLE IF NOT EXISTS profile_textures(account TEXT NOT NULL REFERENCES accounts(id),kind TEXT NOT NULL,hash TEXT NOT NULL,model TEXT NOT NULL,PRIMARY KEY(account,kind))',
+      );
+      db.exec(`CREATE TABLE IF NOT EXISTS extra_profiles(id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id),name TEXT UNIQUE COLLATE NOCASE NOT NULL);
       CREATE TABLE IF NOT EXISTS extra_profile_textures(profile TEXT NOT NULL REFERENCES extra_profiles(id) ON DELETE CASCADE,kind TEXT NOT NULL,hash TEXT NOT NULL,model TEXT NOT NULL,PRIMARY KEY(profile,kind));
       CREATE TABLE IF NOT EXISTS token_profiles(token TEXT PRIMARY KEY REFERENCES tokens(hash) ON DELETE CASCADE,profile TEXT);`);
-
-  } },
-  { version: 2, apply(db) {
-    db.exec(`
+    },
+  },
+  {
+    version: 2,
+    apply(db) {
+      db.exec(`
       ALTER TABLE accounts ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0 CHECK(disabled IN (0,1));
       ALTER TABLE identity_members ADD COLUMN legacy_member TEXT GENERATED ALWAYS AS (member) VIRTUAL;
       CREATE TABLE clubs(id TEXT PRIMARY KEY,title TEXT NOT NULL,kind TEXT NOT NULL,school TEXT NOT NULL);
@@ -108,18 +102,24 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT,'Audit is append-only'); END;
       CREATE TABLE identity_seeds(name TEXT PRIMARY KEY);
     `);
-  } },
-  { version: 3, apply(db) {
-    db.exec(`
+    },
+  },
+  {
+    version: 3,
+    apply(db) {
+      db.exec(`
       INSERT OR IGNORE INTO identity_seeds SELECT 'site_admins'
         WHERE EXISTS(SELECT 1 FROM grants WHERE principal_kind='user' AND granted_by='config' AND scope='global' AND permission='admin');
       INSERT OR IGNORE INTO identity_seeds SELECT 'mua_admins'
         WHERE EXISTS(SELECT 1 FROM grants WHERE principal_kind='user' AND granted_by='config' AND scope='service:mua' AND permission='admin');
       DELETE FROM identity_seeds WHERE name='admins';
     `);
-  } },
-  { version: 4, apply(db) {
-    db.exec(`
+    },
+  },
+  {
+    version: 4,
+    apply(db) {
+      db.exec(`
       ALTER TABLE accounts ADD COLUMN credential_revision INTEGER NOT NULL DEFAULT 0;
       CREATE TABLE account_recoveries(
         id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL REFERENCES accounts(id),
@@ -127,9 +127,12 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
         email TEXT NOT NULL COLLATE NOCASE, token TEXT NOT NULL, expires INTEGER NOT NULL
       );
     `);
-  } },
-  { version: 5, apply(db) {
-    db.exec(`
+    },
+  },
+  {
+    version: 5,
+    apply(db) {
+      db.exec(`
       CREATE TABLE game_resources(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),definition TEXT NOT NULL CHECK(json_valid(definition)));
       CREATE TABLE leagues(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),resource TEXT NOT NULL REFERENCES game_resources(id),state TEXT NOT NULL CHECK(json_valid(state)));
       CREATE INDEX leagues_resource ON leagues(resource);
@@ -139,9 +142,12 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TABLE league_disputes(id TEXT PRIMARY KEY,league TEXT NOT NULL REFERENCES leagues(id),account TEXT NOT NULL REFERENCES accounts(id),reason TEXT NOT NULL,created_at INTEGER NOT NULL,resolution TEXT,reviewer TEXT REFERENCES accounts(id),resolved_at INTEGER);
       CREATE UNIQUE INDEX league_disputes_open ON league_disputes(league,account) WHERE resolution IS NULL;
     `);
-  } },
-  { version: 6, apply(db) {
-    db.exec(`
+    },
+  },
+  {
+    version: 6,
+    apply(db) {
+      db.exec(`
       CREATE TABLE office_artifacts(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),owner TEXT NOT NULL REFERENCES accounts(id),title TEXT NOT NULL,mime TEXT NOT NULL,content BLOB NOT NULL,parent TEXT REFERENCES office_artifacts(id),created_at INTEGER NOT NULL);
       CREATE TRIGGER office_artifacts_no_update BEFORE UPDATE ON office_artifacts BEGIN SELECT RAISE(ABORT,'Artifacts are immutable'); END;
       CREATE TABLE activities(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),state TEXT NOT NULL CHECK(json_valid(state)));
@@ -153,9 +159,12 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TABLE workflows(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),event TEXT NOT NULL REFERENCES activities(id),state TEXT NOT NULL CHECK(json_valid(state)));
       CREATE INDEX workflows_event ON workflows(event);
     `);
-  } },
-  { version: 7, apply(db) {
-    db.exec(`
+    },
+  },
+  {
+    version: 7,
+    apply(db) {
+      db.exec(`
       CREATE TABLE point_policy(id INTEGER PRIMARY KEY CHECK(id=1),daily_member_cap TEXT NOT NULL);
       CREATE TABLE activity_sources(id TEXT PRIMARY KEY,config TEXT NOT NULL CHECK(json_valid(config)),last_window_end_ms INTEGER NOT NULL);
       CREATE TABLE activity_source_days(source TEXT NOT NULL REFERENCES activity_sources(id),day INTEGER NOT NULL,points TEXT NOT NULL,active_slices INTEGER NOT NULL,afk_slices INTEGER NOT NULL,PRIMARY KEY(source,day));
@@ -168,7 +177,8 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TRIGGER point_ledger_no_delete BEFORE DELETE ON point_ledger BEGIN SELECT RAISE(ABORT,'Point entries are immutable'); END;
       CREATE TABLE point_allowances(scope TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),account TEXT NOT NULL REFERENCES accounts(id),epoch INTEGER NOT NULL,remaining TEXT NOT NULL);
     `);
-  } },
+    },
+  },
 ];
 export class Store {
   readonly db: DatabaseSync;
@@ -214,9 +224,9 @@ export class Store {
   rate(key: string, now: number, max: number, window: number) {
     this.transaction(() => {
       this.db.prepare('DELETE FROM attempts WHERE window<?').run(now - 3600);
-      const old = this.db
-        .prepare('SELECT window,count FROM attempts WHERE key=?')
-        .get(key) as { window: number; count: number } | undefined;
+      const old = this.db.prepare('SELECT window,count FROM attempts WHERE key=?').get(key) as
+        | { window: number; count: number }
+        | undefined;
       const count = old && now - old.window < window ? old.count : 0;
       requireThat(count < max, 'Too many attempts');
       this.db
@@ -237,9 +247,7 @@ export class Store {
     this.rate(`confirm:${digest(email)}`, now, 10, 900);
     this.transaction(() => {
       const row = this.db
-        .prepare(
-          'SELECT payload FROM challenges WHERE email=? AND token=? AND expires>?',
-        )
+        .prepare('SELECT payload FROM challenges WHERE email=? AND token=? AND expires>?')
         .get(email, digest(code), now) as { payload: string } | undefined;
       requireThat(row, 'Invalid or expired verification');
       const a = JSON.parse(row.payload) as Account;
@@ -253,19 +261,15 @@ export class Store {
         .run(a.id, a.name, a.email, a.school, a.password, now);
       this.db.prepare('DELETE FROM challenges WHERE email=?').run(email);
       onVerified?.(this.account('email', email)!.id);
-      this.db
-        .prepare(
-          'UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1',
-        )
-        .run();
+      this.db.prepare('UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1').run();
     });
   }
   profileId(account: Account): string {
     return (
       (
-        this.db
-          .prepare('SELECT uuid FROM profile_mappings WHERE account=?')
-          .get(account.id) as { uuid: string } | undefined
+        this.db.prepare('SELECT uuid FROM profile_mappings WHERE account=?').get(account.id) as
+          | { uuid: string }
+          | undefined
       )?.uuid ?? account.id
     );
   }
@@ -274,27 +278,23 @@ export class Store {
       .prepare('SELECT account FROM profile_mappings WHERE uuid=?')
       .get(uuid) as { account: string } | undefined;
     if (mapped) return this.account('id', mapped.account);
-    const extra = this.db
-      .prepare('SELECT account FROM extra_profiles WHERE id=?')
-      .get(uuid) as { account: string } | undefined;
+    const extra = this.db.prepare('SELECT account FROM extra_profiles WHERE id=?').get(uuid) as
+      | { account: string }
+      | undefined;
     if (extra) return this.account('id', extra.account);
     const account = this.account('id', uuid);
     return account && this.profileId(account) === uuid ? account : undefined;
   }
   profiles(account: Account): GameProfile[] {
     const extra = this.db
-      .prepare(
-        'SELECT id,name FROM extra_profiles WHERE account=? ORDER BY rowid',
-      )
+      .prepare('SELECT id,name FROM extra_profiles WHERE account=? ORDER BY rowid')
       .all(account.id) as { id: string; name: string }[];
     return [
       { id: this.profileId(account), name: account.name, primary: true },
       ...extra.map((p) => ({ ...p, primary: false })),
     ];
   }
-  profileNamed(
-    name: string,
-  ): { account: Account; profile: GameProfile } | undefined {
+  profileNamed(name: string): { account: Account; profile: GameProfile } | undefined {
     const primary = this.account('name', name);
     if (primary)
       return {
@@ -305,9 +305,9 @@ export class Store {
           primary: true,
         },
       };
-    const extra = this.db
-      .prepare('SELECT * FROM extra_profiles WHERE name=?')
-      .get(name) as { id: string; name: string; account: string } | undefined;
+    const extra = this.db.prepare('SELECT * FROM extra_profiles WHERE name=?').get(name) as
+      | { id: string; name: string; account: string }
+      | undefined;
     const account = extra && this.account('id', extra.account);
     return extra && account
       ? { account, profile: { id: extra.id, name: extra.name, primary: false } }
@@ -321,20 +321,11 @@ export class Store {
   createProfile(account: Account, name: string) {
     requireThat(/^[a-zA-Z0-9_]{1,16}$/.test(name), 'Invalid profile name');
     return this.transaction(() => {
-      requireThat(
-        this.profiles(account).length < MAX_PROFILES,
-        'Profile limit reached',
-      );
+      requireThat(this.profiles(account).length < MAX_PROFILES, 'Profile limit reached');
       requireThat(!this.profileNamed(name), 'Profile name already in use');
       const id = accountId();
-      this.db
-        .prepare('INSERT INTO extra_profiles VALUES(?,?,?)')
-        .run(id, account.id, name);
-      this.db
-        .prepare(
-          'UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1',
-        )
-        .run();
+      this.db.prepare('INSERT INTO extra_profiles VALUES(?,?,?)').run(id, account.id, name);
+      this.db.prepare('UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1').run();
       return { id, name, primary: false };
     });
   }
@@ -342,47 +333,28 @@ export class Store {
     requireThat(/^[a-zA-Z0-9_]{1,16}$/.test(name), 'Invalid profile name');
     this.transaction(() => {
       const profile = this.ownProfile(account, id);
-      requireThat(
-        !profile.primary,
-        'Primary name is managed by account identity',
-      );
+      requireThat(!profile.primary, 'Primary name is managed by account identity');
       const collision = this.profileNamed(name);
-      requireThat(
-        !collision || collision.profile.id === id,
-        'Profile name already in use',
-      );
-      this.db
-        .prepare('UPDATE extra_profiles SET name=? WHERE id=?')
-        .run(name, id);
+      requireThat(!collision || collision.profile.id === id, 'Profile name already in use');
+      this.db.prepare('UPDATE extra_profiles SET name=? WHERE id=?').run(name, id);
       this.db
         .prepare(
           'DELETE FROM tokens WHERE hash IN (SELECT token FROM token_profiles WHERE profile=?)',
         )
         .run(id);
-      this.db
-        .prepare(
-          'UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1',
-        )
-        .run();
+      this.db.prepare('UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1').run();
     });
   }
   deleteProfile(account: Account, id: string) {
     this.transaction(() => {
-      requireThat(
-        !this.ownProfile(account, id).primary,
-        'Primary profile cannot be deleted',
-      );
+      requireThat(!this.ownProfile(account, id).primary, 'Primary profile cannot be deleted');
       this.db
         .prepare(
           'DELETE FROM tokens WHERE hash IN (SELECT token FROM token_profiles WHERE profile=?)',
         )
         .run(id);
       this.db.prepare('DELETE FROM extra_profiles WHERE id=?').run(id);
-      this.db
-        .prepare(
-          'UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1',
-        )
-        .run();
+      this.db.prepare('UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1').run();
     });
   }
   textures(account: Account, id = this.profileId(account)) {
@@ -393,19 +365,9 @@ export class Store {
           ? 'SELECT kind,hash,model FROM profile_textures WHERE account=?'
           : 'SELECT kind,hash,model FROM extra_profile_textures WHERE profile=?',
       )
-      .all(p.primary ? account.id : id) as {
-      kind: string;
-      hash: string;
-      model: string;
-    }[];
+      .all(p.primary ? account.id : id) as Texture[];
   }
-  setTexture(
-    account: Account,
-    id: string,
-    kind: string,
-    hash: string,
-    model: string,
-  ) {
+  setTexture(account: Account, id: string, kind: string, hash: string, model: string) {
     const p = this.ownProfile(account, id);
     this.db
       .prepare(
@@ -469,13 +431,7 @@ export class Store {
             .prepare('INSERT INTO extra_profiles VALUES(?,?,?)')
             .run(next, account.id, profile.name);
           for (const texture of textures)
-            this.setTexture(
-              account,
-              next,
-              texture.kind,
-              texture.hash,
-              texture.model,
-            );
+            this.setTexture(account, next, texture.kind, texture.hash, texture.model);
         }
         this.db.prepare('DELETE FROM tokens WHERE account=?').run(account.id);
       }
@@ -492,28 +448,17 @@ export class Store {
       .run(account.id, digest(code), now + 900);
     return code;
   }
-  resetPassword(
-    email: string,
-    code: string,
-    passwordHash: string,
-    now: number,
-  ) {
+  resetPassword(email: string, code: string, passwordHash: string, now: number) {
     this.rate(`reset-confirm:${digest(email)}`, now, 10, 900);
     this.transaction(() => {
       const account = this.account('email', email);
       requireThat(account);
       const row = this.db
-        .prepare(
-          'SELECT 1 FROM password_resets WHERE account=? AND token=? AND expires>?',
-        )
+        .prepare('SELECT 1 FROM password_resets WHERE account=? AND token=? AND expires>?')
         .get(account.id, digest(code), now);
       requireThat(row, 'Invalid or expired verification');
-      this.db
-        .prepare('UPDATE accounts SET password=? WHERE id=?')
-        .run(passwordHash, account.id);
-      this.db
-        .prepare('DELETE FROM password_resets WHERE account=?')
-        .run(account.id);
+      this.db.prepare('UPDATE accounts SET password=? WHERE id=?').run(passwordHash, account.id);
+      this.db.prepare('DELETE FROM password_resets WHERE account=?').run(account.id);
       this.revokeSessions(account.id);
       this.db.prepare('DELETE FROM challenges WHERE email=?').run(email);
     });
@@ -521,8 +466,10 @@ export class Store {
   requireCredentials(account: Account) {
     const current = this.account('id', account.id);
     requireThat(current?.disabled === 0, 'Account disabled');
-    requireThat(current.credential_revision === account.credential_revision,
-      'Credentials changed; sign in again');
+    requireThat(
+      current.credential_revision === account.credential_revision,
+      'Credentials changed; sign in again',
+    );
   }
   mint(account: Account, client: string, now: number, selectProfile = true) {
     requireThat(client.length <= 256);
@@ -538,13 +485,13 @@ export class Store {
       .prepare('INSERT INTO tokens VALUES(?,?,?,?)')
       .run(digest(token), client, account.id, now + 86400);
     if (!selectProfile)
-      this.db
-        .prepare('INSERT INTO token_profiles VALUES(?,NULL)')
-        .run(digest(token));
+      this.db.prepare('INSERT INTO token_profiles VALUES(?,NULL)').run(digest(token));
     return token;
   }
   revokeSessions(account: string) {
-    this.db.prepare('UPDATE accounts SET credential_revision = credential_revision + 1 WHERE id=?').run(account);
+    this.db
+      .prepare('UPDATE accounts SET credential_revision = credential_revision + 1 WHERE id=?')
+      .run(account);
     this.db.prepare('DELETE FROM tokens WHERE account=?').run(account);
     for (const table of ['oauth_refresh', 'oauth_devices']) {
       if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))
@@ -554,22 +501,13 @@ export class Store {
   token(token: string, client: string | undefined, now: number) {
     const row = this.db
       .prepare('SELECT account,client FROM tokens WHERE hash=? AND expires>?')
-      .get(digest(token), now) as
-      { account: string; client: string } | undefined;
-    requireThat(
-      row && (client === undefined || row.client === client),
-      'Invalid token',
-    );
+      .get(digest(token), now) as { account: string; client: string } | undefined;
+    requireThat(row && (client === undefined || row.client === client), 'Invalid token');
     const account = this.account('id', row.account);
     requireThat(account?.disabled === 0, 'Account disabled');
     return account;
   }
-  refresh(
-    token: string,
-    client: string | undefined,
-    profile: string | undefined,
-    now: number,
-  ) {
+  refresh(token: string, client: string | undefined, profile: string | undefined, now: number) {
     return this.transaction(() => {
       const a = this.token(token, client, now);
       const selected = this.selectedProfile(token, a);
@@ -594,25 +532,14 @@ export class Store {
   invalidate(token: string) {
     this.db.prepare('DELETE FROM tokens WHERE hash=?').run(digest(token));
   }
-  join(
-    token: string,
-    profile: string,
-    server: string,
-    now: number,
-    ip?: string,
-  ) {
+  join(token: string, profile: string, server: string, now: number, ip?: string) {
     requireThat(server.length > 0 && server.length <= 64);
     const account = this.token(token, undefined, now);
     this.ownProfile(account, profile);
-    requireThat(
-      this.selectedProfile(token, account) === profile,
-      'Token profile mismatch',
-    );
+    requireThat(this.selectedProfile(token, account) === profile, 'Token profile mismatch');
     this.db.prepare('DELETE FROM joins WHERE expires<=?').run(now);
     this.db
-      .prepare(
-        'INSERT OR REPLACE INTO joins(server,profile,token,expires,ip) VALUES(?,?,?,?,?)',
-      )
+      .prepare('INSERT OR REPLACE INTO joins(server,profile,token,expires,ip) VALUES(?,?,?,?,?)')
       .run(server, profile, digest(token), now + 30, ip ?? null);
   }
   joined(name: string, server: string, now: number, ip?: string) {

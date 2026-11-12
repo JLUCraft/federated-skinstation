@@ -14,11 +14,7 @@ const defaultTextureUrl = (texture: Texture) => `/textures/${texture.hash}`;
 async function applyMotion(viewer: SkinViewer, motion: Motion) {
   const { WalkingAnimation, RunningAnimation } = await import('skinview3d');
   viewer.animation =
-    motion === 'walk'
-      ? new WalkingAnimation()
-      : motion === 'run'
-        ? new RunningAnimation()
-        : null;
+    motion === 'walk' ? new WalkingAnimation() : motion === 'run' ? new RunningAnimation() : null;
 }
 export function SkinPreview({
   textures,
@@ -78,10 +74,7 @@ export function SkinPreview({
         active.controls.enablePan = false;
         observer = new ResizeObserver(() => {
           if (active && container.current)
-            active.setSize(
-              container.current.clientWidth,
-              container.current.clientHeight,
-            );
+            active.setSize(container.current.clientWidth, container.current.clientHeight);
         });
         observer.observe(container.current);
         await Promise.all([
@@ -114,8 +107,7 @@ export function SkinPreview({
     motionRef.current = motion;
     if (viewer.current) void applyMotion(viewer.current, motion);
   }, [motion]);
-  if (!skin && !cape)
-    return <div className="skin-preview-empty">{emptyText}</div>;
+  if (!skin && !cape) return <div className="skin-preview-empty">{emptyText}</div>;
   return (
     <div className="skin-preview">
       <div className="skin-preview-stage" ref={container}>
@@ -183,9 +175,7 @@ export function SkinPreview({
         </button>
       </div>
       {reduced && (
-        <p className="section-hint">
-          {t('系统已开启「减少动态效果」，角色预览保持静止')}
-        </p>
+        <p className="section-hint">{t('系统已开启「减少动态效果」，角色预览保持静止')}</p>
       )}
     </div>
   );

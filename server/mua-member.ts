@@ -32,10 +32,7 @@ export async function registerMemberFeatures(
   };
   const admin = (req: FastifyRequest) => {
     const a = authenticate(req);
-    requireThat(
-      identity.authorize(a.id, 'service:mua', 'admin'),
-      'Administrator required',
-    );
+    requireThat(identity.authorize(a.id, 'service:mua', 'admin'), 'Administrator required');
     return a;
   };
   const post = (path: string, payload: unknown) =>
@@ -47,16 +44,11 @@ export async function registerMemberFeatures(
   app.get('/api/mua/profiles', async (req) => {
     const a = authenticate(req);
     const q = object(req.query);
-    const selected = db.ownProfile(
-      a,
-      q.uuid === undefined ? db.profileId(a) : string(q.uuid, 32),
-    );
+    const selected = db.ownProfile(a, q.uuid === undefined ? db.profileId(a) : string(q.uuid, 32));
     const uuid = selected.id;
     const [detail, duplicates] = await Promise.all([
       memberFetch('/profile/detail/' + uuid),
-      memberFetch(
-        '/profile/unmapped/byname/' + encodeURIComponent(selected.name),
-      ),
+      memberFetch('/profile/unmapped/byname/' + encodeURIComponent(selected.name)),
     ]);
     return { uuid, detail, duplicates };
   });
@@ -64,10 +56,7 @@ export async function registerMemberFeatures(
     app.post('/api/mua/profiles/' + operation, async (req) => {
       const a = authenticate(req);
       const b = object(req.body);
-      const uuid = db.ownProfile(
-        a,
-        b.uuid === undefined ? db.profileId(a) : string(b.uuid, 32),
-      ).id;
+      const uuid = db.ownProfile(a, b.uuid === undefined ? db.profileId(a) : string(b.uuid, 32)).id;
       const payload =
         operation === 'remapuuid'
           ? { me: uuid, target: string(b.target, 32) }
@@ -75,9 +64,7 @@ export async function registerMemberFeatures(
             ? { uuid, token: string(b.token, 4096) }
             : { uuid };
       if (operation === 'remapuuid')
-        requireThat(
-          /^[a-f0-9]{32}$/.test((payload as { target: string }).target),
-        );
+        requireThat(/^[a-f0-9]{32}$/.test((payload as { target: string }).target));
       return post('/profile/' + operation, payload);
     });
   app.get('/api/mua/admin/blacklist', async (req) => {
@@ -105,43 +92,28 @@ export async function registerMemberFeatures(
       const id = string(object(req.params).id, 20);
       requireThat(/^\d+$/.test(id));
       return memberFetch(
-        operation === 'invalidate'
-          ? '/blacklist/invalidate/' + id
-          : '/blacklist/restful/' + id,
+        operation === 'invalidate' ? '/blacklist/invalidate/' + id : '/blacklist/restful/' + id,
         { method: operation === 'invalidate' ? 'PUT' : 'DELETE' },
       );
     });
   app.post('/api/mua/admin/synchronize', async (req) => {
     admin(req);
-    db.db
-      .prepare(
-        'UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1',
-      )
-      .run();
+    db.db.prepare('UPDATE mua_sync SET revision=revision+1,attempts=0,next=0 WHERE id=1').run();
     return { queued: true };
   });
   app.get('/api/mua/admin/status', async (req) => {
     admin(req);
-    return db.db
-      .prepare('SELECT revision,synced,attempts,next FROM mua_sync WHERE id=1')
-      .get();
+    return db.db.prepare('SELECT revision,synced,attempts,next FROM mua_sync WHERE id=1').get();
   });
 
   if (!config.member?.oauthSigningKey) return;
   // Independently confirmed pin; never learn an encryption recipient from a TLS response.
-  const publicKey = createPublicKey(
-    string(config.member.oauthBackendPublicKey, 16384),
-  );
+  const publicKey = createPublicKey(string(config.member.oauthBackendPublicKey, 16384));
   const bits = publicKey.asymmetricKeyDetails?.modulusLength ?? 0;
+  requireThat(publicKey.asymmetricKeyType === 'rsa' && bits >= 2048 && bits <= 8192);
+  const signer = createPrivateKey(await readFile(config.member.oauthSigningKey));
   requireThat(
-    publicKey.asymmetricKeyType === 'rsa' && bits >= 2048 && bits <= 8192,
-  );
-  const signer = createPrivateKey(
-    await readFile(config.member.oauthSigningKey),
-  );
-  requireThat(
-    signer.asymmetricKeyType === 'rsa' &&
-      (signer.asymmetricKeyDetails?.modulusLength ?? 0) >= 2048,
+    signer.asymmetricKeyType === 'rsa' && (signer.asymmetricKeyDetails?.modulusLength ?? 0) >= 2048,
   );
   const root = config.apiRoot.replace(/\/$/, '');
   const allowedOrigin = new URL(root).origin;
@@ -149,9 +121,7 @@ export async function registerMemberFeatures(
     .exec(`CREATE TABLE IF NOT EXISTS mua_subjects(uid INTEGER PRIMARY KEY AUTOINCREMENT,account TEXT UNIQUE NOT NULL REFERENCES accounts(id));
     CREATE TABLE IF NOT EXISTS mua_provider_requests(ticket TEXT PRIMARY KEY,query TEXT NOT NULL,expires INTEGER NOT NULL);`);
   app.get('/api/union/member/oauth2/', async (_req, reply) => {
-    reply
-      .header('Access-Control-Allow-Origin', allowedOrigin)
-      .header('Vary', 'Origin');
+    reply.header('Access-Control-Allow-Origin', allowedOrigin).header('Vary', 'Origin');
     return {
       signaturePublicKey: createPublicKey(signer).export({
         format: 'pem',
@@ -171,9 +141,7 @@ export async function registerMemberFeatures(
     requireThat(Buffer.byteLength(payload) <= 8192);
     const ticket = secret();
     db.transaction(() => {
-      db.db
-        .prepare('DELETE FROM mua_provider_requests WHERE expires<=?')
-        .run(now());
+      db.db.prepare('DELETE FROM mua_provider_requests WHERE expires<=?').run(now());
       const { count } = db.db
         .prepare('SELECT COUNT(*) AS count FROM mua_provider_requests')
         .get() as { count: number };
@@ -190,25 +158,19 @@ export async function registerMemberFeatures(
     requireThat(body.consent === true, 'Explicit consent required');
     const ticket = string(body.ticket);
     const pending = db.db
-      .prepare(
-        'SELECT query FROM mua_provider_requests WHERE ticket=? AND expires>?',
-      )
+      .prepare('SELECT query FROM mua_provider_requests WHERE ticket=? AND expires>?')
       .get(digest(ticket), now()) as { query: string } | undefined;
     requireThat(pending, 'Authorization request expired');
     const uid = db.transaction(() => {
       const consumed = db.db
-        .prepare(
-          'DELETE FROM mua_provider_requests WHERE ticket=? AND expires>?',
-        )
+        .prepare('DELETE FROM mua_provider_requests WHERE ticket=? AND expires>?')
         .run(digest(ticket), now());
       requireThat(consumed.changes === 1);
-      db.db
-        .prepare('INSERT OR IGNORE INTO mua_subjects(account) VALUES(?)')
-        .run(account.id);
+      db.db.prepare('INSERT OR IGNORE INTO mua_subjects(account) VALUES(?)').run(account.id);
       return (
-        db.db
-          .prepare('SELECT uid FROM mua_subjects WHERE account=?')
-          .get(account.id) as { uid: number }
+        db.db.prepare('SELECT uid FROM mua_subjects WHERE account=?').get(account.id) as {
+          uid: number;
+        }
       ).uid;
     });
     const userInfo = Buffer.from(
@@ -219,14 +181,10 @@ export async function registerMemberFeatures(
         expires_at: now() + 600,
       }),
     ).toString('base64');
-    const mac = createHmac('sha256', memberKey())
-      .update(userInfo)
-      .digest('hex');
-    const signature = sign(
-      'RSA-SHA256',
-      Buffer.from(userInfo + '.' + mac),
-      signer,
-    ).toString('base64');
+    const mac = createHmac('sha256', memberKey()).update(userInfo).digest('hex');
+    const signature = sign('RSA-SHA256', Buffer.from(userInfo + '.' + mac), signer).toString(
+      'base64',
+    );
     const plain = Buffer.from(JSON.stringify({ userInfo, mac, signature }));
     const chunks: Buffer[] = [];
     const size = bits / 8 - 11;
@@ -240,7 +198,7 @@ export async function registerMemberFeatures(
       );
     const url = new URL(root + '/oauth2/continue');
     url.search = new URLSearchParams({
-      ...JSON.parse(pending.query),
+      ...(JSON.parse(pending.query) as Record<string, string>),
       userInfoToken: Buffer.concat(chunks).toString('base64'),
     }).toString();
     return { url: url.toString() };

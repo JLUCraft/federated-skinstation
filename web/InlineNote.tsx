@@ -14,10 +14,7 @@ const NOTE_CLASS: Record<NoteTone, string> = {
 export function InlineNote({ note }: { note: Note | null }) {
   if (!note) return null;
   return (
-    <p
-      className={NOTE_CLASS[note.tone]}
-      role={note.tone === 'error' ? 'alert' : 'status'}
-    >
+    <p className={NOTE_CLASS[note.tone]} role={note.tone === 'error' ? 'alert' : 'status'}>
       {note.text}
     </p>
   );

@@ -67,12 +67,16 @@ export function TextureEditorDrawer({
           onSubmit={(event) => {
             event.preventDefault();
             const form = new FormData(event.currentTarget);
+            const text = (name: string, fallback = '') => {
+              const value = form.get(name);
+              return typeof value === 'string' ? value : fallback;
+            };
             onSave({
-              title: String(form.get('title') ?? ''),
-              source: String(form.get('source') ?? 'unknown'),
-              license: String(form.get('license') ?? ''),
+              title: text('title'),
+              source: text('source', 'unknown'),
+              license: text('license'),
               published: form.get('published') === 'on',
-              tags: String(form.get('tags') ?? '')
+              tags: text('tags')
                 .split(/[,，\s]+/)
                 .filter(Boolean),
             });
@@ -143,9 +147,7 @@ export function TextureEditorDrawer({
                 alt={textureTitle(item)}
               />
               <div>
-                <p className="section-hint">
-                  {t('设为头像后会立即更新全站顶栏显示。')}
-                </p>
+                <p className="section-hint">{t('设为头像后会立即更新全站顶栏显示。')}</p>
                 <button
                   type="button"
                   className="btn btn--secondary"
@@ -167,14 +169,10 @@ export function TextureEditorDrawer({
             >
               {item.published === 1 ? t('已公开') : t('未公开')}
             </span>
-            {item.state && (
-              <span className="status-pill">{STATE_LABELS[item.state]}</span>
-            )}
+            {item.state && <span className="status-pill">{STATE_LABELS[item.state]}</span>}
           </p>
           {item.reviewReason && <p className="section-hint">{item.reviewReason}</p>}
-          <p className="section-hint">
-            {t('公开材质及其修改需经人工审核后展示。')}
-          </p>
+          <p className="section-hint">{t('公开材质及其修改需经人工审核后展示。')}</p>
           <label className="wardrobe-publish">
             <input
               name="published"

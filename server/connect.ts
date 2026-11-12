@@ -1,20 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import {
-  createHash,
-  createPublicKey,
-  randomInt,
-  sign,
-  type KeyObject,
-} from 'node:crypto';
-import {
-  Rejected,
-  Store,
-  digest,
-  now,
-  requireThat,
-  secret,
-  type Account,
-} from './store.js';
+import { createHash, createPublicKey, randomInt, sign, type KeyObject } from 'node:crypto';
+import { Rejected, Store, digest, now, requireThat, secret, type Account } from './store.js';
 import { bearer, field, record } from './validate.js';
 
 /**
@@ -77,8 +63,7 @@ interface RefreshRow {
   expires: number;
 }
 
-const base64url = (value: Buffer | string) =>
-  Buffer.from(value).toString('base64url');
+const base64url = (value: Buffer | string) => Buffer.from(value).toString('base64url');
 
 function parseScope(value: unknown): Scope[] {
   const requested = typeof value === 'string' ? value.split(/\s+/).filter(Boolean) : [];
@@ -86,8 +71,7 @@ function parseScope(value: unknown): Scope[] {
   return requested;
 }
 
-const normalizeUserCode = (value: string) =>
-  value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+const normalizeUserCode = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const formatUserCode = (code: string) =>
   `${code.slice(0, USER_CODE_LENGTH / 2)}-${code.slice(USER_CODE_LENGTH / 2)}`;
 
@@ -104,7 +88,8 @@ export function registerConnect(
   const { origin, key, organization } = options;
   // Public client ID shared by launchers in this organization; no client secret.
   const clientId = `${organization}-launcher`;
-  db.db.exec(`CREATE TABLE IF NOT EXISTS oauth_devices(device TEXT PRIMARY KEY,user_code TEXT UNIQUE NOT NULL,client TEXT NOT NULL,scope TEXT NOT NULL,expires INTEGER NOT NULL,account TEXT REFERENCES accounts(id) ON DELETE CASCADE,profile TEXT,denied INTEGER NOT NULL DEFAULT 0,polled INTEGER NOT NULL DEFAULT 0);
+  db.db
+    .exec(`CREATE TABLE IF NOT EXISTS oauth_devices(device TEXT PRIMARY KEY,user_code TEXT UNIQUE NOT NULL,client TEXT NOT NULL,scope TEXT NOT NULL,expires INTEGER NOT NULL,account TEXT REFERENCES accounts(id) ON DELETE CASCADE,profile TEXT,denied INTEGER NOT NULL DEFAULT 0,polled INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS oauth_refresh(hash TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,profile TEXT NOT NULL,client TEXT NOT NULL,scope TEXT NOT NULL,expires INTEGER NOT NULL);`);
 
   const jwk = createPublicKey(key).export({ format: 'jwk' });
@@ -130,8 +115,7 @@ export function registerConnect(
       try {
         return await handler(req, reply);
       } catch (error) {
-        if (error instanceof OAuthError)
-          return reply.code(400).send({ error: error.code });
+        if (error instanceof OAuthError) return reply.code(400).send({ error: error.code });
         throw error;
       }
     };
@@ -144,10 +128,7 @@ export function registerConnect(
     shared_client_id: clientId,
     scopes_supported: OAUTH_SCOPES,
     response_types_supported: ['code'],
-    grant_types_supported: [
-      'urn:ietf:params:oauth:grant-type:device_code',
-      'refresh_token',
-    ],
+    grant_types_supported: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'],
     subject_types_supported: ['public'],
     id_token_signing_alg_values_supported: ['RS256'],
   }));
@@ -160,17 +141,14 @@ export function registerConnect(
     { config: { rateLimit: { max: 10, timeWindow: 60_000 } } },
     oauth(async (req, reply) => {
       const body = record(req.body);
-      if (body.client_id !== clientId)
-        throw new OAuthError('invalid_client');
+      if (body.client_id !== clientId) throw new OAuthError('invalid_client');
       const scope = parseScope(body.scope);
       const device = secret();
       let userCode = '';
       for (let i = 0; i < USER_CODE_LENGTH; i++)
         userCode += USER_CODE_ALPHABET[randomInt(USER_CODE_ALPHABET.length)];
       db.transaction(() => {
-        db.db
-          .prepare('DELETE FROM oauth_devices WHERE expires<=?')
-          .run(now());
+        db.db.prepare('DELETE FROM oauth_devices WHERE expires<=?').run(now());
         db.db
           .prepare(
             'INSERT INTO oauth_devices(device,user_code,client,scope,expires) VALUES(?,?,?,?,?)',
@@ -230,11 +208,7 @@ export function registerConnect(
             ? 'UPDATE oauth_devices SET account=?,profile=? WHERE device=?'
             : 'UPDATE oauth_devices SET denied=1 WHERE device=?',
         )
-        .run(
-          ...(body.approve
-            ? [owner.id, profile, row.device]
-            : [row.device]),
-        );
+        .run(...(body.approve ? [owner.id, profile, row.device] : [row.device]));
       return reply.code(204).send();
     },
   );
@@ -255,12 +229,7 @@ export function registerConnect(
     return `${unsigned}.${base64url(sign('RSA-SHA256', Buffer.from(unsigned), key))}`;
   };
   /** Issue the token set for one account profile; the refresh token is single-use. */
-  const issue = (
-    account: Account,
-    profile: string,
-    client: string,
-    scope: string,
-  ) => {
+  const issue = (account: Account, profile: string, client: string, scope: string) => {
     const scopes = scope.split(' ');
     const access = db.transaction(() => {
       const token = db.mint(account, `oauth:${client}`, now(), false);
@@ -274,14 +243,7 @@ export function registerConnect(
       refresh = secret();
       db.db
         .prepare('INSERT INTO oauth_refresh VALUES(?,?,?,?,?,?)')
-        .run(
-          digest(refresh),
-          account.id,
-          profile,
-          client,
-          scope,
-          now() + REFRESH_LIFETIME_SECONDS,
-        );
+        .run(digest(refresh), account.id, profile, client, scope, now() + REFRESH_LIFETIME_SECONDS);
     }
     return {
       access_token: access,
@@ -289,9 +251,7 @@ export function registerConnect(
       expires_in: ACCESS_LIFETIME_SECONDS,
       refresh_token: refresh,
       scope,
-      ...(scopes.includes('openid')
-        ? { id_token: idToken(account, profile, client) }
-        : {}),
+      ...(scopes.includes('openid') ? { id_token: idToken(account, profile, client) } : {}),
     };
   };
 
@@ -300,17 +260,15 @@ export function registerConnect(
     { config: { rateLimit: { max: 60, timeWindow: 60_000 } } },
     oauth(async (req, reply) => {
       const body = record(req.body);
-      if (body.client_id !== clientId)
-        throw new OAuthError('invalid_client');
+      if (body.client_id !== clientId) throw new OAuthError('invalid_client');
       reply.header('Cache-Control', 'no-store');
       if (body.grant_type === 'urn:ietf:params:oauth:grant-type:device_code') {
         const hash = digest(field(body.device_code, 128));
         const result = db.transaction(() => {
-          const row = db.db
-            .prepare('SELECT * FROM oauth_devices WHERE device=?')
-            .get(hash) as DeviceRow | undefined;
-          if (!row || row.client !== clientId)
-            throw new OAuthError('invalid_grant');
+          const row = db.db.prepare('SELECT * FROM oauth_devices WHERE device=?').get(hash) as
+            | DeviceRow
+            | undefined;
+          if (!row || row.client !== clientId) throw new OAuthError('invalid_grant');
           if (row.expires <= now()) {
             db.db.prepare('DELETE FROM oauth_devices WHERE device=?').run(hash);
             throw new OAuthError('expired_token');
@@ -321,9 +279,7 @@ export function registerConnect(
           }
           if (!row.account || !row.profile) {
             const tooFast = now() - row.polled < POLL_INTERVAL_SECONDS;
-            db.db
-              .prepare('UPDATE oauth_devices SET polled=? WHERE device=?')
-              .run(now(), hash);
+            db.db.prepare('UPDATE oauth_devices SET polled=? WHERE device=?').run(now(), hash);
             // Returned rather than thrown: a throw would roll back the poll timestamp.
             return tooFast ? 'slow_down' : 'authorization_pending';
           }
@@ -342,8 +298,7 @@ export function registerConnect(
           const found = db.db
             .prepare('SELECT * FROM oauth_refresh WHERE hash=? AND expires>?')
             .get(hash, now()) as RefreshRow | undefined;
-          if (!found || found.client !== clientId)
-            throw new OAuthError('invalid_grant');
+          if (!found || found.client !== clientId) throw new OAuthError('invalid_grant');
           db.db.prepare('DELETE FROM oauth_refresh WHERE hash=?').run(hash);
           return found;
         });

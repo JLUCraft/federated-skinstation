@@ -47,14 +47,9 @@ export function notify(
     .prepare('INSERT INTO notifications VALUES(?,?,?,?,?,?,?,NULL,?)')
     .run(randomUUID(), account, kind, item, title, detail, now(), state);
 }
-export function registerCommunity(
-  app: FastifyInstance,
-  db: Store,
-  identity: LocalIdentity,
-) {
+export function registerCommunity(app: FastifyInstance, db: Store, identity: LocalIdentity) {
   communitySchema(db);
-  const account = (header: unknown) =>
-    db.token(bearer(header), undefined, now());
+  const account = (header: unknown) => db.token(bearer(header), undefined, now());
   const admin = (header: unknown) => {
     const a = account(header);
     requireThat(identity.authorize(a.id, 'global', 'admin'), 'Site administrator required');
@@ -64,9 +59,7 @@ export function registerCommunity(
     const a = account(req.headers.authorization),
       id = field(record(req.body).item);
     const row = db.db
-      .prepare(
-        "SELECT hash FROM wardrobe WHERE id=? AND account=? AND kind='skin'",
-      )
+      .prepare("SELECT hash FROM wardrobe WHERE id=? AND account=? AND kind='skin'")
       .get(id, a.id);
     requireThat(row, 'Skin not in wardrobe');
     db.db
@@ -86,9 +79,7 @@ export function registerCommunity(
   app.get('/api/admin/announcements', async (req) => {
     admin(req.headers.authorization);
     const offset = Number(record(req.query).offset ?? 0);
-    requireThat(
-      Number.isSafeInteger(offset) && offset >= 0 && offset <= MAX_LIST_OFFSET,
-    );
+    requireThat(Number.isSafeInteger(offset) && offset >= 0 && offset <= MAX_LIST_OFFSET);
     return {
       announcements: db.db
         .prepare(
@@ -126,23 +117,17 @@ export function registerCommunity(
   });
   app.delete('/api/admin/announcements/:id', async (req, reply) => {
     admin(req.headers.authorization);
-    db.db
-      .prepare('DELETE FROM announcements WHERE id=?')
-      .run(field(record(req.params).id));
+    db.db.prepare('DELETE FROM announcements WHERE id=?').run(field(record(req.params).id));
     return reply.code(204).send();
   });
   app.get('/api/notifications', async (req) => {
     const a = account(req.headers.authorization),
       offset = Number(record(req.query).offset ?? 0);
-    requireThat(
-      Number.isSafeInteger(offset) && offset >= 0 && offset <= MAX_LIST_OFFSET,
-    );
+    requireThat(Number.isSafeInteger(offset) && offset >= 0 && offset <= MAX_LIST_OFFSET);
     return {
       unread: Number(
         db.db
-          .prepare(
-            'SELECT count(*) AS n FROM notifications WHERE account=? AND read_at IS NULL',
-          )
+          .prepare('SELECT count(*) AS n FROM notifications WHERE account=? AND read_at IS NULL')
           .get(a.id)!.n,
       ),
       items: db.db
@@ -158,9 +143,7 @@ export function registerCommunity(
   app.post('/api/notifications/read-all', async (req) => {
     const a = account(req.headers.authorization);
     db.db
-      .prepare(
-        'UPDATE notifications SET read_at=? WHERE account=? AND read_at IS NULL',
-      )
+      .prepare('UPDATE notifications SET read_at=? WHERE account=? AND read_at IS NULL')
       .run(now(), a.id);
     return { ok: true };
   });
@@ -168,9 +151,7 @@ export function registerCommunity(
     const a = account(req.headers.authorization),
       id = field(record(req.body).id);
     db.db
-      .prepare(
-        'UPDATE notifications SET read_at=? WHERE id=? AND account=? AND read_at IS NULL',
-      )
+      .prepare('UPDATE notifications SET read_at=? WHERE id=? AND account=? AND read_at IS NULL')
       .run(now(), id, a.id);
     return { ok: true };
   });
@@ -180,9 +161,7 @@ export function registerCommunity(
       reason = field(record(req.body).reason, MAX_REVIEW_REASON_LENGTH).trim();
     requireThat(reason.length > 0);
     requireThat(
-      db.db
-        .prepare(`SELECT 1 FROM wardrobe w WHERE w.id=? AND ${PUBLIC_TEXTURE}`)
-        .get(id),
+      db.db.prepare(`SELECT 1 FROM wardrobe w WHERE w.id=? AND ${PUBLIC_TEXTURE}`).get(id),
       'Texture not found',
     );
     db.rate(`report:${a.id}`, now(), 10, 3600);
@@ -199,11 +178,9 @@ export function registerCommunity(
       state = q.state ?? 'pending',
       offset = Number(q.offset ?? 0);
     requireThat(
-      REVIEW_STATES.includes(state as (typeof REVIEW_STATES)[number]),
+      typeof state === 'string' && REVIEW_STATES.includes(state as (typeof REVIEW_STATES)[number]),
     );
-    requireThat(
-      Number.isSafeInteger(offset) && offset >= 0 && offset <= MAX_LIST_OFFSET,
-    );
+    requireThat(Number.isSafeInteger(offset) && offset >= 0 && offset <= MAX_LIST_OFFSET);
     return {
       items: db.db
         .prepare(
@@ -238,18 +215,8 @@ export function registerCommunity(
           'INSERT INTO texture_reviews(item,state,reason,reviewer,updated_at,submission) VALUES(?,?,?,?,?,?) ON CONFLICT(item) DO UPDATE SET state=excluded.state,reason=excluded.reason,reviewer=excluded.reviewer,updated_at=excluded.updated_at,submission=excluded.submission',
         )
         .run(id, state, reason, a.id, now(), randomUUID());
-      db.db
-        .prepare("UPDATE reports SET status='resolved' WHERE item=?")
-        .run(id);
-      notify(
-        db,
-        String(item.account),
-        'review',
-        id,
-        String(item.title),
-        reason,
-        state,
-      );
+      db.db.prepare("UPDATE reports SET status='resolved' WHERE item=?").run(id);
+      notify(db, String(item.account), 'review', id, String(item.title), reason, state);
     });
     return { ok: true };
   });

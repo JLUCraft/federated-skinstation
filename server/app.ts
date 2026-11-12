@@ -3,12 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import staticFiles from '@fastify/static';
 import multipart from '@fastify/multipart';
 import { STATUS_CODES } from 'node:http';
-import {
-  createPrivateKey,
-  createPublicKey,
-  sign,
-  randomUUID,
-} from 'node:crypto';
+import { createPrivateKey, createPublicKey, sign, randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { PNG } from 'pngjs';
@@ -26,9 +21,11 @@ import {
 } from './store.js';
 import { field, record, bearer } from './validate.js';
 import { createRequire } from 'node:module';
+import type { Authentication, Capabilities, MemberAccount } from '../shared/http.js';
 
-const VERSION = createRequire(import.meta.url)('../package.json')
-  .version as string;
+const { version: VERSION } = createRequire(import.meta.url)('../package.json') as {
+  version: string;
+};
 import { type School } from './school.js';
 import { LocalIdentity } from './permissions.js';
 import { registerIdentity } from './identity.js';
@@ -117,24 +114,17 @@ export async function build(
         'Content-Security-Policy',
         `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
       );
-    else if (!request.url.startsWith('/textures/'))
-      reply.header('Cache-Control', 'no-store');
+    else if (!request.url.startsWith('/textures/')) reply.header('Cache-Control', 'no-store');
     return payload;
   });
   const authorize = async (account: Account) => {
     localIdentity.authenticate(account.id);
   };
   app.addHook('preHandler', async (req) => {
-    if (
-      req.url === '/authserver/invalidate' ||
-      req.url === '/authserver/signout'
-    )
-      return;
+    if (req.url === '/authserver/invalidate' || req.url === '/authserver/signout') return;
     const header = req.headers.authorization;
     const body =
-      req.body && typeof req.body === 'object'
-        ? (req.body as Record<string, unknown>)
-        : undefined;
+      req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : undefined;
     const token = header?.startsWith('Bearer ')
       ? header.slice(7)
       : typeof body?.accessToken === 'string'
@@ -170,9 +160,7 @@ export async function build(
             : 500;
     reply.code(status).send({
       error:
-        error instanceof Rejected
-          ? error.code
-          : (STATUS_CODES[status] ?? 'Internal Server Error'),
+        error instanceof Rejected ? error.code : (STATUS_CODES[status] ?? 'Internal Server Error'),
       errorMessage:
         status === 500
           ? 'Service temporarily unavailable'
@@ -186,13 +174,11 @@ export async function build(
   const signingKey = () => {
     if (config.mua?.member) {
       const encrypted = (
-        db.db
-          .prepare("SELECT value FROM mua_state WHERE name='textureKey'")
-          .get() as { value: string } | undefined
+        db.db.prepare("SELECT value FROM mua_state WHERE name='textureKey'").get() as
+          | { value: string }
+          | undefined
       )?.value;
-      const pem = encrypted
-        ? secrets?.open('textureKey', encrypted)
-        : undefined;
+      const pem = encrypted ? secrets?.open('textureKey', encrypted) : undefined;
       if (pem && pem !== texturePem) {
         textureSigningKey = createPrivateKey(pem);
         texturePem = pem;
@@ -200,20 +186,14 @@ export async function build(
     }
     return textureSigningKey;
   };
-  const profile = (
-    account: Account,
-    signed = true,
-    id = db.profileId(account),
-  ): SessionProfile => {
+  const profile = (account: Account, signed = true, id = db.profileId(account)): SessionProfile => {
     const selected = db.ownProfile(account, id);
     const textures: Record<string, unknown> = {};
     const saved = db.textures(account, id);
     for (const texture of saved)
       textures[texture.kind.toUpperCase()] = {
         url: `${config.origin}/textures/${texture.hash}`,
-        ...(texture.kind === 'skin'
-          ? { metadata: { model: texture.model } }
-          : {}),
+        ...(texture.kind === 'skin' ? { metadata: { model: texture.model } } : {}),
       };
     const value = Buffer.from(
       JSON.stringify({
@@ -233,11 +213,7 @@ export async function build(
           value,
           ...(signed
             ? {
-                signature: sign(
-                  'RSA-SHA1',
-                  Buffer.from(value),
-                  signingKey(),
-                ).toString('base64'),
+                signature: sign('RSA-SHA1', Buffer.from(value), signingKey()).toString('base64'),
               }
             : {}),
         },
@@ -249,7 +225,7 @@ export async function build(
     token: string,
     client: string,
     requestUser = false,
-  ) => ({
+  ): Authentication => ({
     accessToken: token,
     clientToken: client,
     ...(db.selectedProfile(token, a)
@@ -321,14 +297,15 @@ export async function build(
     organization,
   });
   registerPasskeys(app, db, config.origin, authorize, organization);
-  registerIdentity(app, db, localIdentity, config.schools,
-    (email, confirmation) => mail(email, confirmation, '账号恢复'));
+  registerIdentity(app, db, localIdentity, config.schools, (email, confirmation) =>
+    mail(email, confirmation, '账号恢复'),
+  );
   registerCompetitions(app, db, localIdentity);
   registerOffice(app, db, localIdentity);
   registerPoints(app, db, localIdentity);
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);
-  app.get('/api/capabilities', async () => ({
+  app.get('/api/capabilities', async (): Promise<Capabilities> => ({
     schools: Object.keys(config.schools).map((id) => ({
       id,
       emailDomains: config.schools[id].emailDomains,
@@ -339,13 +316,13 @@ export async function build(
   }));
   const muaDomains = (): string[] => {
     if (!config.mua?.member) return [];
-    const row = db.db
-      .prepare("SELECT value FROM mua_state WHERE name='servers'")
-      .get() as { value: string } | undefined;
+    const row = db.db.prepare("SELECT value FROM mua_state WHERE name='servers'").get() as
+      | { value: string }
+      | undefined;
     if (!row) return [];
-    return Object.values(
-      JSON.parse(row.value) as Record<string, { bs_root: string }>,
-    ).map((server) => new URL(server.bs_root).hostname);
+    return Object.values(JSON.parse(row.value) as Record<string, { bs_root: string }>).map(
+      (server) => new URL(server.bs_root).hostname,
+    );
   };
   app.get('/', async () => ({
     meta: {
@@ -358,12 +335,7 @@ export async function build(
       },
       'feature.openid_configuration_url': `${config.origin}/.well-known/openid-configuration`,
     },
-    skinDomains: [
-      ...new Set([
-        origin.hostname,
-        ...muaDomains(),
-      ]),
-    ],
+    skinDomains: [...new Set([origin.hostname, ...muaDomains()])],
     signaturePublickey: createPublicKey(signingKey()).export({
       type: 'spki',
       format: 'pem',
@@ -380,9 +352,7 @@ export async function build(
       requireThat(
         school &&
           school.emailDomains.some(
-            (d) =>
-              email.split('@').length === 2 &&
-              email.split('@')[1] === d.toLowerCase(),
+            (d) => email.split('@').length === 2 && email.split('@')[1] === d.toLowerCase(),
           ),
         'Unsupported school email',
       );
@@ -395,8 +365,7 @@ export async function build(
         throw new Rejected('Profile name already in use', 409, 'Name Conflict');
       if (account) {
         requireThat(
-          account.school === schoolId &&
-            (await verifyPassword(password, account.password)),
+          account.school === schoolId && (await verifyPassword(password, account.password)),
         );
       } else {
         account = {
@@ -415,8 +384,9 @@ export async function build(
   );
   app.post('/api/email/confirm', async (req, reply) => {
     const body = obj(req.body);
-    db.confirm(text(body.email).toLowerCase(), text(body.code), now(),
-      account => localIdentity.enrollVerifiedEmail(account, config.schools));
+    db.confirm(text(body.email).toLowerCase(), text(body.code), now(), (account) =>
+      localIdentity.enrollVerifiedEmail(account, config.schools),
+    );
     return reply.code(204).send();
   });
   app.post(
@@ -432,13 +402,10 @@ export async function build(
         'Invalid credentials',
       );
       await authorize(a);
-      const client =
-        body.clientToken === undefined ? accountId() : text(body.clientToken);
+      const client = body.clientToken === undefined ? accountId() : text(body.clientToken);
       return loginReply(
         a,
-        db.transaction(() =>
-          db.mint(a, client, now(), db.profiles(a).length === 1),
-        ),
+        db.transaction(() => db.mint(a, client, now(), db.profiles(a).length === 1)),
         client,
         body.requestUser === true,
       );
@@ -446,20 +413,14 @@ export async function build(
   );
   app.post('/authserver/refresh', async (req) => {
     const b = obj(req.body);
-    const client =
-      b.clientToken === undefined ? undefined : text(b.clientToken);
+    const client = b.clientToken === undefined ? undefined : text(b.clientToken);
     const result = db.refresh(
       text(b.accessToken),
       client,
       b.selectedProfile ? text(obj(b.selectedProfile).id) : undefined,
       now(),
     );
-    return loginReply(
-      result.account,
-      result.token,
-      result.client,
-      b.requestUser === true,
-    );
+    return loginReply(result.account, result.token, result.client, b.requestUser === true);
   });
   app.post('/authserver/validate', async (req, reply) => {
     const b = obj(req.body);
@@ -481,9 +442,7 @@ export async function build(
     const email = text(b.username).toLowerCase();
     db.rate(`login:${digest(email)}`, now(), 10, 60);
     const a = db.account('email', email);
-    requireThat(
-      a && (await verifyPassword(text(b.password, 1024), a.password)),
-    );
+    requireThat(a && (await verifyPassword(text(b.password, 1024), a.password)));
     db.transaction(() => {
       db.requireCredentials(a);
       db.revokeSessions(a.id);
@@ -492,42 +451,36 @@ export async function build(
   });
   app.post('/sessionserver/session/minecraft/join', async (req, reply) => {
     const b = obj(req.body);
-    db.join(
-      text(b.accessToken),
-      text(b.selectedProfile),
-      text(b.serverId, 64),
-      now(),
-      req.ip,
-    );
+    db.join(text(b.accessToken), text(b.selectedProfile), text(b.serverId, 64), now(), req.ip);
     return reply.code(204).send();
   });
-  app.get('/sessionserver/session/minecraft/hasJoined', {
-    schema: { response: { 200: sessionProfileSchema, 204: { type: 'null' } } },
-  }, async (req, reply) => {
-    const q = obj(req.query);
-    const username = text(q.username, 16),
-      serverId = text(q.serverId, 64);
-    const joined = db.joined(
-      username,
-      serverId,
-      now(),
-      q.ip === undefined ? undefined : text(q.ip, 64),
-    );
-    if (!joined) return reply.code(204).send();
-    await authorize(joined);
-    return profile(joined, true, db.profileNamed(username)!.profile.id);
-  });
+  app.get(
+    '/sessionserver/session/minecraft/hasJoined',
+    {
+      schema: { response: { 200: sessionProfileSchema, 204: { type: 'null' } } },
+    },
+    async (req, reply) => {
+      const q = obj(req.query);
+      const username = text(q.username, 16),
+        serverId = text(q.serverId, 64);
+      const joined = db.joined(
+        username,
+        serverId,
+        now(),
+        q.ip === undefined ? undefined : text(q.ip, 64),
+      );
+      if (!joined) return reply.code(204).send();
+      await authorize(joined);
+      return profile(joined, true, db.profileNamed(username)!.profile.id);
+    },
+  );
   app.get(
     '/sessionserver/session/minecraft/profile/:id',
     { schema: { response: { 200: sessionProfileSchema, 204: { type: 'null' } } } },
     async (req, reply) => {
       const a = db.profile(text(obj(req.params).id, 32));
       return a
-        ? profile(
-            a,
-            obj(req.query).unsigned === 'false',
-            text(obj(req.params).id, 32),
-          )
+        ? profile(a, obj(req.query).unsigned === 'false', text(obj(req.params).id, 32))
         : reply.code(204).send();
     },
   );
@@ -541,9 +494,7 @@ export async function build(
         .map((n) => db.profileNamed(text(n, 16)))
         .filter((a): a is NonNullable<typeof a> => !!a);
       return [
-        ...new Map(
-          profiles.map(({ profile: p }) => [p.id, { id: p.id, name: p.name }]),
-        ).values(),
+        ...new Map(profiles.map(({ profile: p }) => [p.id, { id: p.id, name: p.name }])).values(),
       ];
     });
   for (const path of [
@@ -552,11 +503,9 @@ export async function build(
   ])
     app.get(path, async (req, reply) => {
       const found = db.profileNamed(text(obj(req.params).name, 16));
-      return found
-        ? { id: found.profile.id, name: found.profile.name }
-        : reply.code(204).send();
+      return found ? { id: found.profile.id, name: found.profile.name } : reply.code(204).send();
     });
-  app.get('/api/me', async (req) => {
+  app.get('/api/me', async (req): Promise<MemberAccount> => {
     const a = db.token(bearer(req.headers.authorization), undefined, now());
     return {
       id: a.id,
@@ -564,14 +513,15 @@ export async function build(
       name: a.name,
       school: a.school,
       verifiedAt: a.verified_at,
-      profiles: db
-        .profiles(a)
-        .map((p) => ({ ...p, textures: db.textures(a, p.id) })),
-      textures: db.db
-        .prepare('SELECT kind,hash,model FROM profile_textures WHERE account=?')
-        .all(a.id),
+      profiles: db.profiles(a).map((p) => ({ ...p, textures: db.textures(a, p.id) })),
+      textures: db.textures(a),
       siteAdmin: localIdentity.authorize(a.id, 'global', 'admin'),
-      avatar: db.db.prepare('SELECT hash FROM site_avatars WHERE account=?').get(a.id)?.hash ?? null,
+      avatar:
+        (
+          db.db.prepare('SELECT hash FROM site_avatars WHERE account=?').get(a.id) as
+            | { hash: string }
+            | undefined
+        )?.hash ?? null,
       muaAdmin: localIdentity.authorize(a.id, 'service:mua', 'admin'),
     };
   });
@@ -585,9 +535,7 @@ export async function build(
   ) => {
     requireThat(
       input.length >= 24 &&
-        input
-          .subarray(0, 8)
-          .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+        input.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
     );
     const width = input.readUInt32BE(16),
       height = input.readUInt32BE(20);
@@ -596,10 +544,8 @@ export async function build(
       'Invalid texture dimensions',
     );
     const normal =
-      width % 64 === 0 &&
-      (height === width / 2 || (kind === 'skin' && height === width));
-    const padded =
-      kind === 'cape' && width % 22 === 0 && height === (width / 22) * 17;
+      width % 64 === 0 && (height === width / 2 || (kind === 'skin' && height === width));
+    const padded = kind === 'cape' && width % 22 === 0 && height === (width / 22) * 17;
     requireThat(normal || padded, 'Invalid texture dimensions');
     let png: PNG = PNG.sync.read(input, { checkCRC: true });
     if (padded) {
@@ -610,10 +556,7 @@ export async function build(
       png = canvas;
     }
     const bytes = PNG.sync.write(png);
-    const hash = (await import('node:crypto'))
-      .createHash('sha256')
-      .update(bytes)
-      .digest('hex');
+    const hash = (await import('node:crypto')).createHash('sha256').update(bytes).digest('hex');
     await authorize(account);
     const temporary = resolve(config.textures, `${hash}.tmp.${randomUUID()}`);
     try {
@@ -659,16 +602,12 @@ export async function build(
           let model = 'default';
           for await (const part of req.parts()) {
             if (part.type === 'file') {
-              requireThat(
-                part.fieldname === 'file' && part.mimetype === 'image/png',
-              );
+              requireThat(part.fieldname === 'file' && part.mimetype === 'image/png');
               file = await part.toBuffer();
             } else {
               requireThat(
                 part.fieldname === 'model' &&
-                  (part.value === '' ||
-                    part.value === 'slim' ||
-                    part.value === 'default'),
+                  (part.value === '' || part.value === 'slim' || part.value === 'default'),
               );
               model = part.value === 'slim' ? 'slim' : 'default';
             }
@@ -711,7 +650,8 @@ export async function build(
       prefix: '/portal/',
     });
     app.setNotFoundHandler((req, reply) => {
-      if (req.method === 'GET' && /^\/portal\/(?:library|u)\/[^/]+$/.test(req.url.split('?')[0])) return reply.sendFile('index.html');
+      if (req.method === 'GET' && /^\/portal\/(?:library|u)\/[^/]+$/.test(req.url.split('?')[0]))
+        return reply.sendFile('index.html');
       return reply.code(404).send({ error: 'Not found' });
     });
   }

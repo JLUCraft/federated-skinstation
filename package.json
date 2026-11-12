@@ -8,10 +8,15 @@
   },
   "scripts": {
     "contracts": "tsx scripts/generate-contracts.ts",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint --deny-warnings .",
+    "typecheck": "bun run contracts && tsc --noEmit",
+    "check": "bun run format:check && bun run typecheck && bun run lint",
     "postinstall": "bun run contracts",
     "dev": "bun run contracts && tsx watch server/main.ts",
     "dev:web": "vite --host 127.0.0.1",
-    "build": "bun run contracts && tsc --noEmit && vite build",
+    "build": "bun run check && vite build",
     "start": "bun run contracts && tsx server/main.ts",
     "test": "bun run contracts && tsx --test test/*.test.ts"
   },
@@ -36,6 +41,10 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "json-schema-to-ts": "^3.1.1",
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2006",
+    "playwright-core": "^1.65.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"

@@ -24,8 +24,11 @@ export function isPermission(value: string): value is Permission {
 }
 export function permissionImplies(held: string, requested: Permission): boolean {
   if (requested === 'president') return false;
-  return held === requested || held === 'admin' ||
-    (!PERMISSIONS[requested].globalOnly && requested !== 'admin' && held === 'manage');
+  return (
+    held === requested ||
+    held === 'admin' ||
+    (!PERMISSIONS[requested].globalOnly && requested !== 'admin' && held === 'manage')
+  );
 }
 export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> = {
   president: ['manage'],
@@ -62,20 +65,27 @@ export function createAuthorizer(source: PermissionSource) {
         if (parsed.kind === 'club' && !source.membership(account, parsed.id!)?.active) return false;
       }
       for (const ancestor of ancestors) {
-        if (source.grants(account, ancestor).some(p => permissionImplies(p, permission))) return true;
+        if (source.grants(account, ancestor).some((p) => permissionImplies(p, permission)))
+          return true;
         const parsed = parseScope(ancestor)!;
         if (parsed.kind !== 'club') continue;
         const roles = source.membership(account, parsed.id!)!.roles;
         if (source.chair(account, parsed.id!)) {
-          if (permission === 'president' ||
-              ROLE_PERMISSIONS.president.some(p => permissionImplies(p, permission))) return true;
+          if (
+            permission === 'president' ||
+            ROLE_PERMISSIONS.president.some((p) => permissionImplies(p, permission))
+          )
+            return true;
         }
-        if (roles.some(role => {
-          // President authority comes only from chairs, never from a cached role.
-          if (typeof role !== 'string' || role === 'president') return false;
-          const held = Object.hasOwn(ROLE_PERMISSIONS, role) ? ROLE_PERMISSIONS[role] : [role];
-          return held.some(p => isPermission(p) && permissionImplies(p, permission));
-        })) return true;
+        if (
+          roles.some((role) => {
+            // President authority comes only from chairs, never from a cached role.
+            if (typeof role !== 'string' || role === 'president') return false;
+            const held = Object.hasOwn(ROLE_PERMISSIONS, role) ? ROLE_PERMISSIONS[role] : [role];
+            return held.some((p) => isPermission(p) && permissionImplies(p, permission));
+          })
+        )
+          return true;
       }
       return false;
     };

@@ -2,6 +2,7 @@ import type { GameProfile } from '../shared/profiles';
 import { t, tf } from './i18n';
 import React, { useEffect, useState } from 'react';
 import { apiRequest, errorText } from './api';
+import type { MemberAccount } from '../shared/http';
 
 type BlacklistEntry = {
   id: number;
@@ -29,7 +30,7 @@ export function MuaAccountCard({
   const [failed, setFailed] = useState(false);
 
   async function load() {
-    const r = await apiRequest('/api/mua/link', { token });
+    const r = await apiRequest<{ link: AccountLink }>('/api/mua/link', { token });
     setLink(r.link ?? null);
   }
   useEffect(() => {
@@ -42,9 +43,7 @@ export function MuaAccountCard({
         <h2 className="section-title" id="mua-title">
           {t('MUA 账号')}
         </h2>
-        <p className="section-hint">
-          {t('连接跨校社区，管理你的 MUA 账号关联。')}
-        </p>
+        <p className="section-hint">{t('连接跨校社区，管理你的 MUA 账号关联。')}</p>
       </div>
       {failed && (
         <p className="msg msg--error" role="alert">
@@ -53,9 +52,7 @@ export function MuaAccountCard({
       )}
       <div className="binding-status">
         <span className="binding-status-label">{t('跨校账号状态')}</span>
-        <span
-          className={`status-pill${link ? ' status-pill--active' : ' status-pill--neutral'}`}
-        >
+        <span className={`status-pill${link ? ' status-pill--active' : ' status-pill--neutral'}`}>
           {link ? t('已关联跨校账号') : t('状态：未关联')}
         </span>
         {link && (
@@ -71,7 +68,7 @@ export function MuaAccountCard({
             disabled={busy}
             onClick={() => {
               setBusy(true);
-              void apiRequest('/api/mua/link', { method: 'POST', token })
+              void apiRequest<{ url: string }>('/api/mua/link', { method: 'POST', token })
                 .then((r) => window.location.assign(r.url))
                 .catch(() => notify(t('暂时无法关联 MUA'), 'error'))
                 .finally(() => setBusy(false));
@@ -131,8 +128,8 @@ export function MuaPanel({
   const [roleBinding, setRoleBinding] = useState<RoleBinding>('unknown');
   const [tab, setTab] = useState<CommunityTab>('personal');
 
-  async function api(path: string, method = 'GET', body?: unknown) {
-    return apiRequest(path, {
+  async function api<Result = unknown>(path: string, method = 'GET', body?: unknown) {
+    return apiRequest<Result>(path, {
       method,
       token,
       body,
@@ -151,7 +148,7 @@ export function MuaPanel({
   }
   useEffect(() => {
     let live = true;
-    void api('/api/me')
+    void api<MemberAccount>('/api/me')
       .then((a) => {
         if (live) {
           setAdmin(a.muaAdmin === true);
@@ -169,7 +166,7 @@ export function MuaPanel({
   }, [token]);
   useEffect(() => {
     let live = true;
-    void api('/api/mua/link')
+    void api<{ link: AccountLink }>('/api/mua/link')
       .then((r) => {
         if (live) setAccountLink(r.link ?? null);
       })
@@ -181,14 +178,10 @@ export function MuaPanel({
 
   const load = async () => {
     try {
-      const result = await api(
+      const result = await api<{ data: BlacklistEntry[] | Record<string, BlacklistEntry> }>(
         `/api/mua/admin/blacklist?page=${page}${query ? '&q=' + encodeURIComponent(query) : ''}`,
       );
-      setEntries(
-        Array.isArray(result.data)
-          ? result.data
-          : Object.values(result.data ?? {}),
-      );
+      setEntries(Array.isArray(result.data) ? result.data : Object.values(result.data ?? {}));
       setHasQueried(true);
     } catch (e) {
       notify(errorText(e), 'error');
@@ -213,7 +206,7 @@ export function MuaPanel({
               disabled={busy}
               onClick={() =>
                 void action(async () => {
-                  const r = await api('/api/mua/authorize', 'POST', {
+                  const r = await api<{ url: string }>('/api/mua/authorize', 'POST', {
                     ticket,
                     consent: true,
                   });
@@ -237,27 +230,17 @@ export function MuaPanel({
         </section>
       )}
 
-      <section
-        className="panel"
-        aria-labelledby="mua-bind-title"
-        aria-busy={loading}
-      >
+      <section className="panel" aria-labelledby="mua-bind-title" aria-busy={loading}>
         <div className="section-head">
           <h2 className="section-title" id="mua-bind-title">
             {t('跨校角色绑定')}
           </h2>
           <p className="section-hint">
-            {t(
-              '仅绑定你本人持有的角色。绑定码用于在另一所学校的皮肤站确认关联，请勿交给他人。',
-            )}
+            {t('仅绑定你本人持有的角色。绑定码用于在另一所学校的皮肤站确认关联，请勿交给他人。')}
           </p>
         </div>
         {admin && (
-          <div
-            className="chip-group community-tabs"
-            role="tablist"
-            aria-label={t('高校社区分区')}
-          >
+          <div className="chip-group community-tabs" role="tablist" aria-label={t('高校社区分区')}>
             {(['personal', 'blacklist'] as CommunityTab[]).map((id) => (
               <button
                 key={id}
@@ -275,9 +258,7 @@ export function MuaPanel({
         {tab === 'personal' && (
           <>
             <div className="binding-status">
-              <span className="binding-status-label">
-                {t('跨校账号状态')}
-              </span>
+              <span className="binding-status-label">{t('跨校账号状态')}</span>
               <span
                 className={`status-pill${accountLink ? ' status-pill--active' : ' status-pill--neutral'}`}
               >
@@ -341,7 +322,7 @@ export function MuaPanel({
                 disabled={busy}
                 onClick={() =>
                   void action(async () => {
-                    const r = await api('/api/mua/profiles/bind', 'POST', {
+                    const r = await api<{ token?: string }>('/api/mua/profiles/bind', 'POST', {
                       uuid,
                     });
                     setGenerated(String(r.token ?? ''));
@@ -399,68 +380,54 @@ export function MuaPanel({
                   />
                 </label>
                 <div className="actions">
-                  <button
-                    className="btn btn--primary"
-                    disabled={busy}
-                    type="submit"
-                  >
+                  <button className="btn btn--primary" disabled={busy} type="submit">
                     {t('绑定角色')}
                   </button>
                 </div>
               </form>
             </div>
             <details className="disclosure">
-              <summary className="disclosure-trigger">
-                {t('统一游戏角色编号')}
-              </summary>
-          <p className="section-hint">
-            {t(
-              '先完成角色绑定，再指定要使用的角色编号。变更会影响游戏存档身份，并要求重新登录。',
-            )}
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void action(async () => {
-                await api('/api/mua/profiles/remapuuid', 'POST', {
-                  target,
-                  uuid,
-                });
-                notify(t('角色编号变更已提交，请重新登录'), 'success');
-              });
-            }}
-          >
-            <label className="field-label">
-              {t('目标角色编号')}
-              <input
-                className="input"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                pattern="[a-f0-9]{32}"
-                required
-              />
-            </label>
-            <div className="actions">
-              <button
-                className="btn btn--primary"
-                disabled={busy}
-                type="submit"
+              <summary className="disclosure-trigger">{t('统一游戏角色编号')}</summary>
+              <p className="section-hint">
+                {t(
+                  '先完成角色绑定，再指定要使用的角色编号。变更会影响游戏存档身份，并要求重新登录。',
+                )}
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void action(async () => {
+                    await api('/api/mua/profiles/remapuuid', 'POST', {
+                      target,
+                      uuid,
+                    });
+                    notify(t('角色编号变更已提交，请重新登录'), 'success');
+                  });
+                }}
               >
-                {t('提交编号变更')}
-              </button>
-            </div>
-          </form>
-        </details>
+                <label className="field-label">
+                  {t('目标角色编号')}
+                  <input
+                    className="input"
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value)}
+                    pattern="[a-f0-9]{32}"
+                    required
+                  />
+                </label>
+                <div className="actions">
+                  <button className="btn btn--primary" disabled={busy} type="submit">
+                    {t('提交编号变更')}
+                  </button>
+                </div>
+              </form>
+            </details>
           </>
         )}
       </section>
 
       {admin && tab === 'blacklist' && (
-        <section
-          className="panel"
-          aria-labelledby="mua-admin-title"
-          aria-busy={busy}
-        >
+        <section className="panel" aria-labelledby="mua-admin-title" aria-busy={busy}>
           <div className="section-head">
             <h2 className="section-title" id="mua-admin-title">
               {t('联合黑名单')}
@@ -478,11 +445,7 @@ export function MuaPanel({
             <div className="field-grid">
               <label className="field-label">
                 {t('搜索')}
-                <input
-                  className="input"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
+                <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} />
               </label>
               <label className="field-label">
                 {t('页码')}
@@ -497,11 +460,7 @@ export function MuaPanel({
               </label>
             </div>
             <div className="actions">
-              <button
-                className="btn btn--primary"
-                disabled={busy}
-                type="submit"
-              >
+              <button className="btn btn--primary" disabled={busy} type="submit">
                 {t('查询')}
               </button>
             </div>
@@ -531,28 +490,18 @@ export function MuaPanel({
               <div className="actions entry-actions">
                 {(['invalidate', 'delete'] as const).map((op) => (
                   <button
-                    className={
-                      op === 'delete'
-                        ? 'btn btn--danger'
-                        : 'btn btn--secondary'
-                    }
+                    className={op === 'delete' ? 'btn btn--danger' : 'btn btn--secondary'}
                     disabled={busy}
                     key={op}
                     onClick={() =>
                       void action(async () => {
                         if (
                           !confirm(
-                            op === 'delete'
-                              ? t('确认删除这条记录？')
-                              : t('确认使这条记录失效？'),
+                            op === 'delete' ? t('确认删除这条记录？') : t('确认使这条记录失效？'),
                           )
                         )
                           return;
-                        await api(
-                          `/api/mua/admin/blacklist/${entry.id}/${op}`,
-                          'POST',
-                          {},
-                        );
+                        await api(`/api/mua/admin/blacklist/${entry.id}/${op}`, 'POST', {});
                         await load();
                       })
                     }
@@ -602,11 +551,7 @@ export function MuaPanel({
                 </label>
               </div>
               <div className="actions">
-                <button
-                  className="btn btn--primary"
-                  disabled={busy}
-                  type="submit"
-                >
+                <button className="btn btn--primary" disabled={busy} type="submit">
                   {t('提交记录')}
                 </button>
               </div>

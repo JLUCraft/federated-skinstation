@@ -1,9 +1,4 @@
-import {
-  Announcements,
-  AdminPanel,
-  Notifications,
-  PublicPage,
-} from './CommunityPanel';
+import { Announcements, AdminPanel, Notifications, PublicPage } from './CommunityPanel';
 import { Avatar } from './TextureIdentity';
 import { InlineNote, type Note } from './InlineNote';
 import { t, tf } from './i18n';
@@ -55,6 +50,12 @@ const MSG_CLASS: Record<MsgKind, string> = {
 
 /** School as published by `/api/capabilities`; the suffix hint comes from here. */
 type SchoolOption = { id: string; emailDomains: string[] };
+import type {
+  Authentication,
+  Capabilities,
+  MemberAccount,
+  Notifications as NotificationList,
+} from '../shared/http';
 
 function App() {
   const [libraryState, setLibraryState] = useState<LibraryViewState>();
@@ -77,8 +78,7 @@ function App() {
   const [muaEnabled, setMuaEnabled] = useState(false);
   const [muaMember, setMuaMember] = useState(false);
   useEffect(() => {
-    void fetch('/api/capabilities')
-      .then((r) => r.json())
+    void apiRequest<Capabilities>('/api/capabilities')
       .then((c) => {
         setMuaEnabled(c.muaOAuth === true);
         setMuaMember(c.muaMember === true);
@@ -121,7 +121,7 @@ function App() {
   }, [message, msgKind]);
   const refreshNotices = () => {
     if (token)
-      void apiRequest('/api/notifications', { token })
+      void apiRequest<NotificationList>('/api/notifications', { token })
         .then((r) => setUnread(r.unread))
         .catch(() => {});
   };
@@ -134,7 +134,7 @@ function App() {
     }
     let active = true;
     const refresh = () => {
-      void apiRequest('/api/me', { token })
+      void apiRequest<MemberAccount>('/api/me', { token })
         .then((r) => {
           if (active) {
             setAvatar(r.avatar);
@@ -152,8 +152,7 @@ function App() {
     };
   }, [token]);
   useEffect(() => {
-    const pop = () =>
-      setPublicPath(window.location.pathname.replace(/^\/portal/, ''));
+    const pop = () => setPublicPath(window.location.pathname.replace(/^\/portal/, ''));
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
   }, []);
@@ -179,20 +178,16 @@ function App() {
     window.scrollTo({ top: 0 });
   }
 
-  async function request(path: string, body: unknown) {
+  async function request<Result = unknown>(path: string, body: unknown) {
     try {
-      return await apiRequest(path, {
+      return await apiRequest<Result>(path, {
         method: 'POST',
         body,
         errorMessage: t('请求被拒绝，请检查信息或稍后重试'),
       });
     } catch (e) {
       // Only registration can clash on a game name.
-      if (
-        e instanceof ApiError &&
-        e.status === 409 &&
-        path.startsWith('/api/email/')
-      )
+      if (e instanceof ApiError && e.status === 409 && path.startsWith('/api/email/'))
         throw new Error(t('这个游戏名称已被使用，请换一个。'));
       throw e;
     }
@@ -223,8 +218,7 @@ function App() {
     const index = tabs.indexOf(tab);
     let next: AuthTab | null = null;
     if (e.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
-    else if (e.key === 'ArrowLeft')
-      next = tabs[(index - 1 + tabs.length) % tabs.length];
+    else if (e.key === 'ArrowLeft') next = tabs[(index - 1 + tabs.length) % tabs.length];
     else if (e.key === 'Home') next = 'login';
     else if (e.key === 'End') next = tabs[tabs.length - 1];
     if (next) {
@@ -281,7 +275,7 @@ function App() {
     });
   }
   async function login() {
-    const data = await request('/authserver/authenticate', {
+    const data = await request<Authentication>('/authserver/authenticate', {
       username: email,
       password,
     });
@@ -304,17 +298,9 @@ function App() {
     <main
       className="app-main"
       onClick={(event) => {
-        if (
-          event.button !== 0 ||
-          event.ctrlKey ||
-          event.metaKey ||
-          event.shiftKey ||
-          event.altKey
-        )
+        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)
           return;
-        const link = (event.target as Element).closest<HTMLAnchorElement>(
-          'a[href]',
-        );
+        const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
         if (!link || link.target || link.hasAttribute('download')) return;
         const url = new URL(link.href);
         if (
@@ -363,18 +349,16 @@ function App() {
               ['library', t('皮肤库')],
               ...(token
                 ? ([
-                    [
-                      'notifications',
-                      unread > 0
-                        ? `${t('站内通知')} · ${unread}`
-                        : t('站内通知'),
-                    ],
+                    ['notifications', unread > 0 ? `${t('站内通知')} · ${unread}` : t('站内通知')],
                   ] as const)
                 : []),
-              ...(token && siteAdmin
-                ? ([['admin', t('站点管理')]] as const)
+              ...(token && siteAdmin ? ([['admin', t('站点管理')]] as const) : []),
+              ...(token
+                ? ([
+                    ['clubs', t('社团管理')],
+                    ['account', t('账号安全')],
+                  ] as const)
                 : []),
-              ...(token ? ([['clubs', t('社团管理')], ['account', t('账号安全')]] as const) : []),
               ...(token && (muaEnabled || muaMember)
                 ? ([['community', t('高校社区')]] as const)
                 : []),
@@ -411,11 +395,7 @@ function App() {
 
       <Announcements />
       {publicView ? (
-        <PublicPage
-          key={publicPath}
-          path={publicPath}
-          token={token || undefined}
-        />
+        <PublicPage key={publicPath} path={publicPath} token={token || undefined} />
       ) : (
         <div
           className={`portal-body${view === 'login' && !deviceCode && !recovering ? ' auth-layout' : ''}`}
@@ -429,9 +409,7 @@ function App() {
                 {t('启动器正在等待授权')}
               </h2>
               <p className="section-hint">
-                {t(
-                  '请先登录（没有账号请先注册），完成后会回到这里确认授权码：',
-                )}
+                {t('请先登录（没有账号请先注册），完成后会回到这里确认授权码：')}
               </p>
               <p className="device-code">{deviceCode}</p>
             </section>
@@ -449,17 +427,18 @@ function App() {
             />
           )}
           {view === 'login' && !deviceCode && recovering && (
-            <RecoveryPanel onCancel={() => setRecovering(false)} onDone={() => {
-              setRecovering(false);
-              setPassword('');
-              notify(t('账号已恢复，请重新登录'), 'success');
-            }} />
+            <RecoveryPanel
+              onCancel={() => setRecovering(false)}
+              onDone={() => {
+                setRecovering(false);
+                setPassword('');
+                notify(t('账号已恢复，请重新登录'), 'success');
+              }}
+            />
           )}
           {view === 'login' && !deviceCode && !recovering && (
             <div className="hero">
-              <p className="hero-lead">
-                {t('一个账号，进入各高校的 Minecraft 服务器。')}
-              </p>
+              <p className="hero-lead">{t('一个账号，进入各高校的 Minecraft 服务器。')}</p>
               <ul className="hero-features">
                 {HERO_FEATURES.map(([mark, title, text]) => (
                   <li className="hero-feature" key={title}>
@@ -553,11 +532,7 @@ function App() {
                         </div>
                         <InlineNote note={loginNote} />
                         <div className="actions">
-                          <button
-                            className="btn btn--primary"
-                            disabled={busy}
-                            type="submit"
-                          >
+                          <button className="btn btn--primary" disabled={busy} type="submit">
                             {t('登录')}
                           </button>
                           {window.PublicKeyCredential && (
@@ -569,7 +544,9 @@ function App() {
                                 void action(async () => {
                                   const data = await loginWithPasskey();
                                   setToken(data.accessToken);
-                                  setDisplayName(data.selectedProfile.name);
+                                  setDisplayName(
+                                    (data.selectedProfile ?? data.availableProfiles[0]).name,
+                                  );
                                   setPassword('');
                                   setLoginNote(null);
                                   notify(t('登录成功'), 'success');
@@ -589,8 +566,12 @@ function App() {
                       >
                         {t('忘记密码')}
                       </button>
-                      <button type="button" className="btn btn--link" disabled={busy}
-                        onClick={() => setRecovering(true)}>
+                      <button
+                        type="button"
+                        className="btn btn--link"
+                        disabled={busy}
+                        onClick={() => setRecovering(true)}
+                      >
                         {t('通过社团恢复账号')}
                       </button>
                     </div>
@@ -672,11 +653,7 @@ function App() {
                           )}
                         </div>
                         <div className="actions">
-                          <button
-                            className="btn btn--primary"
-                            type="submit"
-                            disabled={busy}
-                          >
+                          <button className="btn btn--primary" type="submit" disabled={busy}>
                             {resetSent ? t('更新密码') : t('发送重置邮件')}
                           </button>
                           {resetSent && (
@@ -692,10 +669,9 @@ function App() {
                                   setCode('');
                                   setResetNote({
                                     tone: 'info',
-                                    text: tf(
-                                      '重置密码邮件已重新发送至 {email}。',
-                                      { email: address },
-                                    ),
+                                    text: tf('重置密码邮件已重新发送至 {email}。', {
+                                      email: address,
+                                    }),
                                   });
                                 })
                               }
@@ -737,11 +713,7 @@ function App() {
                               aria-label={t('学校')}
                               value={school}
                               disabled={busy}
-                              onChange={(e) =>
-                                changeRegistration(() =>
-                                  setSchool(e.target.value),
-                                )
-                              }
+                              onChange={(e) => changeRegistration(() => setSchool(e.target.value))}
                               required
                             >
                               {schools.map((option) => (
@@ -759,18 +731,11 @@ function App() {
                               autoComplete="username"
                               value={email}
                               disabled={busy}
-                              onChange={(e) =>
-                                changeRegistration(() =>
-                                  setEmail(e.target.value),
-                                )
-                              }
+                              onChange={(e) => changeRegistration(() => setEmail(e.target.value))}
                               required
                               aria-describedby="school-email-hint"
                             />
-                            <span
-                              className="field-hint"
-                              id="school-email-hint"
-                            >
+                            <span className="field-hint" id="school-email-hint">
                               {schoolDomains.length > 0
                                 ? t('仅接受本校教育邮箱：')
                                 : servedSchool
@@ -779,10 +744,7 @@ function App() {
                                     })
                                   : t('请选择学校后查看允许的邮箱后缀。')}
                               {schoolDomains.map((domain) => (
-                                <span
-                                  className="field-hint-domain"
-                                  key={domain}
-                                >
+                                <span className="field-hint-domain" key={domain}>
                                   @{domain}
                                 </span>
                               ))}
@@ -794,11 +756,7 @@ function App() {
                               className="input"
                               value={name}
                               disabled={busy}
-                              onChange={(e) =>
-                                changeRegistration(() =>
-                                  setName(e.target.value),
-                                )
-                              }
+                              onChange={(e) => changeRegistration(() => setName(e.target.value))}
                               maxLength={16}
                               pattern="[A-Za-z0-9_]+"
                               title={t('1 到 16 位字母、数字或下划线')}
@@ -818,9 +776,7 @@ function App() {
                               value={password}
                               disabled={busy}
                               onChange={(e) =>
-                                changeRegistration(() =>
-                                  setPassword(e.target.value),
-                                )
+                                changeRegistration(() => setPassword(e.target.value))
                               }
                               minLength={PASSWORD_RULES.minLength}
                               required
@@ -837,9 +793,7 @@ function App() {
                             disabled={busy}
                             type="submit"
                           >
-                            {codeSent
-                              ? t('重新发送验证邮件')
-                              : t('发送验证邮件')}
+                            {codeSent ? t('重新发送验证邮件') : t('发送验证邮件')}
                           </button>
                         </div>
                       </form>
@@ -887,9 +841,7 @@ function App() {
                             </button>
                           </div>
                           <p className="section-hint">
-                            {t(
-                              '验证码是邮件中的一长串字符，请完整粘贴，15 分钟内有效。',
-                            )}
+                            {t('验证码是邮件中的一长串字符，请完整粘贴，15 分钟内有效。')}
                           </p>
                         </form>
                       )}
@@ -927,9 +879,7 @@ function App() {
             <Notifications token={token} onRead={refreshNotices} />
           )}
           {token && view === 'clubs' && <IdentityPanel token={token} />}
-          {token && siteAdmin && view === 'admin' && (
-            <AdminPanel token={token} />
-          )}
+          {token && siteAdmin && view === 'admin' && <AdminPanel token={token} />}
           {(view === 'wardrobe' || view === 'library') && (
             <WardrobePanel
               key={view}
@@ -943,9 +893,7 @@ function App() {
             />
           )}
 
-          {token && view === 'textures' && (
-            <TexturesPanel token={token} notify={notify} />
-          )}
+          {token && view === 'textures' && <TexturesPanel token={token} notify={notify} />}
 
           {token && view === 'community' && muaEnabled && (
             <MuaAccountCard token={token} notify={notify} />
@@ -957,14 +905,10 @@ function App() {
               <ConnectPanel />
             </>
           )}
-          {token && view === 'community' && muaMember && (
-            <MuaPanel token={token} notify={notify} />
-          )}
+          {token && view === 'community' && muaMember && <MuaPanel token={token} notify={notify} />}
         </div>
       )}
-      <footer className="site-footer">
-        {t('JLUCraft 皮肤站')}
-      </footer>
+      <footer className="site-footer">{t('JLUCraft 皮肤站')}</footer>
     </main>
   );
 }

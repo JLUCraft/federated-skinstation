@@ -35,11 +35,7 @@ export function ConnectPanel() {
         <button
           type="button"
           className="btn btn--secondary"
-          onClick={() =>
-            void navigator.clipboard
-              ?.writeText(root)
-              .then(() => setCopied(true))
-          }
+          onClick={() => void navigator.clipboard?.writeText(root).then(() => setCopied(true))}
         >
           {copied ? t('已复制') : t('复制地址')}
         </button>

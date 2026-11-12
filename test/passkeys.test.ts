@@ -17,9 +17,7 @@ test('passkey challenges require same origin, account password, browser cookie a
         payload,
         headers: {
           origin: options.origin ?? origin,
-          ...(options.token
-            ? { authorization: `Bearer ${options.token}` }
-            : {}),
+          ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
           ...(options.cookie ? { cookie: options.cookie } : {}),
         },
       });
@@ -50,7 +48,8 @@ test('passkey challenges require same origin, account password, browser cookie a
     );
     assert.equal(begin.statusCode, 200, begin.body);
     assert.equal(
-      begin.json().authenticatorSelection.userVerification,
+      begin.json<{ authenticatorSelection: { userVerification: string } }>().authenticatorSelection
+        .userVerification,
       'required',
     );
     const cookie = String(begin.headers['set-cookie']).split(';')[0];
@@ -99,7 +98,7 @@ test('passkey challenges require same origin, account password, browser cookie a
     );
     const login = await request('/api/passkeys/login/options', {});
     assert.equal(login.statusCode, 200);
-    assert.equal(login.json().userVerification, 'required');
+    assert.equal(login.json<{ userVerification: string }>().userVerification, 'required');
     assert.equal(
       (
         await request(

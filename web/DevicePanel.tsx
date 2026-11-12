@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { apiRequest } from './api';
-import { t, tf } from './i18n';
+import { t } from './i18n';
 
 /** Approve or refuse a launcher's device-flow login request. */
 export function DevicePanel({
@@ -19,15 +19,14 @@ export function DevicePanel({
   const [valid, setValid] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<'approved' | 'denied' | null>(null);
-  const profileLabel =
-    profiles.find((profile) => profile.id === profileId)?.name ?? '';
+  const profileLabel = profiles.find((profile) => profile.id === profileId)?.name ?? '';
   useEffect(() => {
     let active = true;
     void Promise.all([
       apiRequest(`/api/oauth/device?user_code=${encodeURIComponent(userCode)}`, {
         token,
       }),
-      apiRequest('/api/players', { token }),
+      apiRequest<{ profiles: { id: string; name: string }[] }>('/api/players', { token }),
     ])
       .then(([, players]) => {
         if (!active) return;
@@ -102,9 +101,7 @@ export function DevicePanel({
             </span>
             <span className="device-role-text">
               <span className="device-role-label">{t('将使用角色')}</span>
-              <span className="device-role-name">
-                {profileLabel || t('尚未创建角色')}
-              </span>
+              <span className="device-role-name">{profileLabel || t('尚未创建角色')}</span>
             </span>
             {profiles.length > 1 && (
               <label className="field-label device-role-switch">

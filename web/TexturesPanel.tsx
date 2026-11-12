@@ -1,10 +1,10 @@
 import { t, tf } from './i18n';
 import React, { useEffect, useState } from 'react';
+import type { MemberAccount } from '../shared/http';
 import { SkinPreview } from './SkinPreview';
 import { MAX_PROFILES, type GameProfile } from '../shared/profiles';
 import type { Texture, TextureKind } from '../shared/wardrobe';
 import { apiRequest, errorText } from './api';
-
 
 export function TexturesPanel({
   token,
@@ -14,9 +14,7 @@ export function TexturesPanel({
   notify: (message: string, kind: 'success' | 'error') => void;
 }) {
   const [profile, setProfile] = useState('');
-  const [players, setPlayers] = useState<
-    (GameProfile & { textures: Texture[] })[]
-  >([]);
+  const [players, setPlayers] = useState<(GameProfile & { textures: Texture[] })[]>([]);
   const [newName, setNewName] = useState('');
   const [renameName, setRenameName] = useState('');
   const [editing, setEditing] = useState(false);
@@ -28,21 +26,16 @@ export function TexturesPanel({
   const currentProfile = players.find((p) => p.id === profile);
 
   async function refresh() {
-    const value = await apiRequest('/api/me', {
+    const value = await apiRequest<MemberAccount>('/api/me', {
       token,
       errorMessage: t('无法读取角色信息，请重新登录'),
     });
     setPlayers(value.profiles);
-    const selected =
-      value.profiles.find((p: GameProfile) => p.id === profile) ??
-      value.profiles[0];
+    const selected = value.profiles.find((p: GameProfile) => p.id === profile) ?? value.profiles[0];
     setProfile(selected.id);
     setTextures(selected.textures ?? []);
     setFailed(false);
-    setModel(
-      selected.textures?.find((t: Texture) => t.kind === 'skin')?.model ??
-        'default',
-    );
+    setModel(selected.textures?.find((t: Texture) => t.kind === 'skin')?.model ?? 'default');
   }
   useEffect(() => {
     void refresh()
@@ -80,17 +73,11 @@ export function TexturesPanel({
   async function manage(method: 'POST' | 'PATCH' | 'DELETE', name?: string) {
     setBusy(true);
     try {
-      await apiRequest(
-        method === 'POST' ? '/api/players' : `/api/players/${profile}`,
-        {
-          method,
-          token,
-          body:
-            method === 'DELETE'
-              ? undefined
-              : { name: name ?? newName },
-        },
-      );
+      await apiRequest(method === 'POST' ? '/api/players' : `/api/players/${profile}`, {
+        method,
+        token,
+        body: method === 'DELETE' ? undefined : { name: name ?? newName },
+      });
       setNewName('');
       setRenameName('');
       setEditing(false);
@@ -103,11 +90,7 @@ export function TexturesPanel({
     }
   }
   return (
-    <section
-      className="panel"
-      aria-labelledby="textures-title"
-      aria-busy={loading}
-    >
+    <section className="panel" aria-labelledby="textures-title" aria-busy={loading}>
       <div className="section-head section-head--row">
         <div>
           <h2 className="section-title" id="textures-title">
@@ -132,10 +115,7 @@ export function TexturesPanel({
                   const p = players.find((p) => p.id === e.target.value)!;
                   setProfile(p.id);
                   setTextures(p.textures);
-                  setModel(
-                    p.textures.find((t) => t.kind === 'skin')?.model ??
-                      'default',
-                  );
+                  setModel(p.textures.find((t) => t.kind === 'skin')?.model ?? 'default');
                   setEditing(false);
                 }}
               >
@@ -243,8 +223,7 @@ export function TexturesPanel({
                         className="btn btn--danger"
                         disabled={busy}
                         onClick={() => {
-                          if (window.confirm(t('删除此角色及其外观设置？')))
-                            void manage('DELETE');
+                          if (window.confirm(t('删除此角色及其外观设置？'))) void manage('DELETE');
                         }}
                       >
                         {t('删除角色')}
@@ -260,98 +239,90 @@ export function TexturesPanel({
               <SkinPreview textures={textures} />
             </div>
             <div className="texture-grid">
-            {(['skin', 'cape'] as TextureKind[]).map((kind) => {
-              const current = textures.find((t) => t.kind === kind);
-              return (
-                <div key={kind} className="texture-card">
-                  <div className="texture-card-head">
-                    <h3 className="texture-title">
-                      {kind === 'skin' ? t('皮肤') : t('披风')}
-                    </h3>
-                    <div className="texture-card-head-actions">
-                      <span
-                        className={`status-pill ${current ? 'status-pill--active' : 'status-pill--neutral'}`}
-                      >
-                        {current ? t('已设置') : t('尚未设置')}
-                      </span>
-                      {current && (
-                        <button
-                          type="button"
-                          className="btn btn--danger texture-card-remove"
-                          disabled={busy}
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                kind === 'skin'
-                                  ? t('移除当前皮肤？')
-                                  : t('移除当前披风？'),
-                              )
-                            )
-                              void change(kind);
-                          }}
+              {(['skin', 'cape'] as TextureKind[]).map((kind) => {
+                const current = textures.find((t) => t.kind === kind);
+                return (
+                  <div key={kind} className="texture-card">
+                    <div className="texture-card-head">
+                      <h3 className="texture-title">{kind === 'skin' ? t('皮肤') : t('披风')}</h3>
+                      <div className="texture-card-head-actions">
+                        <span
+                          className={`status-pill ${current ? 'status-pill--active' : 'status-pill--neutral'}`}
                         >
-                          {t('移除')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="texture-card-body">
-                    <div className="texture-card-media">
-                      {current ? (
-                        <img
-                          className={`texture-preview texture-preview--${kind}`}
-                          src={`/textures/${current.hash}`}
-                          alt={
-                            kind === 'skin'
-                              ? t('当前皮肤材质')
-                              : t('当前披风材质')
-                          }
-                        />
-                      ) : (
-                        <div
-                          className={`texture-preview texture-preview--${kind} texture-preview--empty`}
-                          aria-hidden="true"
-                        />
-                      )}
-                    </div>
-                    <div className="texture-card-controls">
-                      {kind === 'skin' && (
-                        <label className="field-label">
-                          {t('手臂模型')}
-                          <select
-                            className="input"
-                            value={model}
+                          {current ? t('已设置') : t('尚未设置')}
+                        </span>
+                        {current && (
+                          <button
+                            type="button"
+                            className="btn btn--danger texture-card-remove"
                             disabled={busy}
-                            onChange={(e) => setModel(e.target.value)}
-                          >
-                            <option value="default">{t('标准')}</option>
-                            <option value="slim">{t('纤细')}</option>
-                          </select>
-                        </label>
-                      )}
-                      <div className="actions">
-                        <label
-                          className={`btn upload-btn${busy || !profile ? ' upload-btn--disabled' : ''}`}
-                        >
-                          {kind === 'skin' ? t('上传皮肤') : t('上传披风')}
-                          <input
-                            className="upload-btn-input"
-                            type="file"
-                            accept="image/png"
-                            disabled={busy || !profile}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) void change(kind, file);
-                              e.target.value = '';
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  kind === 'skin' ? t('移除当前皮肤？') : t('移除当前披风？'),
+                                )
+                              )
+                                void change(kind);
                             }}
+                          >
+                            {t('移除')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="texture-card-body">
+                      <div className="texture-card-media">
+                        {current ? (
+                          <img
+                            className={`texture-preview texture-preview--${kind}`}
+                            src={`/textures/${current.hash}`}
+                            alt={kind === 'skin' ? t('当前皮肤材质') : t('当前披风材质')}
                           />
-                        </label>
+                        ) : (
+                          <div
+                            className={`texture-preview texture-preview--${kind} texture-preview--empty`}
+                            aria-hidden="true"
+                          />
+                        )}
+                      </div>
+                      <div className="texture-card-controls">
+                        {kind === 'skin' && (
+                          <label className="field-label">
+                            {t('手臂模型')}
+                            <select
+                              className="input"
+                              value={model}
+                              disabled={busy}
+                              onChange={(e) => setModel(e.target.value)}
+                            >
+                              <option value="default">{t('标准')}</option>
+                              <option value="slim">{t('纤细')}</option>
+                            </select>
+                          </label>
+                        )}
+                        <div className="actions">
+                          <label
+                            className={`btn upload-btn${busy || !profile ? ' upload-btn--disabled' : ''}`}
+                          >
+                            {kind === 'skin' ? t('上传皮肤') : t('上传披风')}
+                            <input
+                              className="upload-btn-input"
+                              type="file"
+                              accept="image/png"
+                              disabled={busy || !profile}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) void change(kind, file);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
             </div>
           </div>
         </>

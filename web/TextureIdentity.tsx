@@ -73,9 +73,7 @@ export function Author({ item }: { item: TextureItem }) {
 export function TextureProvenance({ item }: { item: TextureItem }) {
   return (
     <p className="texture-provenance badge-row">
-      <span className="status-pill">
-        {SOURCE_LABELS[item.source ?? 'unknown']}
-      </span>
+      <span className="status-pill">{SOURCE_LABELS[item.source ?? 'unknown']}</span>
       {item.license && <span>{item.license}</span>}
     </p>
   );

@@ -2,6 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { site } from './helpers/site.js';
 import { PNG } from 'pngjs';
+import type { GameProfile } from '../shared/profiles.js';
+import type { Authentication, MemberAccount, TextureList } from '../shared/http.js';
+import type { SessionProfile } from '../shared/contracts/generated.js';
 test('multiple profiles isolate ownership, textures, launcher selection and join sessions', async () => {
   const s = await site();
   try {
@@ -21,27 +24,14 @@ test('multiple profiles isolate ownership, textures, launcher selection and join
       });
     const created = await request('POST', '/api/players', { name: 'Builder' });
     assert.equal(created.statusCode, 200, created.body);
-    const p = created.json();
+    const p = created.json<GameProfile>();
     assert.equal(
-      (
-        await request(
-          'POST',
-          '/api/players',
-          { name: 'builder' },
-          b.accessToken,
-        )
-      ).statusCode,
+      (await request('POST', '/api/players', { name: 'builder' }, b.accessToken)).statusCode,
       403,
     );
     assert.equal(
-      (
-        await request(
-          'PATCH',
-          `/api/players/${p.id}`,
-          { name: 'Stolen' },
-          b.accessToken,
-        )
-      ).statusCode,
+      (await request('PATCH', `/api/players/${p.id}`, { name: 'Stolen' }, b.accessToken))
+        .statusCode,
       403,
     );
     const png = PNG.sync.write(new PNG({ width: 64, height: 64 }));
@@ -63,24 +53,20 @@ test('multiple profiles isolate ownership, textures, launcher selection and join
       },
     });
     assert.equal(upload.statusCode, 204, upload.body);
-    const me = (await request('GET', '/api/me')).json();
+    const me = (await request('GET', '/api/me')).json<MemberAccount>();
     assert.equal(me.profiles.length, 2);
     assert.equal(me.textures.length, 0);
-    assert.equal(
-      me.profiles.find((x: any) => x.id === p.id).textures.length,
-      1,
-    );
-    const wardrobe = (await request('GET', '/api/wardrobe')).json().items;
+    assert.equal(me.profiles.find((profile) => profile.id === p.id)!.textures.length, 1);
+    const wardrobe = (await request('GET', '/api/wardrobe')).json<TextureList>().items;
     const item = wardrobe[0];
     assert.equal(item.applied, 0);
     assert.equal(
-      (await request('GET', `/api/wardrobe?profileId=${p.id}`)).json().items[0]
+      (await request('GET', `/api/wardrobe?profileId=${p.id}`)).json<TextureList>().items[0]
         .applied,
       1,
     );
     assert.equal(
-      (await request('GET', `/api/wardrobe?profileId=${b.selectedProfile.id}`))
-        .statusCode,
+      (await request('GET', `/api/wardrobe?profileId=${b.selectedProfile.id}`)).statusCode,
       403,
     );
     assert.equal(
@@ -99,19 +85,19 @@ test('multiple profiles isolate ownership, textures, launcher selection and join
       ).statusCode,
       200,
     );
-    assert.equal((await request('GET', '/api/me')).json().textures.length, 1);
+    assert.equal((await request('GET', '/api/me')).json<MemberAccount>().textures.length, 1);
     const profile = (
-      await s.app.inject(
-        '/sessionserver/session/minecraft/profile/' + p.id + '?unsigned=false',
-      )
-    ).json();
+      await s.app.inject('/sessionserver/session/minecraft/profile/' + p.id + '?unsigned=false')
+    ).json<SessionProfile>();
     assert.equal(profile.name, 'Builder');
     assert.ok(
-      JSON.parse(
-        Buffer.from(
-          profile.properties.find((x: any) => x.name === 'textures').value,
-          'base64',
-        ).toString(),
+      (
+        JSON.parse(
+          Buffer.from(
+            profile.properties.find((property) => property.name === 'textures')!.value,
+            'base64',
+          ).toString(),
+        ) as { textures: { SKIN?: unknown } }
       ).textures.SKIN,
     );
     const login = (
@@ -119,7 +105,7 @@ test('multiple profiles isolate ownership, textures, launcher selection and join
         username: 'mainrole@school.test',
         password: 'password-for-contract-testing',
       })
-    ).json();
+    ).json<Authentication>();
     assert.equal(login.selectedProfile, undefined);
     assert.equal(login.availableProfiles.length, 2);
     assert.equal(
@@ -138,8 +124,7 @@ test('multiple profiles isolate ownership, textures, launcher selection and join
     });
     assert.equal(foreign.statusCode, 403);
     assert.equal(
-      (await s.post('/authserver/validate', { accessToken: login.accessToken }))
-        .statusCode,
+      (await s.post('/authserver/validate', { accessToken: login.accessToken })).statusCode,
       204,
     );
     const choose = await s.post('/authserver/refresh', {
@@ -147,7 +132,7 @@ test('multiple profiles isolate ownership, textures, launcher selection and join
       selectedProfile: { id: p.id, name: p.name },
     });
     assert.equal(choose.statusCode, 200, choose.body);
-    const selected = choose.json();
+    const selected = choose.json<Authentication & { selectedProfile: GameProfile }>();
     assert.equal(selected.selectedProfile.id, p.id);
     assert.equal(
       (
@@ -174,12 +159,11 @@ test('multiple profiles isolate ownership, textures, launcher selection and join
         await s.app.inject(
           '/sessionserver/session/minecraft/hasJoined?username=Builder&serverId=builder-session',
         )
-      ).json().id,
+      ).json<SessionProfile>().id,
       p.id,
     );
     assert.equal(
-      (await request('PATCH', `/api/players/${p.id}`, { name: 'Architect' }))
-        .statusCode,
+      (await request('PATCH', `/api/players/${p.id}`, { name: 'Architect' })).statusCode,
       200,
     );
     assert.equal(
@@ -190,37 +174,19 @@ test('multiple profiles isolate ownership, textures, launcher selection and join
       ).statusCode,
       403,
     );
+    assert.equal((await s.app.inject('/api/users/profiles/minecraft/Builder')).statusCode, 204);
     assert.equal(
-      (await s.app.inject('/api/users/profiles/minecraft/Builder')).statusCode,
-      204,
-    );
-    assert.equal(
-      (await s.app.inject('/api/users/profiles/minecraft/Architect')).json().id,
+      (await s.app.inject('/api/users/profiles/minecraft/Architect')).json<GameProfile>().id,
       p.id,
     );
     assert.equal(
-      (
-        await request(
-          'DELETE',
-          `/api/players/${p.id}`,
-          undefined,
-          b.accessToken,
-        )
-      ).statusCode,
+      (await request('DELETE', `/api/players/${p.id}`, undefined, b.accessToken)).statusCode,
       403,
     );
+    assert.equal((await request('DELETE', `/api/players/${a.selectedProfile.id}`)).statusCode, 403);
+    assert.equal((await request('DELETE', `/api/players/${p.id}`)).statusCode, 200);
     assert.equal(
-      (await request('DELETE', `/api/players/${a.selectedProfile.id}`))
-        .statusCode,
-      403,
-    );
-    assert.equal(
-      (await request('DELETE', `/api/players/${p.id}`)).statusCode,
-      200,
-    );
-    assert.equal(
-      (await s.app.inject('/sessionserver/session/minecraft/profile/' + p.id))
-        .statusCode,
+      (await s.app.inject('/sessionserver/session/minecraft/profile/' + p.id)).statusCode,
       204,
     );
   } finally {
@@ -248,9 +214,7 @@ test('extra profile remapping preserves textures, rejects collisions and revokes
     const token = db.mint(db.account('id', account.id)!, 'client', now);
     const next = 'b'.repeat(32);
     assert.throws(() => db.remapProfiles({ [first.id]: second.id }));
-    assert.throws(() =>
-      db.remapProfiles({ [first.id]: next, [second.id]: account.id }),
-    );
+    assert.throws(() => db.remapProfiles({ [first.id]: next, [second.id]: account.id }));
     assert.equal(db.ownProfile(account, first.id).name, 'Builder');
     assert.equal(db.profile(next), undefined);
     db.remapProfiles({ [first.id]: next });

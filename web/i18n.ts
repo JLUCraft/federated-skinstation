@@ -5,10 +5,7 @@ export function t(key: keyof typeof messages): string {
 }
 
 /** Message with `{name}` placeholders filled from `values`. */
-export function tf(
-  key: keyof typeof messages,
-  values: Record<string, string | number>,
-): string {
+export function tf(key: keyof typeof messages, values: Record<string, string | number>): string {
   return t(key).replace(/\{(\w+)\}/g, (whole, name: string) =>
     name in values ? String(values[name]) : whole,
   );

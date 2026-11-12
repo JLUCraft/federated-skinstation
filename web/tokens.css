@@ -35,7 +35,8 @@
   --error: #932421;
   --on-error: #ffffff;
   --error-bg: #fff4f2;
-  --font-sans: system-ui, -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-sans:
+    system-ui, -apple-system, 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --text-xs: 12px;
   --text-sm: 13px;

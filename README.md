@@ -11,9 +11,14 @@ JLUCraft account, Yggdrasil, MUA, skin library, wardrobe, and community services
 Select one validation channel for a batch and reuse successful results for unchanged inputs. Standard commands:
 
 ```sh
+bun run format
 bun run build
 bun run test
 ```
+
+`build` runs `bun run check` before bundling. See
+[AGENTS.md](AGENTS.md#development-boundaries) for the development check policy.
+Generated contracts are regenerated from JSON Schema and are not hand-formatted.
 
 Read [AGENTS.md](AGENTS.md) before making changes.
 

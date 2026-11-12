@@ -6,6 +6,8 @@ import { registerWardrobe } from '../server/wardrobe.js';
 import { registerCommunity } from '../server/community.js';
 import { LocalIdentity } from '../server/permissions.js';
 import { authority } from './helpers/identity.js';
+import type { GetResponse, TextureList, PublicAuthor } from '../shared/http.js';
+import type { TextureItem } from '../shared/wardrobe.js';
 
 test('community publication, moderation, privacy, counters and ownership form one workflow', async () => {
   const db = new Store(':memory:'),
@@ -36,8 +38,8 @@ test('community publication, moderation, privacy, counters and ownership form on
     admin = headers('admin');
   const post = (url: string, payload: object, auth = alice) =>
     app.inject({ method: 'POST', url, headers: auth, payload });
-  const get = async (url: string, auth?: typeof alice) =>
-    (await app.inject({ url, headers: auth })).json();
+  const get = async <Url extends string>(url: Url, auth?: typeof alice) =>
+    (await app.inject({ url, headers: auth })).json<GetResponse<Url>>();
   const patch = (id: string, payload: object, auth = alice) =>
     app.inject({
       method: 'PATCH',
@@ -51,9 +53,8 @@ test('community publication, moderation, privacy, counters and ownership form on
       {
         state,
         reason: 'Human review',
-        submission: db.db
-          .prepare("SELECT submission FROM texture_reviews WHERE item='skin'")
-          .get()!.submission,
+        submission: db.db.prepare("SELECT submission FROM texture_reviews WHERE item='skin'").get()!
+          .submission,
       },
       admin,
     );
@@ -73,23 +74,12 @@ test('community publication, moderation, privacy, counters and ownership form on
       200,
     );
     assert.equal((await get('/api/library')).items.length, 0);
-    assert.equal(
-      (await app.inject({ url: '/api/library/skin' })).statusCode,
-      403,
-    );
-    assert.equal(
-      (await app.inject({ url: '/api/library/skin/download' })).statusCode,
-      403,
-    );
+    assert.equal((await app.inject({ url: '/api/library/skin' })).statusCode, 403);
+    assert.equal((await app.inject({ url: '/api/library/skin/download' })).statusCode, 403);
     assert.equal((await review('invalid')).statusCode, 403);
     assert.equal(
-      (
-        await post(
-          '/api/admin/reviews/skin',
-          { state: 'approved', reason: 'Denied' },
-          bob,
-        )
-      ).statusCode,
+      (await post('/api/admin/reviews/skin', { state: 'approved', reason: 'Denied' }, bob))
+        .statusCode,
       403,
     );
     assert.equal((await review('approved')).statusCode, 200);
@@ -98,23 +88,14 @@ test('community publication, moderation, privacy, counters and ownership form on
     assert.equal(detail.authorName, 'alice');
     assert.equal(detail.reviewReason, undefined);
     assert.equal((await get('/api/library')).items[0].reviewReason, undefined);
-    assert.equal(
-      (await get('/api/wardrobe', alice)).items[0].reviewReason,
-      'Human review',
-    );
+    assert.equal((await get('/api/wardrobe', alice)).items[0].reviewReason, 'Human review');
     const user = await get('/api/users/alice');
-    assert.equal(user.email, undefined);
-    assert.equal(user.profiles, undefined);
+    assert.equal('email' in user, false);
+    assert.equal('profiles' in user, false);
     assert.equal(user.items.length, 1);
     assert.equal(user.items[0].reviewReason, undefined);
-    assert.equal(
-      (await get('/api/library?school=other&sort=downloads')).items.length,
-      0,
-    );
-    assert.equal(
-      (await get('/api/library?school=jlu&sort=saves')).items.length,
-      1,
-    );
+    assert.equal((await get('/api/library?school=other&sort=downloads')).items.length, 0);
+    assert.equal((await get('/api/library?school=jlu&sort=saves')).items.length, 1);
     for (let i = 0; i < 2; i++) {
       assert.equal(
         (
@@ -132,17 +113,13 @@ test('community publication, moderation, privacy, counters and ownership form on
     });
     assert.equal((await get('/api/library/skin')).downloads, 2);
     assert.equal(
-      (await patch('skin', { title: 'Campus', published: true, tags: 5 }))
-        .statusCode,
+      (await patch('skin', { title: 'Campus', published: true, tags: 5 })).statusCode,
       403,
     );
     db.db.exec(
       "CREATE TRIGGER fail_like_notice BEFORE INSERT ON notifications WHEN NEW.kind='like' BEGIN SELECT RAISE(ABORT,'forced notice failure'); END;",
     );
-    assert.equal(
-      (await post('/api/library/skin/like', { liked: true }, bob)).statusCode,
-      500,
-    );
+    assert.equal((await post('/api/library/skin/like', { liked: true }, bob)).statusCode, 500);
     assert.equal((await get('/api/library/skin')).likes, 0);
     db.db.exec('DROP TRIGGER fail_like_notice');
     for (let i = 0; i < 2; i++) {
@@ -158,11 +135,7 @@ test('community publication, moderation, privacy, counters and ownership form on
     );
     const copy = (await get('/api/wardrobe', bob)).items[0];
     assert.equal(copy.source, 'original');
-    assert.equal(
-      (await patch(copy.id, { title: 'Mine', published: true }, bob))
-        .statusCode,
-      403,
-    );
+    assert.equal((await patch(copy.id, { title: 'Mine', published: true }, bob)).statusCode, 403);
     assert.equal(
       (
         await app.inject({
@@ -176,13 +149,8 @@ test('community publication, moderation, privacy, counters and ownership form on
     );
     assert.equal((await get('/api/users/bob')).avatar, 'a'.repeat(64));
     assert.equal(
-      (
-        await post(
-          '/api/library/skin/report',
-          { reason: 'Suspected infringement' },
-          bob,
-        )
-      ).statusCode,
+      (await post('/api/library/skin/report', { reason: 'Suspected infringement' }, bob))
+        .statusCode,
       200,
     );
     assert.equal((await get('/api/admin/reviews', admin)).reports.length, 1);
@@ -190,10 +158,7 @@ test('community publication, moderation, privacy, counters and ownership form on
     assert.equal((await get('/api/library')).items.length, 0);
     assert.equal((await get('/api/users/alice')).items.length, 0);
     // Review controls public discovery, while existing role textures remain usable.
-    assert.equal(
-      (await post(`/api/wardrobe/${copy.id}/apply`, {}, bob)).statusCode,
-      200,
-    );
+    assert.equal((await post(`/api/wardrobe/${copy.id}/apply`, {}, bob)).statusCode, 200);
     assert.equal(db.textures(db.account('id', 'bob')!)[0].hash, 'a'.repeat(64));
     assert.equal((await get('/api/admin/reviews', admin)).reports.length, 0);
     assert.equal(
@@ -275,13 +240,11 @@ test('community publication, moderation, privacy, counters and ownership form on
       );
     }
     assert.equal(
-      (await get('/api/admin/announcements?offset=40', admin)).announcements[0]
-        .title,
+      (await get('/api/admin/announcements?offset=40', admin)).announcements[0].title,
       'Holiday',
     );
     assert.equal(
-      (await app.inject({ url: '/api/admin/announcements', headers: bob }))
-        .statusCode,
+      (await app.inject({ url: '/api/admin/announcements', headers: bob })).statusCode,
       403,
     );
     assert.equal(
@@ -295,10 +258,7 @@ test('community publication, moderation, privacy, counters and ownership form on
     );
     const notice = (await get('/api/notifications', alice)).items[0];
     await post('/api/notifications/read', { id: notice.id }, bob);
-    assert.equal(
-      (await get('/api/notifications', alice)).items[0].read_at,
-      null,
-    );
+    assert.equal((await get('/api/notifications', alice)).items[0].read_at, null);
     await post('/api/notifications/read', { id: notice.id }, alice);
     assert.ok((await get('/api/notifications', alice)).items[0].read_at);
     await app.inject({
@@ -306,15 +266,8 @@ test('community publication, moderation, privacy, counters and ownership form on
       url: '/api/wardrobe/skin',
       headers: alice,
     });
-    assert.equal(
-      (await post(`/api/wardrobe/${copy.id}/apply`, {}, bob)).statusCode,
-      200,
-    );
-    assert.equal(
-      (await patch(copy.id, { title: 'Mine', published: true }, bob))
-        .statusCode,
-      403,
-    );
+    assert.equal((await post(`/api/wardrobe/${copy.id}/apply`, {}, bob)).statusCode, 200);
+    assert.equal((await patch(copy.id, { title: 'Mine', published: true }, bob)).statusCode, 403);
   } finally {
     await app.close();
     db.close();
@@ -354,8 +307,8 @@ test('published entries without a review are pending until an administrator deci
   db.db
     .prepare('INSERT INTO wardrobe VALUES(?,?,?,?,?,?,?)')
     .run('private', 'alice', 'Private', 'cape', 'b'.repeat(64), 'default', 0);
-  const get = async (url: string) =>
-    (await app.inject({ url, headers: headers('admin') })).json();
+  const get = async <Url extends string>(url: Url) =>
+    (await app.inject({ url, headers: headers('admin') })).json<GetResponse<Url>>();
   const review = (id: string, state: string) =>
     app.inject({
       method: 'POST',
@@ -366,7 +319,10 @@ test('published entries without a review are pending until an administrator deci
   try {
     assert.equal((await get('/api/library')).items.length, 0);
     const queue = (await get('/api/admin/reviews')).items;
-    assert.deepEqual(queue.map((item: { id: string }) => item.id), ['unreviewed']);
+    assert.deepEqual(
+      queue.map((item: { id: string }) => item.id),
+      ['unreviewed'],
+    );
     assert.equal(queue[0].state, 'pending');
     assert.equal(queue[0].submission, null);
     assert.equal((await get('/api/admin/reviews?state=approved')).items.length, 0);
@@ -380,7 +336,9 @@ test('published entries without a review are pending until an administrator deci
     assert.equal((await get('/api/library')).items.length, 1);
     insert('changed', true);
     await app.inject({
-      method: 'PATCH', url: '/api/wardrobe/changed', headers: headers('alice'),
+      method: 'PATCH',
+      url: '/api/wardrobe/changed',
+      headers: headers('alice'),
       payload: { title: 'Changed after listing', published: true },
     });
     assert.equal((await review('changed', 'approved')).statusCode, 403);
@@ -398,24 +356,33 @@ test('an empty administrator list rejects publication without hiding approved en
   const { db, app, headers, insert } = communityFixture([]);
   insert('approved', true);
   insert('draft', false);
-  db.db.prepare("INSERT INTO texture_reviews VALUES(?,'approved','Reviewed','admin',?,'approved-submission')")
+  db.db
+    .prepare(
+      "INSERT INTO texture_reviews VALUES(?,'approved','Reviewed','admin',?,'approved-submission')",
+    )
     .run('approved', now());
-  const patch = (id: string, published: boolean) => app.inject({
-    method: 'PATCH', url: `/api/wardrobe/${id}`, headers: headers('alice'),
-    payload: { title: 'Edited', published },
-  });
+  const patch = (id: string, published: boolean) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/api/wardrobe/${id}`,
+      headers: headers('alice'),
+      payload: { title: 'Edited', published },
+    });
   try {
     assert.equal((await app.inject('/api/library/approved')).statusCode, 200);
     const response = await patch('draft', true);
     assert.equal(response.statusCode, 403);
-    assert.equal(response.json().message, 'Publication requires a site administrator');
+    assert.equal(
+      response.json<{ message: string }>().message,
+      'Publication requires a site administrator',
+    );
     const draft = db.db.prepare("SELECT title,published FROM wardrobe WHERE id='draft'").get()!;
     assert.equal(draft.title, 'draft');
     assert.equal(draft.published, 0);
     assert.equal(db.db.prepare('SELECT count(*) AS n FROM texture_reviews').get()!.n, 1);
     assert.equal((await patch('draft', false)).statusCode, 200);
     assert.equal((await patch('approved', false)).statusCode, 200);
-    assert.equal((await app.inject('/api/library')).json().items.length, 0);
+    assert.equal((await app.inject('/api/library')).json<TextureList>().items.length, 0);
   } finally {
     await app.close();
     db.close();
@@ -425,30 +392,46 @@ test('an empty administrator list rejects publication without hiding approved en
 test('deleting a collected copy updates author counts and preserves event notices and likes', async () => {
   const { db, app, headers, insert } = communityFixture(['admin']);
   insert('original', true);
-  db.db.prepare("INSERT INTO texture_reviews VALUES(?,'approved','Reviewed','admin',?,'approved-submission')")
+  db.db
+    .prepare(
+      "INSERT INTO texture_reviews VALUES(?,'approved','Reviewed','admin',?,'approved-submission')",
+    )
     .run('original', now());
-  const save = () => app.inject({
-    method: 'POST', url: '/api/library/original/save', headers: headers('bob'),
-  });
-  const detail = async () => (await app.inject('/api/library/original')).json();
+  const save = () =>
+    app.inject({
+      method: 'POST',
+      url: '/api/library/original/save',
+      headers: headers('bob'),
+    });
+  const detail = async () => (await app.inject('/api/library/original')).json<TextureItem>();
   try {
     assert.equal((await save()).statusCode, 200);
     await app.inject({
-      method: 'POST', url: '/api/library/original/like', headers: headers('bob'),
+      method: 'POST',
+      url: '/api/library/original/like',
+      headers: headers('bob'),
       payload: { liked: true },
     });
     assert.equal((await detail()).saves, 1);
-    const copy = (await app.inject({ url: '/api/wardrobe', headers: headers('bob') })).json().items[0];
-    db.db.exec("CREATE TRIGGER fail_copy_delete BEFORE DELETE ON wardrobe WHEN OLD.account='bob' BEGIN SELECT RAISE(ABORT,'forced deletion failure'); END;");
-    const remove = () => app.inject({ method: 'DELETE', url: `/api/wardrobe/${copy.id}`, headers: headers('bob') });
+    const copy = (
+      await app.inject({ url: '/api/wardrobe', headers: headers('bob') })
+    ).json<TextureList>().items[0];
+    db.db.exec(
+      "CREATE TRIGGER fail_copy_delete BEFORE DELETE ON wardrobe WHEN OLD.account='bob' BEGIN SELECT RAISE(ABORT,'forced deletion failure'); END;",
+    );
+    const remove = () =>
+      app.inject({ method: 'DELETE', url: `/api/wardrobe/${copy.id}`, headers: headers('bob') });
     assert.equal((await remove()).statusCode, 500);
     assert.equal((await detail()).saves, 1);
     db.db.exec('DROP TRIGGER fail_copy_delete');
     assert.equal((await remove()).statusCode, 204);
     assert.equal((await detail()).saves, 0);
     assert.equal((await detail()).likes, 1);
-    assert.equal((await app.inject('/api/users/alice')).json().saves, 0);
-    assert.equal(db.db.prepare("SELECT count(*) AS n FROM notifications WHERE kind='save'").get()!.n, 1);
+    assert.equal((await app.inject('/api/users/alice')).json<PublicAuthor>().saves, 0);
+    assert.equal(
+      db.db.prepare("SELECT count(*) AS n FROM notifications WHERE kind='save'").get()!.n,
+      1,
+    );
     assert.equal((await save()).statusCode, 200);
     assert.equal((await detail()).saves, 1);
   } finally {
@@ -463,7 +446,9 @@ test('community routes initialize their schema without wardrobe route registrati
   registerCommunity(app, db, new LocalIdentity(db));
   try {
     assert.equal((await app.inject('/api/announcements')).statusCode, 200);
-    assert.deepEqual((await app.inject('/api/announcements')).json(), { announcements: [] });
+    assert.deepEqual((await app.inject('/api/announcements')).json<unknown>(), {
+      announcements: [],
+    });
   } finally {
     await app.close();
     db.close();
@@ -476,19 +461,19 @@ test('texture detail rejects a row removed after its initial lookup', async () =
   Object.defineProperty(db.db, 'prepare', {
     configurable: true,
     value(sql: string) {
-      if (sql.includes('CASE WHEN'))
-        prepare("DELETE FROM wardrobe WHERE id='removed'").run();
+      if (sql.includes('CASE WHEN')) prepare("DELETE FROM wardrobe WHERE id='removed'").run();
       return prepare(sql);
     },
   });
   try {
     for (const url of ['/api/library/removed', '/api/wardrobe']) {
       insert('removed', true);
-      prepare("INSERT INTO texture_reviews VALUES(?,'approved','Reviewed','admin',?,'approved-submission')")
-        .run('removed', now());
+      prepare(
+        "INSERT INTO texture_reviews VALUES(?,'approved','Reviewed','admin',?,'approved-submission')",
+      ).run('removed', now());
       const response = await app.inject({ url, headers: headers('alice') });
       assert.equal(response.statusCode, 404);
-      assert.equal(response.json().message, 'Texture not found');
+      assert.equal(response.json<{ message: string }>().message, 'Texture not found');
     }
   } finally {
     await app.close();

@@ -4,10 +4,14 @@ import { createPublicKey, verify } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { site } from './helpers/site.js';
+import type { MemberAccount } from '../shared/http.js';
+
+type OAuthError = { error: string };
+type DeviceCode = { user_code: string; device_code: string; verification_uri_complete: string };
+type OAuthTokens = { access_token: string; refresh_token: string; id_token: string };
 
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
-const SCOPE =
-  'openid offline_access Yggdrasil.PlayerProfiles.Select Yggdrasil.Server.Join';
+const SCOPE = 'openid offline_access Yggdrasil.PlayerProfiles.Select Yggdrasil.Server.Join';
 
 const form = (values: Record<string, string>) => ({
   headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -21,14 +25,16 @@ test('device flow issues verifiable id tokens, rotating refresh tokens and worki
     const login = await s.enroll('Alice');
     const owner = { authorization: `Bearer ${login.accessToken}` };
 
-    const meta = (await s.app.inject({ url: '/' })).json();
+    const meta = (await s.app.inject({ url: '/' })).json<{ meta: Record<string, string> }>();
     const discovery = (
       await s.app.inject({
         url: new URL(meta.meta['feature.openid_configuration_url']).pathname,
       })
-    ).json();
+    ).json<{ shared_client_id: string }>();
     assert.equal(discovery.shared_client_id, 'jlucraft-launcher');
-    const jwks = (await s.app.inject({ url: '/api/oauth/jwks' })).json();
+    const jwks = (await s.app.inject({ url: '/api/oauth/jwks' })).json<{
+      keys: (JsonWebKey & { alg: string })[];
+    }>();
     assert.equal(jwks.keys[0].alg, 'RS256');
 
     const device = async (values: Record<string, string>) =>
@@ -45,27 +51,25 @@ test('device flow issues verifiable id tokens, rotating refresh tokens and worki
       });
 
     assert.equal(
-      (await device({ client_id: 'other', scope: SCOPE })).json().error,
+      (await device({ client_id: 'other', scope: SCOPE })).json<OAuthError>().error,
       'invalid_client',
     );
     assert.equal(
-      (
-        await device({ client_id: 'jlucraft-launcher', scope: 'admin' })
-      ).json().error,
+      (await device({ client_id: 'jlucraft-launcher', scope: 'admin' })).json<OAuthError>().error,
       'invalid_scope',
     );
 
     const started = (
       await device({ client_id: 'jlucraft-launcher', scope: SCOPE })
-    ).json();
+    ).json<DeviceCode>();
     assert.match(started.user_code, /^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     assert.ok(started.verification_uri_complete.endsWith(started.user_code));
 
     const poll = { grant_type: DEVICE_GRANT, device_code: started.device_code };
     const first = await token(poll);
     assert.equal(first.statusCode, 400);
-    assert.equal(first.json().error, 'authorization_pending');
-    assert.equal((await token(poll)).json().error, 'slow_down');
+    assert.equal(first.json<OAuthError>().error, 'authorization_pending');
+    assert.equal((await token(poll)).json<OAuthError>().error, 'slow_down');
 
     const decide = (payload: object, headers = owner) =>
       s.app.inject({
@@ -74,13 +78,9 @@ test('device flow issues verifiable id tokens, rotating refresh tokens and worki
         headers,
         payload,
       });
+    assert.equal((await decide({ userCode: 'ZZZZ-ZZZZ', approve: true })).statusCode, 404);
     assert.equal(
-      (await decide({ userCode: 'ZZZZ-ZZZZ', approve: true })).statusCode,
-      404,
-    );
-    assert.equal(
-      (await decide({ userCode: started.user_code, approve: true }, {} as never))
-        .statusCode,
+      (await decide({ userCode: started.user_code, approve: true }, {} as never)).statusCode,
       403,
     );
     assert.equal(
@@ -89,19 +89,16 @@ test('device flow issues verifiable id tokens, rotating refresh tokens and worki
           url: `/api/oauth/device?user_code=${started.user_code.toLowerCase()}`,
           headers: owner,
         })
-      ).json().scopes.length,
+      ).json<{ scopes: string[] }>().scopes.length,
       4,
     );
-    assert.equal(
-      (await decide({ userCode: started.user_code, approve: true })).statusCode,
-      204,
-    );
+    assert.equal((await decide({ userCode: started.user_code, approve: true })).statusCode, 204);
 
     raw.exec('UPDATE oauth_devices SET polled=0');
     const issued = await token(poll);
     assert.equal(issued.statusCode, 200);
-    const tokens = issued.json();
-    assert.equal((await token(poll)).json().error, 'invalid_grant');
+    const tokens = issued.json<OAuthTokens>();
+    assert.equal((await token(poll)).json<OAuthError>().error, 'invalid_grant');
 
     const [header, payload, signature] = tokens.id_token.split('.');
     assert.ok(
@@ -112,7 +109,12 @@ test('device flow issues verifiable id tokens, rotating refresh tokens and worki
         Buffer.from(signature, 'base64url'),
       ),
     );
-    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as {
+      aud: string;
+      selectedProfile: { id: string; name: string };
+      exp: number;
+      iat: number;
+    };
     assert.equal(claims.aud, 'jlucraft-launcher');
     assert.equal(claims.selectedProfile.name, 'Alice');
     assert.equal(claims.selectedProfile.id, login.selectedProfile.id);
@@ -132,7 +134,7 @@ test('device flow issues verifiable id tokens, rotating refresh tokens and worki
           url: '/api/me',
           headers: { authorization: `Bearer ${tokens.access_token}` },
         })
-      ).json().name,
+      ).json<MemberAccount>().name,
       'Alice',
     );
 
@@ -141,32 +143,29 @@ test('device flow issues verifiable id tokens, rotating refresh tokens and worki
       refresh_token: tokens.refresh_token,
     });
     assert.equal(refreshed.statusCode, 200);
-    assert.notEqual(refreshed.json().refresh_token, tokens.refresh_token);
+    assert.notEqual(refreshed.json<OAuthTokens>().refresh_token, tokens.refresh_token);
     assert.equal(
       (
         await token({
           grant_type: 'refresh_token',
           refresh_token: tokens.refresh_token,
         })
-      ).json().error,
+      ).json<OAuthError>().error,
       'invalid_grant',
     );
     assert.equal(
-      (await token({ grant_type: 'password' })).json().error,
+      (await token({ grant_type: 'password' })).json<OAuthError>().error,
       'unsupported_grant_type',
     );
 
     const refused = (
       await device({ client_id: 'jlucraft-launcher', scope: SCOPE })
-    ).json();
-    assert.equal(
-      (await decide({ userCode: refused.user_code, approve: false })).statusCode,
-      204,
-    );
+    ).json<DeviceCode>();
+    assert.equal((await decide({ userCode: refused.user_code, approve: false })).statusCode, 204);
     assert.equal(
       (
         await token({ grant_type: DEVICE_GRANT, device_code: refused.device_code })
-      ).json().error,
+      ).json<OAuthError>().error,
       'access_denied',
     );
   } finally {

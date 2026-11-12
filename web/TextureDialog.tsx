@@ -61,22 +61,16 @@ export function TextureDialog({
         />
         {item.public && <Author item={item} />}
         <TextureProvenance item={item} />
-        {item.public && (
-          <a href={`/portal/library/${item.id}`}>{t('详情与分享')}</a>
-        )}
+        {item.public && <a href={`/portal/library/${item.id}`}>{t('详情与分享')}</a>}
         <dl className="detail-list">
           <div className="detail-row">
             <dt className="detail-term">{t('类型')}</dt>
-            <dd className="detail-value">
-              {item.kind === 'skin' ? t('皮肤') : t('披风')}
-            </dd>
+            <dd className="detail-value">{item.kind === 'skin' ? t('皮肤') : t('披风')}</dd>
           </div>
           {item.kind === 'skin' && (
             <div className="detail-row">
               <dt className="detail-term">{t('手臂模型')}</dt>
-              <dd className="detail-value">
-                {item.model === 'slim' ? t('纤细') : t('标准')}
-              </dd>
+              <dd className="detail-value">{item.model === 'slim' ? t('纤细') : t('标准')}</dd>
             </div>
           )}
           <div className="detail-row">
@@ -100,10 +94,7 @@ export function TextureDialog({
               void navigator.clipboard
                 ?.writeText(
                   item.public
-                    ? new URL(
-                        `/portal/library/${item.id}`,
-                        window.location.origin,
-                      ).href
+                    ? new URL(`/portal/library/${item.id}`, window.location.origin).href
                     : absolute,
                 )
                 .then(() => setCopied(true))

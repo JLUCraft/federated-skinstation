@@ -6,19 +6,33 @@
   "definitions": {
     "OfficeId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^:\\s]+$" },
     "OfficeText": { "type": "string", "minLength": 1, "maxLength": 4096 },
-    "ActivityWindow": { "$ref": "https://skin.jlucraft.com/contracts/league#/definitions/CompetitionSchedule" },
+    "ActivityWindow": {
+      "$ref": "https://skin.jlucraft.com/contracts/league#/definitions/CompetitionSchedule"
+    },
     "OfficeArtifactUpload": {
-      "type": "object", "additionalProperties": false, "required": ["club", "title", "mime", "content"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["club", "title", "mime", "content"],
       "properties": {
         "club": { "$ref": "#/definitions/OfficeId" },
         "title": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "mime": { "enum": ["text/plain", "text/markdown", "application/json", "application/pdf", "image/png", "image/jpeg"] },
+        "mime": {
+          "enum": [
+            "text/plain",
+            "text/markdown",
+            "application/json",
+            "application/pdf",
+            "image/png",
+            "image/jpeg"
+          ]
+        },
         "content": { "type": "string", "minLength": 1, "maxLength": 2796204 },
         "parent": { "$ref": "#/definitions/OfficeId" }
       }
     },
     "OfficeArtifact": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
       "required": ["id", "club", "owner", "title", "mime", "size", "parent", "createdAt"],
       "properties": {
         "id": { "$ref": "#/definitions/OfficeId" },
@@ -32,14 +46,30 @@
       }
     },
     "ActivityDraft": {
-      "type": "object", "additionalProperties": false,
-      "required": ["id", "club", "title", "brief", "coOrganizers", "window", "checkinOpensMs", "checkinClosesMs", "endsMs"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "club",
+        "title",
+        "brief",
+        "coOrganizers",
+        "window",
+        "checkinOpensMs",
+        "checkinClosesMs",
+        "endsMs"
+      ],
       "properties": {
         "id": { "$ref": "#/definitions/OfficeId" },
         "club": { "$ref": "#/definitions/OfficeId" },
         "title": { "type": "string", "minLength": 1, "maxLength": 256 },
         "brief": { "$ref": "#/definitions/OfficeId" },
-        "coOrganizers": { "type": "array", "items": { "$ref": "#/definitions/OfficeId" }, "uniqueItems": true, "maxItems": 127 },
+        "coOrganizers": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/OfficeId" },
+          "uniqueItems": true,
+          "maxItems": 127
+        },
         "window": { "$ref": "#/definitions/ActivityWindow" },
         "checkinOpensMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "checkinClosesMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
@@ -47,8 +77,22 @@
       }
     },
     "ActivityRecord": {
-      "type": "object", "additionalProperties": false,
-      "required": ["id", "club", "title", "brief", "coOrganizers", "window", "checkinOpensMs", "checkinClosesMs", "endsMs", "creator", "epoch", "phase"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "club",
+        "title",
+        "brief",
+        "coOrganizers",
+        "window",
+        "checkinOpensMs",
+        "checkinClosesMs",
+        "endsMs",
+        "creator",
+        "epoch",
+        "phase"
+      ],
       "properties": {
         "id": { "type": "string" },
         "club": { "type": "string" },
@@ -65,15 +109,27 @@
       }
     },
     "ActivityList": {
-      "type": "object", "additionalProperties": false, "required": ["events"],
-      "properties": { "events": { "type": "array", "items": { "$ref": "#/definitions/ActivityRecord" } } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events"],
+      "properties": {
+        "events": { "type": "array", "items": { "$ref": "#/definitions/ActivityRecord" } }
+      }
     },
     "ActivityCommand": {
-      "type": "object", "additionalProperties": false, "required": ["action"],
-      "properties": { "action": { "enum": ["submit", "publish", "finish", "cancel", "signup", "cancel_signup", "checkin"] } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "enum": ["submit", "publish", "finish", "cancel", "signup", "cancel_signup", "checkin"]
+        }
+      }
     },
     "ActivityTaskCreate": {
-      "type": "object", "additionalProperties": false, "required": ["id", "title", "dueMs"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "dueMs"],
       "properties": {
         "id": { "$ref": "#/definitions/OfficeId" },
         "title": { "type": "string", "minLength": 1, "maxLength": 256 },
@@ -81,7 +137,9 @@
       }
     },
     "ActivityTask": {
-      "type": "object", "additionalProperties": false, "required": ["id", "event", "title", "dueMs", "assignee", "done"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "event", "title", "dueMs", "assignee", "done"],
       "properties": {
         "id": { "type": "string" },
         "event": { "type": "string" },
@@ -92,32 +150,52 @@
       }
     },
     "ActivityTaskList": {
-      "type": "object", "additionalProperties": false, "required": ["tasks"],
-      "properties": { "tasks": { "type": "array", "items": { "$ref": "#/definitions/ActivityTask" } } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tasks"],
+      "properties": {
+        "tasks": { "type": "array", "items": { "$ref": "#/definitions/ActivityTask" } }
+      }
     },
     "ActivityTaskCommand": {
       "oneOf": [
         {
-          "type": "object", "additionalProperties": false, "required": ["action", "account"],
-          "properties": { "action": { "const": "assign" }, "account": { "$ref": "#/definitions/OfficeId" } }
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "account"],
+          "properties": {
+            "action": { "const": "assign" },
+            "account": { "$ref": "#/definitions/OfficeId" }
+          }
         },
         {
-          "type": "object", "additionalProperties": false, "required": ["action"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action"],
           "properties": { "action": { "const": "complete" } }
         },
         {
-          "type": "object", "additionalProperties": false, "required": ["action", "dueMs"],
-          "properties": { "action": { "const": "notify" }, "dueMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } }
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "dueMs"],
+          "properties": {
+            "action": { "const": "notify" },
+            "dueMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+          }
         }
       ]
     },
     "ActivityAttendance": {
-      "type": "object", "additionalProperties": false, "required": ["members"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["members"],
       "properties": {
         "members": {
           "type": "array",
           "items": {
-            "type": "object", "additionalProperties": false, "required": ["account", "club", "signedUpAt", "checkedInAt"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["account", "club", "signedUpAt", "checkedInAt"],
             "properties": {
               "account": { "type": "string" },
               "club": { "type": "string" },
@@ -129,12 +207,16 @@
       }
     },
     "ActivityNoticeList": {
-      "type": "object", "additionalProperties": false, "required": ["notices"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notices"],
       "properties": {
         "notices": {
           "type": "array",
           "items": {
-            "type": "object", "additionalProperties": false, "required": ["id", "event", "task", "account", "dueMs", "acknowledgedAt"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "event", "task", "account", "dueMs", "acknowledgedAt"],
             "properties": {
               "id": { "type": "string" },
               "event": { "type": "string" },
@@ -150,32 +232,61 @@
     "ApprovalApprover": {
       "oneOf": [
         {
-          "type": "object", "additionalProperties": false, "required": ["kind", "account"],
-          "properties": { "kind": { "const": "member" }, "account": { "$ref": "#/definitions/OfficeId" } }
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "account"],
+          "properties": {
+            "kind": { "const": "member" },
+            "account": { "$ref": "#/definitions/OfficeId" }
+          }
         },
         {
-          "type": "object", "additionalProperties": false, "required": ["kind", "club", "role"],
-          "properties": { "kind": { "const": "role" }, "club": { "$ref": "#/definitions/OfficeId" }, "role": { "$ref": "#/definitions/OfficeId" } }
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "club", "role"],
+          "properties": {
+            "kind": { "const": "role" },
+            "club": { "$ref": "#/definitions/OfficeId" },
+            "role": { "$ref": "#/definitions/OfficeId" }
+          }
         },
         {
-          "type": "object", "additionalProperties": false, "required": ["kind", "clubs", "quorum"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "clubs", "quorum"],
           "properties": {
             "kind": { "const": "club_quorum" },
-            "clubs": { "type": "array", "items": { "$ref": "#/definitions/OfficeId" }, "minItems": 1, "maxItems": 128, "uniqueItems": true },
+            "clubs": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/OfficeId" },
+              "minItems": 1,
+              "maxItems": 128,
+              "uniqueItems": true
+            },
             "quorum": { "type": "integer", "minimum": 1, "maximum": 128 }
           }
         },
         {
-          "type": "object", "additionalProperties": false, "required": ["kind", "clubs"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "clubs"],
           "properties": {
             "kind": { "const": "presidents" },
-            "clubs": { "type": "array", "items": { "$ref": "#/definitions/OfficeId" }, "minItems": 1, "maxItems": 128, "uniqueItems": true }
+            "clubs": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/OfficeId" },
+              "minItems": 1,
+              "maxItems": 128,
+              "uniqueItems": true
+            }
           }
         }
       ]
     },
     "ApprovalStage": {
-      "type": "object", "additionalProperties": false, "required": ["name", "approver", "timeoutMs", "onTimeout"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "approver", "timeoutMs", "onTimeout"],
       "properties": {
         "name": { "type": "string", "minLength": 1, "maxLength": 256 },
         "approver": { "$ref": "#/definitions/ApprovalApprover" },
@@ -184,21 +295,34 @@
       }
     },
     "ApprovalTemplate": {
-      "type": "object", "additionalProperties": false, "required": ["id", "club", "name", "stages", "active"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "club", "name", "stages", "active"],
       "properties": {
         "id": { "$ref": "#/definitions/OfficeId" },
         "club": { "$ref": "#/definitions/OfficeId" },
         "name": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "stages": { "type": "array", "items": { "$ref": "#/definitions/ApprovalStage" }, "minItems": 1, "maxItems": 15 },
+        "stages": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ApprovalStage" },
+          "minItems": 1,
+          "maxItems": 15
+        },
         "active": { "type": "boolean" }
       }
     },
     "ApprovalTemplateList": {
-      "type": "object", "additionalProperties": false, "required": ["templates"],
-      "properties": { "templates": { "type": "array", "items": { "$ref": "#/definitions/ApprovalTemplate" } } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["templates"],
+      "properties": {
+        "templates": { "type": "array", "items": { "$ref": "#/definitions/ApprovalTemplate" } }
+      }
     },
     "ApprovalStart": {
-      "type": "object", "additionalProperties": false, "required": ["event", "epoch"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "epoch"],
       "properties": {
         "event": { "$ref": "#/definitions/OfficeId" },
         "epoch": { "type": "integer", "minimum": 1 },
@@ -206,20 +330,29 @@
       }
     },
     "ApprovalRecord": {
-      "type": "object", "additionalProperties": false,
+      "type": "object",
+      "additionalProperties": false,
       "required": ["approvals", "delegations", "rejected", "escalated", "autoApproved"],
       "properties": {
         "approvals": {
           "type": "object",
           "additionalProperties": {
-            "type": "object", "additionalProperties": false, "required": ["account", "comment", "at"],
-            "properties": { "account": { "type": "string" }, "comment": { "type": "string" }, "at": { "type": "integer" } }
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["account", "comment", "at"],
+            "properties": {
+              "account": { "type": "string" },
+              "comment": { "type": "string" },
+              "at": { "type": "integer" }
+            }
           }
         },
         "delegations": {
           "type": "object",
           "additionalProperties": {
-            "type": "object", "additionalProperties": false, "required": ["from", "to"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
             "properties": { "from": { "type": "string" }, "to": { "type": "string" } }
           }
         },
@@ -229,8 +362,22 @@
       }
     },
     "ApprovalInstance": {
-      "type": "object", "additionalProperties": false,
-      "required": ["id", "club", "event", "brief", "epoch", "proposer", "stages", "records", "current", "status", "deadlineMs", "startedAt"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "club",
+        "event",
+        "brief",
+        "epoch",
+        "proposer",
+        "stages",
+        "records",
+        "current",
+        "status",
+        "deadlineMs",
+        "startedAt"
+      ],
       "properties": {
         "id": { "type": "string" },
         "club": { "type": "string" },
@@ -247,21 +394,39 @@
       }
     },
     "ApprovalList": {
-      "type": "object", "additionalProperties": false, "required": ["workflows"],
-      "properties": { "workflows": { "type": "array", "items": { "$ref": "#/definitions/ApprovalInstance" } } }
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workflows"],
+      "properties": {
+        "workflows": { "type": "array", "items": { "$ref": "#/definitions/ApprovalInstance" } }
+      }
     },
     "ApprovalCommand": {
       "oneOf": [
         {
-          "type": "object", "additionalProperties": false, "required": ["action", "comment"],
-          "properties": { "action": { "enum": ["approve", "reject"] }, "comment": { "$ref": "#/definitions/OfficeText" }, "club": { "$ref": "#/definitions/OfficeId" } }
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "comment"],
+          "properties": {
+            "action": { "enum": ["approve", "reject"] },
+            "comment": { "$ref": "#/definitions/OfficeText" },
+            "club": { "$ref": "#/definitions/OfficeId" }
+          }
         },
         {
-          "type": "object", "additionalProperties": false, "required": ["action", "to"],
-          "properties": { "action": { "const": "delegate" }, "to": { "$ref": "#/definitions/OfficeId" }, "club": { "$ref": "#/definitions/OfficeId" } }
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "to"],
+          "properties": {
+            "action": { "const": "delegate" },
+            "to": { "$ref": "#/definitions/OfficeId" },
+            "club": { "$ref": "#/definitions/OfficeId" }
+          }
         },
         {
-          "type": "object", "additionalProperties": false, "required": ["action"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action"],
           "properties": { "action": { "enum": ["poke", "cancel", "execute"] } }
         }
       ]

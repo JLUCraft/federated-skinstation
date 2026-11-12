@@ -1,12 +1,6 @@
 import React from 'react';
 import type { TextureItem } from '../shared/wardrobe';
-import {
-  Avatar,
-  Author,
-  TextureProvenance,
-  TextureCounts,
-  STATE_LABELS,
-} from './TextureIdentity';
+import { Avatar, Author, TextureProvenance, TextureCounts, STATE_LABELS } from './TextureIdentity';
 import { TextureThumb } from './TextureThumb';
 import { textureSrc, textureTitle } from './TextureDialog';
 import { t, tf } from './i18n';
@@ -49,12 +43,7 @@ export function TextureCard({
     >
       <div className="texture-card-open-wrap">
         {onOpen ? (
-          <button
-            type="button"
-            className="thumb-button"
-            aria-label={label}
-            onClick={onOpen}
-          >
+          <button type="button" className="thumb-button" aria-label={label} onClick={onOpen}>
             {body}
           </button>
         ) : (
@@ -82,15 +71,9 @@ export function TextureCard({
           {t('材质链接已复制')}
         </p>
       )}
-      {library ? (
-        <Author item={item} />
-      ) : (
-        item.kind === 'skin' && <Avatar hash={item.hash} />
-      )}
+      {library ? <Author item={item} /> : item.kind === 'skin' && <Avatar hash={item.hash} />}
       <div className="badge-row">
-        <span className="status-pill">
-          {item.kind === 'skin' ? t('皮肤') : t('披风')}
-        </span>
+        <span className="status-pill">{item.kind === 'skin' ? t('皮肤') : t('披风')}</span>
         {item.kind === 'skin' && item.model === 'slim' && (
           <span className="status-pill status-pill--neutral">{t('纤细')}</span>
         )}
@@ -100,14 +83,10 @@ export function TextureCard({
         <p className="badge-row">
           <span className="status-pill">{STATE_LABELS[item.state]}</span>
           {item.published === 1 && (
-            <span className="status-pill status-pill--neutral">
-              {t('已公开')}
-            </span>
+            <span className="status-pill status-pill--neutral">{t('已公开')}</span>
           )}
           {item.applied === 1 && (
-            <span className="status-pill status-pill--active">
-              {t('正在使用')}
-            </span>
+            <span className="status-pill status-pill--active">{t('正在使用')}</span>
           )}
         </p>
       )}

@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import {
-  startRegistration,
-  startAuthentication,
-} from '@simplewebauthn/browser';
+import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
 import { apiRequest } from './api';
 import { t } from './i18n';
+import type { Authentication } from '../shared/http';
 export async function loginWithPasskey() {
-  const options = await apiRequest('/api/passkeys/login/options', {
-    method: 'POST',
-  });
+  const options = await apiRequest<Parameters<typeof startAuthentication>[0]['optionsJSON']>(
+    '/api/passkeys/login/options',
+    {
+      method: 'POST',
+    },
+  );
   const response = await startAuthentication({ optionsJSON: options });
-  return apiRequest('/api/passkeys/login/verify', {
+  return apiRequest<Authentication>('/api/passkeys/login/verify', {
     method: 'POST',
     body: { response },
   });
@@ -32,7 +33,9 @@ export function PasskeysPanel({
     [resetKey, setResetKey] = useState(0);
   const supported = !!window.PublicKeyCredential;
   async function refresh() {
-    const data = await apiRequest('/api/passkeys', { token });
+    const data = await apiRequest<{ items: { id: string; name: string }[] }>('/api/passkeys', {
+      token,
+    });
     setItems(data.items);
     setFailed(false);
   }
@@ -85,10 +88,11 @@ export function PasskeysPanel({
                       disabled={busy || !password}
                       onClick={() =>
                         void action(() =>
-                          apiRequest(
-                            `/api/passkeys/${encodeURIComponent(item.id)}`,
-                            { method: 'DELETE', token, body: { password } },
-                          ),
+                          apiRequest(`/api/passkeys/${encodeURIComponent(item.id)}`, {
+                            method: 'DELETE',
+                            token,
+                            body: { password },
+                          }),
                         )
                       }
                     >
@@ -101,9 +105,7 @@ export function PasskeysPanel({
           </div>
           <div className="passkey-block">
             <h3 className="subsection-title">{t('操作验证与添加新密钥')}</h3>
-            <p className="section-hint">
-              {t('输入当前密码后可添加或移除通行密钥')}
-            </p>
+            <p className="section-hint">{t('输入当前密码后可添加或移除通行密钥')}</p>
             <label className="field-label passkey-password">
               {t('当前密码')}
               <input
@@ -121,10 +123,13 @@ export function PasskeysPanel({
               onSubmit={(e) => {
                 e.preventDefault();
                 void action(async () => {
-                  const options = await apiRequest(
-                    '/api/passkeys/register/options',
-                    { method: 'POST', token, body: { password } },
-                  );
+                  const options = await apiRequest<
+                    Parameters<typeof startRegistration>[0]['optionsJSON']
+                  >('/api/passkeys/register/options', {
+                    method: 'POST',
+                    token,
+                    body: { password },
+                  });
                   const response = await startRegistration({
                     optionsJSON: options,
                   });

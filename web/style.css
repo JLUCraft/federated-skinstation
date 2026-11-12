@@ -39,8 +39,8 @@
   /* 媒体查询无法消费自定义属性，仅作文档锚点；实际值在文件末尾的 @media 块。 */
   --bp-wide: 960px;
   --bp-compact: 600px;
-  --scrim: rgb(0 0 0 / .5);
-  --shadow-toast: 0 6px 24px rgb(0 0 0 / .18);
+  --scrim: rgb(0 0 0 / 0.5);
+  --shadow-toast: 0 6px 24px rgb(0 0 0 / 0.18);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -813,11 +813,8 @@ body {
   image-rendering: pixelated;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: repeating-conic-gradient(
-      var(--checker-a) 0% 25%,
-      var(--checker-b) 0% 50%
-    )
-    50% / var(--checker-size);
+  background: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%) 50% /
+    var(--checker-size);
 }
 .texture-preview--skin {
   aspect-ratio: 1/1;
@@ -888,10 +885,7 @@ body {
 }
 .wardrobe-grid {
   display: grid;
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(min(100%, var(--card-min)), 1fr)
-  );
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min)), 1fr));
   gap: var(--space-16);
   align-items: start;
 }
@@ -1214,10 +1208,7 @@ body {
     flex: 1 1 var(--field-basis);
   }
   .wardrobe-grid {
-    grid-template-columns: repeat(
-      auto-fill,
-      minmax(var(--code-field-basis), 1fr)
-    );
+    grid-template-columns: repeat(auto-fill, minmax(var(--code-field-basis), 1fr));
   }
 }
 

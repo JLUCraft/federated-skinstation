@@ -7,6 +7,8 @@ import {
 } from '../shared/wardrobe';
 import { ReportButton } from './CommunityPanel';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import type { Capabilities, TextureList } from '../shared/http';
+import type { GameProfile } from '../shared/profiles';
 import { apiRequest, errorText } from './api';
 import { t, tf } from './i18n';
 import { TextureCard } from './TextureCard';
@@ -76,9 +78,7 @@ export function WardrobePanel({
   const [schools, setSchools] = useState<string[]>([]);
   const [sort, setSort] = useState<LibrarySort>(initialState.sort);
   const [tag, setTag] = useState(initialState.tag);
-  const [popularTags, setPopularTags] = useState<
-    { tag: string; count: number }[]
-  >([]);
+  const [popularTags, setPopularTags] = useState<{ tag: string; count: number }[]>([]);
   const [query, setQuery] = useState(initialState.search.trim());
   const [open, setOpen] = useState<TextureItem | null>(null);
   const [editing, setEditing] = useState<TextureItem | null>(null);
@@ -89,7 +89,7 @@ export function WardrobePanel({
     if (query) params.set('q', query);
     if (tag) params.set('tag', tag);
     if (kind !== 'all') params.set('kind', kind);
-    const response = await apiRequest(
+    const response = await apiRequest<TextureList>(
       library
         ? `/api/library?${params}`
         : `/api/wardrobe?offset=${offset}${profileId ? `&profileId=${encodeURIComponent(profileId)}` : ''}`,
@@ -99,30 +99,26 @@ export function WardrobePanel({
     setFailed(false);
   }
   useEffect(() => {
-    void apiRequest('/api/capabilities')
+    void apiRequest<Capabilities>('/api/capabilities')
       .then((r) => setSchools(r.schools.map((s: { id: string }) => s.id)))
       .catch(() => {});
   }, []);
   useEffect(() => {
     if (!library && token)
-      void apiRequest('/api/players', { token })
+      void apiRequest<{ profiles: GameProfile[] }>('/api/players', { token })
         .then((data) => {
           setProfiles(data.profiles);
         })
         .catch(() => setFailed(true));
   }, [token, library]);
   useEffect(() => {
-    const timer = window.setTimeout(
-      () => setQuery(search.trim()),
-      SEARCH_DEBOUNCE_MS,
-    );
+    const timer = window.setTimeout(() => setQuery(search.trim()), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [search]);
   const previousFilters = useRef([query, kind, tag, sort, school]);
   useEffect(() => {
     const next = [query, kind, tag, sort, school];
-    if (next.some((value, index) => value !== previousFilters.current[index]))
-      setOffset(0);
+    if (next.some((value, index) => value !== previousFilters.current[index])) setOffset(0);
     previousFilters.current = next;
   }, [query, kind, tag, sort, school]);
   useEffect(() => {
@@ -130,7 +126,7 @@ export function WardrobePanel({
   }, [search, kind, school, sort, tag, offset, onStateChange]);
   useEffect(() => {
     if (library)
-      void apiRequest('/api/library/tags')
+      void apiRequest<{ tags: { tag: string; count: number }[] }>('/api/library/tags')
         .then((data) => setPopularTags(data.tags))
         .catch(() => setPopularTags([]));
   }, [library]);
@@ -165,22 +161,15 @@ export function WardrobePanel({
         (!needle || textureTitle(item).toLowerCase().includes(needle)),
     );
   }, [items, library, search, kind]);
-  const filtering =
-    search.trim() !== '' || kind !== 'all' || tag !== '' || school !== '';
+  const filtering = search.trim() !== '' || kind !== 'all' || tag !== '' || school !== '';
   const page = Math.floor(offset / TEXTURE_PAGE_SIZE) + 1;
 
-  const currentProfile = profiles.find(
-    (profile) => profile.id === (profileId || profiles[0]?.id),
-  );
+  const currentProfile = profiles.find((profile) => profile.id === (profileId || profiles[0]?.id));
 
   function primaryAction(item: TextureItem) {
     if (library && !token)
       return (
-        <button
-          className="btn btn--primary"
-          type="button"
-          onClick={onRequireLogin}
-        >
+        <button className="btn btn--primary" type="button" onClick={onRequireLogin}>
           {t('登录后收藏')}
         </button>
       );
@@ -203,15 +192,11 @@ export function WardrobePanel({
         onClick={() =>
           void action(() =>
             apiRequest(
-              library
-                ? `/api/library/${item.id}/save`
-                : `/api/wardrobe/${item.id}/apply`,
+              library ? `/api/library/${item.id}/save` : `/api/wardrobe/${item.id}/apply`,
               {
                 method: 'POST',
                 token,
-                body: library
-                  ? {}
-                  : { profileId: profileId || profiles[0]?.id },
+                body: library ? {} : { profileId: profileId || profiles[0]?.id },
               },
             ),
           )
@@ -264,9 +249,7 @@ export function WardrobePanel({
           </span>
           <span className="wear-target-text">
             <span className="wear-target-label">{t('当前穿戴目标角色')}</span>
-            <span className="wear-target-name">
-              {currentProfile?.name ?? t('尚未创建角色')}
-            </span>
+            <span className="wear-target-name">{currentProfile?.name ?? t('尚未创建角色')}</span>
           </span>
           <label className="field-label wear-target-switch">
             {t('切换目标角色')}
@@ -348,11 +331,7 @@ export function WardrobePanel({
         </div>
       </div>
       {library && (popularTags.length > 0 || tag) && (
-        <div
-          className="chip-group tag-bar"
-          role="group"
-          aria-label={t('热门标签')}
-        >
+        <div className="chip-group tag-bar" role="group" aria-label={t('热门标签')}>
           {tag && !popularTags.some((p) => p.tag === tag) && (
             <button
               type="button"
@@ -387,16 +366,10 @@ export function WardrobePanel({
       ) : items.length === 0 && !filtering ? (
         <div className="empty-state">
           <p className="section-hint">
-            {library
-              ? t('暂时没有公开材质')
-              : t('上传的皮肤和披风会保存在这里')}
+            {library ? t('暂时没有公开材质') : t('上传的皮肤和披风会保存在这里')}
           </p>
           {!library && onBrowseUpload && (
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={onBrowseUpload}
-            >
+            <button type="button" className="btn btn--primary" onClick={onBrowseUpload}>
               {t('去上传材质')}
             </button>
           )}
@@ -424,12 +397,7 @@ export function WardrobePanel({
       ) : (
         <div className="wardrobe-grid">
           {shown.map((item) => (
-            <TextureCard
-              key={item.id}
-              item={item}
-              library={library}
-              onOpen={() => setOpen(item)}
-            >
+            <TextureCard key={item.id} item={item} library={library} onOpen={() => setOpen(item)}>
               {(item.tags?.length ?? 0) > 0 && (
                 <p className="badge-row">
                   {item.tags?.map((name) => (
@@ -450,11 +418,7 @@ export function WardrobePanel({
                 {likeControl(item)}
                 <a
                   className="btn btn--secondary"
-                  href={
-                    library
-                      ? `/api/library/${item.id}/download`
-                      : textureSrc(item)
-                  }
+                  href={library ? `/api/library/${item.id}/download` : textureSrc(item)}
                   download={`${textureTitle(item)}.png`}
                 >
                   {t('下载')}
@@ -479,9 +443,7 @@ export function WardrobePanel({
           <button
             className="btn btn--secondary"
             disabled={busy || loading || offset === 0}
-            onClick={() =>
-              setOffset((value) => Math.max(0, value - TEXTURE_PAGE_SIZE))
-            }
+            onClick={() => setOffset((value) => Math.max(0, value - TEXTURE_PAGE_SIZE))}
           >
             {t('上一页')}
           </button>

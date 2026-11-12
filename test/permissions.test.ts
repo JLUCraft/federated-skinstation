@@ -14,28 +14,40 @@ function fixture(t: { after(fn: () => void): void }) {
   const identity = new LocalIdentity(store);
   identity.configureSchools(schools);
   const account = (id: string, school = 'a') => {
-    const a: Account = { id, name: id, email: `${id}@${school}.test`, school, password: 'unused', verified_at: 0 };
-    store.confirm(a.email, store.challenge(a, now()), now(), id => identity.enrollVerifiedEmail(id, schools));
+    const a: Account = {
+      id,
+      name: id,
+      email: `${id}@${school}.test`,
+      school,
+      password: 'unused',
+      verified_at: 0,
+    };
+    store.confirm(a.email, store.challenge(a, now()), now(), (id) =>
+      identity.enrollVerifiedEmail(id, schools),
+    );
     return store.account('id', id)!;
   };
   const grant = (account: string, scope: string, permission: string, kind = 'user') => {
     const id = randomUUID();
-    store.db.prepare('INSERT INTO grants VALUES(?,?,?,?,?,?,?,NULL,NULL)')
+    store.db
+      .prepare('INSERT INTO grants VALUES(?,?,?,?,?,?,?,NULL,NULL)')
       .run(id, kind, account, scope, permission, 'root', now());
     return id;
   };
   const member = (account: string, club: string, roles: string[] = []) =>
-    store.db.prepare("INSERT INTO memberships VALUES(?,?,'active','import',?,?,NULL)")
+    store.db
+      .prepare("INSERT INTO memberships VALUES(?,?,'active','import',?,?,NULL)")
       .run(account, club, JSON.stringify(roles), now());
   const service = (id: string, club = 'a') =>
-    store.db.prepare('INSERT INTO services VALUES(?,?,?,?,?,?)')
+    store.db
+      .prepare('INSERT INTO services VALUES(?,?,?,?,?,?)')
       .run(id, club, id, 'test-key', 'root', now());
   account('root');
   identity.seedAdmins(['root'], []);
   return { store, identity, account, grant, member, service };
 }
 
-test('global admin, disabled accounts and global-only permissions precede scoped authority', t => {
+test('global admin, disabled accounts and global-only permissions precede scoped authority', (t) => {
   const { store, identity, account, grant } = fixture(t);
   account('alice');
   assert.equal(identity.authorize('root', 'club:b', 'chairs.manage'), true);
@@ -53,7 +65,7 @@ test('global admin, disabled accounts and global-only permissions precede scoped
   assert.equal(identity.authorize('root', 'club:a', 'read'), false);
 });
 
-test('active membership gates service and parent grants; roles and manage inherit within their club', t => {
+test('active membership gates service and parent grants; roles and manage inherit within their club', (t) => {
   const { store, identity, account, grant, member, service } = fixture(t);
   account('alice');
   service('a-service');
@@ -73,7 +85,8 @@ test('active membership gates service and parent grants; roles and manage inheri
   store.db.prepare("UPDATE grants SET revoked_at=? WHERE principal='alice'").run(now());
   assert.equal(identity.authorize('alice', 'club:a', 'write'), false);
   assert.equal(identity.authorize('alice', 'club:b', 'read'), true);
-  store.db.prepare("UPDATE memberships SET roles=? WHERE account='alice' AND club='a'")
+  store.db
+    .prepare("UPDATE memberships SET roles=? WHERE account='alice' AND club='a'")
     .run(JSON.stringify(['write', 'toString', 'president']));
   assert.equal(identity.authorize('alice', 'club:a', 'write'), true);
   assert.equal(identity.authorize('alice', 'club:a', 'chairs.manage'), false);
@@ -81,7 +94,7 @@ test('active membership gates service and parent grants; roles and manage inheri
   assert.equal(identity.authorize('alice', 'club:a', 'chairs.manage'), false);
 });
 
-test('chair authority transfers by club appointment and nominee acceptance without outside votes', t => {
+test('chair authority transfers by club appointment and nominee acceptance without outside votes', (t) => {
   const { store, identity, account } = fixture(t);
   account('alice');
   account('bob');
@@ -100,7 +113,10 @@ test('chair authority transfers by club appointment and nominee acceptance witho
   assert.equal(identity.authorize('alice', 'club:a', 'president'), false);
   assert.equal(identity.authorize('bob', 'club:a', 'president'), true);
   assert.equal(store.db.prepare("SELECT epoch FROM chairs WHERE club='a'").get()!.epoch, 2);
-  assert.equal(store.db.prepare('SELECT status FROM successions WHERE id=?').get(competing)!.status, 'rejected');
+  assert.equal(
+    store.db.prepare('SELECT status FROM successions WHERE id=?').get(competing)!.status,
+    'rejected',
+  );
   assert.throws(() => identity.acceptSuccession('alice', competing));
   assert.throws(() => identity.acceptSuccession('bob', next));
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM succession_votes').get()!.n, 2);
@@ -117,53 +133,101 @@ test('revocation keeps other-club tokens and grants, then removes all token fami
   try {
     const login = await s.enroll('Alice');
     const id = login.user.id as string;
-    const root: Account = { id: 'root', name: 'Root', email: 'root@school.test', school: 'jlu', password: 'unused', verified_at: 0 };
-    store.confirm(root.email, store.challenge(root, now()), now(),
-      account => identity.enrollVerifiedEmail(account, s.config.schools));
+    const root: Account = {
+      id: 'root',
+      name: 'Root',
+      email: 'root@school.test',
+      school: 'jlu',
+      password: 'unused',
+      verified_at: 0,
+    };
+    store.confirm(root.email, store.challenge(root, now()), now(), (account) =>
+      identity.enrollVerifiedEmail(account, s.config.schools),
+    );
     store.db.prepare("INSERT INTO clubs VALUES('other','Other','school','other')").run();
-    store.db.prepare("INSERT INTO memberships VALUES(?,'other','active','import','[]',?,NULL)").run(id, now());
-    for (const [grantId, scope] of [['club', 'club:jlu'], ['service', 'service:owned'], ['other', 'club:other']])
-      store.db.prepare("INSERT INTO grants VALUES(?,'user',?,?,'read','test',?,NULL,NULL)").run(grantId, id, scope, now());
+    store.db
+      .prepare("INSERT INTO memberships VALUES(?,'other','active','import','[]',?,NULL)")
+      .run(id, now());
+    for (const [grantId, scope] of [
+      ['club', 'club:jlu'],
+      ['service', 'service:owned'],
+      ['other', 'club:other'],
+    ])
+      store.db
+        .prepare("INSERT INTO grants VALUES(?,'user',?,?,'read','test',?,NULL,NULL)")
+        .run(grantId, id, scope, now());
     store.db.prepare("INSERT INTO services VALUES('owned','jlu','owned','key',?,?)").run(id, now());
-    store.db.prepare("INSERT INTO grants VALUES('root','user',?,'global','admin','test',?,NULL,NULL)").run(root.id, now());
-    store.db.prepare("INSERT INTO oauth_refresh VALUES('refresh',?,?, 'client','scope',?)").run(id, id, now() + 100);
-    store.db.prepare("INSERT INTO oauth_devices VALUES('device','CODE','client','scope',?,?,NULL,0,0)").run(now() + 100, id);
+    store.db
+      .prepare("INSERT INTO grants VALUES('root','user',?,'global','admin','test',?,NULL,NULL)")
+      .run(root.id, now());
+    store.db
+      .prepare("INSERT INTO oauth_refresh VALUES('refresh',?,?, 'client','scope',?)")
+      .run(id, id, now() + 100);
+    store.db
+      .prepare("INSERT INTO oauth_devices VALUES('device','CODE','client','scope',?,?,NULL,0,0)")
+      .run(now() + 100, id);
     store.join(login.accessToken, id, 'server', now());
     identity.revokeMembership(root.id, id, 'jlu');
     assert.equal(store.token(login.accessToken, undefined, now()).id, id);
-    assert.notEqual(store.db.prepare("SELECT revoked_at FROM grants WHERE id='club'").get()!.revoked_at, null);
-    assert.notEqual(store.db.prepare("SELECT revoked_at FROM grants WHERE id='service'").get()!.revoked_at, null);
-    assert.equal(store.db.prepare("SELECT revoked_at FROM grants WHERE id='other'").get()!.revoked_at, null);
+    assert.notEqual(
+      store.db.prepare("SELECT revoked_at FROM grants WHERE id='club'").get()!.revoked_at,
+      null,
+    );
+    assert.notEqual(
+      store.db.prepare("SELECT revoked_at FROM grants WHERE id='service'").get()!.revoked_at,
+      null,
+    );
+    assert.equal(
+      store.db.prepare("SELECT revoked_at FROM grants WHERE id='other'").get()!.revoked_at,
+      null,
+    );
     assert.equal(store.db.prepare('SELECT count(*) AS n FROM oauth_refresh').get()!.n, 1);
     identity.revokeMembership(root.id, id, 'other');
     assert.throws(() => store.token(login.accessToken, undefined, now()));
     for (const table of ['tokens', 'joins', 'oauth_refresh', 'oauth_devices'])
       assert.equal(store.db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n, 0);
-  } finally { store.close(); await s.close(); }
+  } finally {
+    store.close();
+    await s.close();
+  }
 });
 
-test('email confirmation enrolls atomically and never restores a revoked membership', t => {
+test('email confirmation enrolls atomically and never restores a revoked membership', (t) => {
   const { store, identity, account } = fixture(t);
   const alice = account('alice');
-  const row = () => store.db.prepare("SELECT * FROM memberships WHERE account='alice' AND club='a'").get()!;
+  const row = () =>
+    store.db.prepare("SELECT * FROM memberships WHERE account='alice' AND club='a'").get()!;
   assert.equal(row().source, 'email_domain');
   identity.revokeMembership('root', 'alice', 'a');
   const revokedAt = row().revoked_at;
-  store.confirm(alice.email, store.challenge(alice, now()), now(),
-    id => identity.enrollVerifiedEmail(id, schools));
+  store.confirm(alice.email, store.challenge(alice, now()), now(), (id) =>
+    identity.enrollVerifiedEmail(id, schools),
+  );
   assert.equal(row().status, 'revoked');
   assert.equal(row().revoked_at, revokedAt);
   assert.equal(identity.authorize('alice', 'club:a', 'read'), false);
-  assert.throws(() => store.db.prepare("UPDATE memberships SET status='active',revoked_at=NULL WHERE account='alice'").run());
-  assert.throws(() => store.db.prepare("INSERT OR REPLACE INTO memberships VALUES('alice','a','active','email_domain','[]',1,NULL)").run());
+  assert.throws(() =>
+    store.db
+      .prepare("UPDATE memberships SET status='active',revoked_at=NULL WHERE account='alice'")
+      .run(),
+  );
+  assert.throws(() =>
+    store.db
+      .prepare(
+        "INSERT OR REPLACE INTO memberships VALUES('alice','a','active','email_domain','[]',1,NULL)",
+      )
+      .run(),
+  );
   const bad: Account = { ...alice, id: 'bad', name: 'bad', email: 'bad@wrong.test' };
   const code = store.challenge(bad, now());
-  assert.throws(() => store.confirm(bad.email, code, now(), id => identity.enrollVerifiedEmail(id, schools)));
+  assert.throws(() =>
+    store.confirm(bad.email, code, now(), (id) => identity.enrollVerifiedEmail(id, schools)),
+  );
   assert.equal(store.account('id', 'bad'), undefined);
   assert.ok(store.db.prepare('SELECT 1 FROM challenges WHERE email=?').get(bad.email));
 });
 
-test('admin configuration seeds once, scopes MUA authority, and never revives revoked grants', t => {
+test('admin configuration seeds once, scopes MUA authority, and never revives revoked grants', (t) => {
   const store = new Store(':memory:');
   t.after(() => store.close());
   const identity = new LocalIdentity(store);
@@ -173,7 +237,10 @@ test('admin configuration seeds once, scopes MUA authority, and never revives re
   identity.seedAdmins(['site', 'site'], ['mua']);
   assert.equal(identity.authorize('site', 'global', 'admin'), false);
   for (const id of ['site', 'mua'])
-    store.db.prepare("INSERT INTO accounts(id,name,email,school,password,verified_at) VALUES(?,?,?,'a','unused',1)")
+    store.db
+      .prepare(
+        "INSERT INTO accounts(id,name,email,school,password,verified_at) VALUES(?,?,?,'a','unused',1)",
+      )
       .run(id, id, `${id}@a.test`);
   assert.equal(identity.authorize('site', 'global', 'admin'), true);
   assert.equal(identity.authorize('mua', 'service:mua', 'admin'), true);
@@ -184,10 +251,14 @@ test('admin configuration seeds once, scopes MUA authority, and never revives re
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM grants').get()!.n, 2);
 });
 
-test('each authorization appends one linked audit entry and existing entries cannot be replaced', t => {
+test('each authorization appends one linked audit entry and existing entries cannot be replaced', (t) => {
   const { store, identity } = fixture(t);
   const before = Number(store.db.prepare('SELECT count(*) AS n FROM audit').get()!.n);
-  for (const [scope, permission] of [['global', 'admin'], ['club:', 'read'], ['global', 'unknown']])
+  for (const [scope, permission] of [
+    ['global', 'admin'],
+    ['club:', 'read'],
+    ['global', 'unknown'],
+  ])
     identity.authorize('root', scope, permission);
   identity.authorize('missing', 'global', 'read');
   const rows = store.db.prepare('SELECT * FROM audit ORDER BY seq').all();
@@ -195,15 +266,29 @@ test('each authorization appends one linked audit entry and existing entries can
   let previous = '';
   for (const row of rows) {
     assert.equal(row.prev_hash, previous);
-    assert.equal(row.hash, digest(JSON.stringify([
-      row.seq, row.at, row.actor_kind, row.actor, row.scope, row.action,
-      row.target, row.payload_digest, row.prev_hash,
-    ])));
+    assert.equal(
+      row.hash,
+      digest(
+        JSON.stringify([
+          row.seq,
+          row.at,
+          row.actor_kind,
+          row.actor,
+          row.scope,
+          row.action,
+          row.target,
+          row.payload_digest,
+          row.prev_hash,
+        ]),
+      ),
+    );
     previous = String(row.hash);
   }
   assert.throws(() => store.db.exec("UPDATE audit SET actor='tampered'"));
   assert.throws(() => store.db.exec('DELETE FROM audit'));
-  assert.throws(() => store.db.exec('INSERT OR REPLACE INTO audit SELECT * FROM audit WHERE seq=1'));
+  assert.throws(() =>
+    store.db.exec('INSERT OR REPLACE INTO audit SELECT * FROM audit WHERE seq=1'),
+  );
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM audit').get()!.n, rows.length);
 });
 
@@ -213,16 +298,21 @@ test('scope parsing and recursive ownership stop at missing owners or cycles', (
   for (const scope of ['', 'club:', 'global:a', 'club:a:b', 'club:a b', 'unknown:a'])
     assert.equal(parseScope(scope), undefined);
   const parents: Record<string, Scope | null> = {
-    'event:e': 'league:l', 'league:l': 'club:a', 'club:a': 'global', global: null,
+    'event:e': 'league:l',
+    'league:l': 'club:a',
+    'club:a': 'global',
+    global: null,
   };
   let audits = 0;
   const authorize = createAuthorizer({
     enabled: () => true,
-    parent: scope => parents[scope],
+    parent: (scope) => parents[scope],
     membership: () => ({ active: true, roles: [] }),
     chair: () => false,
-    grants: (_account, scope) => scope === 'club:a' ? ['manage'] : [],
-    audit: () => { audits++; },
+    grants: (_account, scope) => (scope === 'club:a' ? ['manage'] : []),
+    audit: () => {
+      audits++;
+    },
   });
   assert.equal(authorize('alice', 'event:e', 'write'), true);
   assert.equal(authorize('alice', 'workflow:unknown', 'read'), false);

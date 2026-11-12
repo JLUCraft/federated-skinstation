@@ -23,17 +23,29 @@
             "application/json",
             "application/pdf",
             "image/png",
-            "image/jpeg"
+            "image/jpeg",
+            "image/webp"
           ]
         },
         "content": { "type": "string", "minLength": 1, "maxLength": 2796204 },
+        "visibility": { "enum": ["club", "private"] },
         "parent": { "$ref": "#/definitions/OfficeId" }
       }
     },
     "OfficeArtifact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "club", "owner", "title", "mime", "size", "parent", "createdAt"],
+      "required": [
+        "id",
+        "club",
+        "owner",
+        "title",
+        "mime",
+        "size",
+        "parent",
+        "visibility",
+        "createdAt"
+      ],
       "properties": {
         "id": { "$ref": "#/definitions/OfficeId" },
         "club": { "$ref": "#/definitions/OfficeId" },
@@ -42,6 +54,7 @@
         "mime": { "type": "string" },
         "size": { "type": "integer", "minimum": 1, "maximum": 2097152 },
         "parent": { "type": ["string", "null"] },
+        "visibility": { "enum": ["club", "private"] },
         "createdAt": { "type": "integer" }
       }
     },

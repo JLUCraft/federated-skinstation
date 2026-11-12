@@ -7,7 +7,12 @@ import { build, type Config } from '../../server/app.js';
 import type { MuaConfig } from '../../server/mua.js';
 import type { Authentication } from '../../shared/http.js';
 export type Login = Authentication & Required<Pick<Authentication, 'selectedProfile' | 'user'>>;
-export async function site(mua?: MuaConfig, muaFetch?: typeof fetch, organization?: string) {
+export async function site(
+  mua?: MuaConfig,
+  muaFetch?: typeof fetch,
+  organization?: string,
+  aiFetch?: typeof fetch,
+) {
   const dir = await mkdtemp(join(tmpdir(), 'jlu-contract-'));
   const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
   await writeFile(join(dir, 'key.pem'), keys.privateKey.export({ type: 'pkcs8', format: 'pem' }), {
@@ -31,12 +36,15 @@ export async function site(mua?: MuaConfig, muaFetch?: typeof fetch, organizatio
     smtp: { host: 'unused', port: 465, from: 'test@example.test' },
     mua,
   };
-  const app = await build(config, {
-    mail: async (_, value) => {
-      code = value;
-    },
-    muaFetch,
-  }).catch(async (error) => {
+  const create = () =>
+    build(config, {
+      mail: async (_email: string, value: string) => {
+        code = value;
+      },
+      muaFetch,
+      aiFetch,
+    });
+  let app = await create().catch(async (error) => {
     await rm(dir, { recursive: true, force: true });
     throw error;
   });
@@ -92,7 +100,9 @@ export async function site(mua?: MuaConfig, muaFetch?: typeof fetch, organizatio
     ).json<Login>();
   }
   return {
-    app,
+    get app() {
+      return app;
+    },
     dir,
     keys,
     config,
@@ -100,6 +110,10 @@ export async function site(mua?: MuaConfig, muaFetch?: typeof fetch, organizatio
     post,
     enroll,
     requestJson,
+    restart: async () => {
+      await app.close();
+      app = await create();
+    },
     close: async () => {
       await app.close();
       await rm(dir, { recursive: true, force: true });

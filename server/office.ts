@@ -146,6 +146,7 @@ export class Office {
       mime: String(row.mime),
       size: (row.content as Uint8Array).byteLength,
       parent: row.parent === null ? null : String(row.parent),
+      visibility: row.visibility as OfficeArtifact['visibility'],
       createdAt: Number(row.created_at),
     };
   }
@@ -154,7 +155,10 @@ export class Office {
     const row = this.artifact(id);
     return (
       row.owner === actor ||
-      this.active(actor, String(row.club)) ||
+      (row.visibility === 'club' && this.active(actor, String(row.club))) ||
+      !!this.store.db
+        .prepare('SELECT 1 FROM artifact_readers WHERE artifact=? AND account=?')
+        .get(id, actor) ||
       this.identity.isGlobalAdministrator(actor) ||
       this.store.db
         .prepare(
@@ -182,18 +186,23 @@ export class Office {
           content.toString('base64') === input.content,
         'Valid base64 artifact required',
       );
+      let visibility = input.visibility ?? 'club';
       if (input.parent) {
         const parent = this.artifact(input.parent);
         requireThat(
-          parent.club === input.club &&
+          this.readableArtifact(actor, input.parent) &&
+            parent.club === input.club &&
             (parent.owner === actor || this.identity.decide(actor, `club:${input.club}`, 'manage')),
           'Artifact revision authority required',
         );
+        visibility = input.visibility ?? (parent.visibility as OfficeArtifact['visibility']);
       }
       const id = randomUUID();
       return () => {
         this.store.db
-          .prepare('INSERT INTO office_artifacts VALUES(?,?,?,?,?,?,?,?)')
+          .prepare(
+            'INSERT INTO office_artifacts(id,club,owner,title,mime,content,parent,created_at,visibility) VALUES(?,?,?,?,?,?,?,?,?)',
+          )
           .run(
             id,
             input.club,
@@ -203,24 +212,31 @@ export class Office {
             content,
             input.parent ?? null,
             Date.now(),
+            visibility,
           );
         appendAudit(this.store, actor, `club:${input.club}`, 'upload_artifact', id, {
           title: input.title,
           mime: input.mime,
           size: content.byteLength,
           parent: input.parent,
+          visibility,
         });
         return this.metadata(id);
       };
     });
   }
 
+  artifactContent(actor: string, id: string) {
+    this.identity.authenticate(actor);
+    requireThat(this.readableArtifact(actor, id), 'Artifact access required');
+    const row = this.artifact(id);
+    return { content: Buffer.from(row.content as Uint8Array), metadata: this.metadata(id) };
+  }
+
   download(actor: string, id: string) {
     return this.store.transaction(() => {
-      this.identity.authenticate(actor);
-      requireThat(this.readableArtifact(actor, id), 'Artifact access required');
-      const row = this.artifact(id);
-      return { content: Buffer.from(row.content as Uint8Array), mime: String(row.mime) };
+      const artifact = this.artifactContent(actor, id);
+      return { content: artifact.content, mime: artifact.metadata.mime };
     });
   }
 

@@ -32,7 +32,8 @@ import { registerIdentity } from './identity.js';
 import { registerCompetitions } from './league.js';
 import { registerOffice } from './office.js';
 import { registerPoints } from './points.js';
-import { contractSchemas } from '../shared/contracts/generated.js';
+import { registerAi } from './ai.js';
+import { contractSchemas, type AiGatewaySettings } from '../shared/contracts/generated.js';
 import { registerMua, type MuaConfig } from './mua.js';
 import { registerCommunity } from './community.js';
 import { registerWardrobe } from './wardrobe.js';
@@ -57,6 +58,7 @@ export interface Config {
   smtp: { host: string; port: number; from: string };
   webRoot?: string;
   mua?: MuaConfig;
+  ai?: AiGatewaySettings;
 }
 const text = field;
 const obj = record;
@@ -65,6 +67,7 @@ export async function build(
   dependencies: {
     mail?: (email: string, code: string) => Promise<void>;
     muaFetch?: typeof fetch;
+    aiFetch?: typeof fetch;
   } = {},
 ) {
   const organization = resolveOrganization(config.organization);
@@ -301,8 +304,17 @@ export async function build(
     mail(email, confirmation, '账号恢复'),
   );
   registerCompetitions(app, db, localIdentity);
-  registerOffice(app, db, localIdentity);
-  registerPoints(app, db, localIdentity);
+  const office = registerOffice(app, db, localIdentity);
+  const points = registerPoints(app, db, localIdentity);
+  registerAi(
+    app,
+    db,
+    localIdentity,
+    office,
+    points.ledger,
+    config.ai,
+    dependencies.aiFetch ?? fetch,
+  );
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);
   app.get('/api/capabilities', async (): Promise<Capabilities> => ({

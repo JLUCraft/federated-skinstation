@@ -1,0 +1,261 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/ai",
+  "title": "AiJobSnapshot",
+  "$ref": "#/definitions/AiJob",
+  "definitions": {
+    "AiLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxOutputTokens",
+        "maxInputBytes",
+        "maxOutputBytes",
+        "maxResponseBytes",
+        "requestTimeoutMs",
+        "jobTimeoutMs",
+        "maxAttempts"
+      ],
+      "properties": {
+        "maxOutputTokens": { "type": "integer", "const": 8192 },
+        "maxInputBytes": { "type": "integer", "const": 8388608 },
+        "maxOutputBytes": { "type": "integer", "const": 1048576 },
+        "maxResponseBytes": { "type": "integer", "const": 8388608 },
+        "requestTimeoutMs": { "type": "integer", "const": 120000 },
+        "jobTimeoutMs": { "type": "integer", "const": 180000 },
+        "maxAttempts": { "type": "integer", "const": 8 }
+      }
+    },
+    "AiProviderConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "account", "protocol", "url", "models", "capabilities", "contextTokens"],
+      "properties": {
+        "id": { "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId" },
+        "account": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "protocol": { "enum": ["chat_completions", "responses", "messages"] },
+        "url": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "keyEnv": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "keyFile": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "authentication": { "enum": ["bearer", "api_key"] },
+        "models": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "enum": ["vision", "pdf"] },
+          "uniqueItems": true
+        },
+        "contextTokens": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "AiGatewaySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providers"],
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/AiProviderConfig" },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "concurrency": { "type": "integer", "minimum": 1, "maximum": 128, "default": 4 }
+      }
+    },
+    "AiPricing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "basePoints", "inputPointsPer1k", "outputPointsPer1k", "settlement"],
+      "properties": {
+        "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "basePoints": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        },
+        "inputPointsPer1k": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        },
+        "outputPointsPer1k": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        },
+        "settlement": { "enum": ["burn", "provider_reward"] }
+      }
+    },
+    "AiModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "provider", "account", "capabilities", "contextTokens", "pricing"],
+      "properties": {
+        "model": { "type": "string" },
+        "provider": { "type": "string" },
+        "account": { "type": "string" },
+        "capabilities": { "type": "array", "items": { "enum": ["vision", "pdf"] } },
+        "contextTokens": { "type": "integer" },
+        "pricing": { "$ref": "#/definitions/AiPricing" }
+      }
+    },
+    "AiModelList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["models", "limits"],
+      "properties": {
+        "models": { "type": "array", "items": { "$ref": "#/definitions/AiModel" } },
+        "limits": { "$ref": "#/definitions/AiLimits" }
+      }
+    },
+    "AiJobRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "club", "model", "mode", "purpose", "maxTokens", "maxPoints"],
+      "properties": {
+        "input": { "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId" },
+        "attachments": {
+          "type": "array",
+          "items": { "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId" },
+          "maxItems": 127,
+          "uniqueItems": true
+        },
+        "club": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "mode": { "enum": ["generate", "review"] },
+        "purpose": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "maxTokens": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "maxPoints": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(member|event):[^:\\s]+$"
+        }
+      }
+    },
+    "AiReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "summary", "issues"],
+      "properties": {
+        "decision": { "enum": ["approve", "changes_requested", "reject"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "issues": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "maxItems": 32
+        }
+      }
+    },
+    "AiUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputTokens", "outputTokens", "totalTokens"],
+      "properties": {
+        "inputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "outputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "totalTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "AiAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt",
+        "startedAt",
+        "finishedAt",
+        "output",
+        "error",
+        "usage",
+        "chargedPoints",
+        "refundedPoints",
+        "truncated"
+      ],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 0 },
+        "startedAt": { "type": ["integer", "null"] },
+        "finishedAt": { "type": ["integer", "null"] },
+        "output": { "type": ["string", "null"] },
+        "error": { "type": ["string", "null"] },
+        "usage": { "anyOf": [{ "$ref": "#/definitions/AiUsage" }, { "type": "null" }] },
+        "chargedPoints": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        },
+        "refundedPoints": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "AiAllowanceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "epoch"],
+      "properties": { "scope": { "type": "string" }, "epoch": { "type": "integer", "minimum": 1 } }
+    },
+    "AiJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "request",
+        "proposer",
+        "payer",
+        "club",
+        "provider",
+        "providerAccount",
+        "providerClub",
+        "contextTokens",
+        "pricing",
+        "allowance",
+        "status",
+        "startedAt",
+        "deadlineMs",
+        "currentAttempt",
+        "attempts",
+        "quotePoints",
+        "escrowedPoints"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "request": { "$ref": "#/definitions/AiJobRequest" },
+        "proposer": { "type": "string" },
+        "payer": { "type": "string" },
+        "club": { "type": "string" },
+        "provider": { "type": "string" },
+        "providerAccount": { "type": "string" },
+        "providerClub": { "type": "string" },
+        "contextTokens": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "pricing": { "$ref": "#/definitions/AiPricing" },
+        "allowance": {
+          "anyOf": [{ "$ref": "#/definitions/AiAllowanceReference" }, { "type": "null" }]
+        },
+        "status": { "enum": ["queued", "running", "completed", "failed", "cancelled"] },
+        "startedAt": { "type": "integer" },
+        "deadlineMs": { "type": "integer" },
+        "currentAttempt": { "type": "integer", "minimum": 0 },
+        "attempts": { "type": "array", "items": { "$ref": "#/definitions/AiAttempt" } },
+        "quotePoints": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        },
+        "escrowedPoints": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        }
+      }
+    },
+    "AiJobList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobs"],
+      "properties": { "jobs": { "type": "array", "items": { "$ref": "#/definitions/AiJob" } } }
+    },
+    "AiJobCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": { "action": { "enum": ["run", "cancel", "poke", "retry"] } }
+    }
+  }
+}

@@ -46,6 +46,13 @@ export class PointLedger {
     return row ? BigInt(String(row.available)) : 0n;
   }
 
+  frozen(account: string, club: string) {
+    return this.store.db
+      .prepare('SELECT amount FROM point_escrows WHERE account=? AND club=?')
+      .all(account, club)
+      .reduce((sum, row) => sum + BigInt(String(row.amount)), 0n);
+  }
+
   adjust(
     account: string,
     club: string,
@@ -55,7 +62,10 @@ export class PointLedger {
     time = Date.now(),
   ) {
     const balance = this.balance(account, club) + delta;
-    requireThat(balance >= 0n && balance <= POINT_LIMIT, 'Insufficient points or point overflow');
+    requireThat(
+      balance >= 0n && balance + this.frozen(account, club) <= POINT_LIMIT,
+      'Insufficient points or point overflow',
+    );
     this.store.db
       .prepare(
         'INSERT INTO point_balances VALUES(?,?,?) ON CONFLICT(account,club) DO UPDATE SET available=excluded.available',
@@ -345,7 +355,11 @@ export class Points {
         balances: this.store.db
           .prepare('SELECT club,available FROM point_balances WHERE account=? ORDER BY club')
           .all(actor)
-          .map((row) => ({ club: String(row.club), available: String(row.available) })),
+          .map((row) => ({
+            club: String(row.club),
+            available: String(row.available),
+            frozen: this.ledger.frozen(actor, String(row.club)).toString(),
+          })),
         entries,
       };
     });

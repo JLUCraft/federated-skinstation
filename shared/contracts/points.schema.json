@@ -179,10 +179,11 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["club", "available"],
+            "required": ["club", "available", "frozen"],
             "properties": {
               "club": { "type": "string" },
-              "available": { "$ref": "#/definitions/PointAmount" }
+              "available": { "$ref": "#/definitions/PointAmount" },
+              "frozen": { "$ref": "#/definitions/PointAmount" }
             }
           }
         },

@@ -243,3 +243,50 @@ Exact receipt replays return their existing result without another credit.
 Conflicting payloads and overlapping windows are rejected. Balances, daily
 usage, receipt storage, the source position, and audit changes share one
 transaction; an overflow rolls back the entire credit batch.
+
+## AI execution and accounting
+
+Set `SKIN_CONFIG.ai` to the generated `AiGatewaySettings` shape. Each provider has
+an `id`, registered provider `account`, `protocol`, full endpoint `url`, model
+list, document capabilities, and context-token limit. The protocols are
+`chat_completions`, `responses`, and `messages`. Supply credentials through
+`keyEnv` or a `keyFile` with mode `0600`; select `bearer` or `api_key`
+authentication when needed. HTTPS is required outside loopback. `concurrency`
+defaults to 4. Register the provider account before configuring it and restarting
+the service. Provider addresses and credentials stay outside HTTP responses.
+
+- `GET /api/ai/models` lists configured, priced models with active providers.
+  A global administrator sets point prices through `POST /api/ai/pricing`.
+- `POST /api/ai/jobs` selects readable input artifacts, a club balance, provider
+  and model, generation/review mode, purpose, output-token cap, and point limit.
+  A personal request authorizes its bounded spend directly. An optional
+  personal/event `scope` consumes a matching point authorization; event requests
+  require current management authority from both requester and payer.
+- `GET /api/ai/jobs` lists readable jobs; `GET /api/ai/jobs/:id` returns one.
+  `POST /api/ai/jobs/:id/actions` runs, cancels, retries, or advances an elapsed
+  deadline. Execution uses the selected provider with uploaded material and
+  server-owned task instructions.
+
+The service snapshots pricing and the selected provider's context-token limit.
+It quotes the highest cost permitted by that context and the output-token cap,
+reserves the quoted amount, and stores the hold in `point_escrows`. Available
+balances plus held points stay within the amount limit. Measured provider usage
+determines the full final charge; the remainder returns to the payer.
+Execution and retries require a provider within the reserved context limit.
+Settlement either burns the charge or
+credits the registered provider. Point prices use a base fee plus input/output
+rates per 1,000 tokens, rounded up. Changing prices leaves existing jobs' pricing
+intact. Refunds restore a spending authorization only while its epoch and owner
+still match.
+
+Queued cancellation refunds the hold. Running cancellation discards output and
+retains the hold until provider completion or the job deadline; measured usage
+is charged before refunding the remainder. Late completion after a settled
+cancellation or timeout has no further effect. Retries require current authority
+and a fresh hold under the job's recorded authorization.
+
+Migration 8 stores AI prices, jobs, holds, and burned totals. Office uploads can
+choose `private` visibility, which revisions inherit unless changed by the owner.
+AI output is private to the payer and requester; a site administrator can
+inspect it. Structured review output is schema-validated, and incomplete reviews
+fail. Documents and provider output remain evidence for human decisions.

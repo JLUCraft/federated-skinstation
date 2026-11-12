@@ -179,6 +179,22 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
     `);
     },
   },
+  {
+    version: 8,
+    apply(db) {
+      db.exec(`
+      ALTER TABLE office_artifacts ADD COLUMN visibility TEXT NOT NULL DEFAULT 'club' CHECK(visibility IN ('club','private'));
+      CREATE TABLE artifact_readers(artifact TEXT NOT NULL REFERENCES office_artifacts(id),account TEXT NOT NULL REFERENCES accounts(id),PRIMARY KEY(artifact,account));
+      CREATE TABLE ai_pricing(model TEXT PRIMARY KEY,pricing TEXT NOT NULL CHECK(json_valid(pricing)));
+      CREATE TABLE ai_jobs(id TEXT PRIMARY KEY,payer TEXT NOT NULL REFERENCES accounts(id),club TEXT NOT NULL REFERENCES clubs(id),scope TEXT,state TEXT NOT NULL CHECK(json_valid(state)));
+      CREATE INDEX ai_jobs_payer ON ai_jobs(payer);
+      CREATE TABLE point_escrows(job TEXT PRIMARY KEY REFERENCES ai_jobs(id),account TEXT NOT NULL REFERENCES accounts(id),club TEXT NOT NULL REFERENCES clubs(id),amount TEXT NOT NULL);
+      CREATE INDEX point_escrows_account ON point_escrows(account,club);
+      CREATE TABLE ai_totals(id INTEGER PRIMARY KEY CHECK(id=1),burned TEXT NOT NULL);
+      INSERT INTO ai_totals VALUES(1,'0');
+    `);
+    },
+  },
 ];
 export class Store {
   readonly db: DatabaseSync;

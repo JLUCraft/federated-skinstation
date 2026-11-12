@@ -38,6 +38,12 @@ import {
   type ApprovalCommand,
 } from '../shared/contracts/generated.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
+import {
+  loadPlan,
+  planDocumentsReadable,
+  releasePlanResources,
+  requirePlanReady,
+} from './planning-state.js';
 import { now, requireThat, type Store } from './store.js';
 import { bearer, field, record } from './validate.js';
 
@@ -61,7 +67,7 @@ export class Office {
     );
   }
 
-  private load(id: string): ActivityRecord {
+  load(id: string): ActivityRecord {
     const row = this.store.db.prepare('SELECT state FROM activities WHERE id=?').get(id);
     requireThat(row, 'Event not found');
     return JSON.parse(String(row.state)) as ActivityRecord;
@@ -116,6 +122,10 @@ export class Office {
       'Known co-organizers required',
     );
     requireThat(this.readableArtifact(actor, draft.brief), 'Readable event brief required');
+    requireThat(
+      !this.store.db.prepare('SELECT 1 FROM planning_documents WHERE artifact=?').get(draft.brief),
+      'Private planning evidence cannot be an event brief',
+    );
   }
 
   private cancelWorkflows(event: string) {
@@ -153,6 +163,15 @@ export class Office {
 
   private readableArtifact(actor: string, id: string) {
     const row = this.artifact(id);
+    if (
+      this.store.db
+        .prepare("SELECT 1 FROM planning_documents WHERE artifact=? AND audience='event'")
+        .get(id)
+    )
+      return (
+        this.identity.isGlobalAdministrator(actor) ||
+        planDocumentsReadable(this.store, this.identity, actor, id)
+      );
     return (
       row.owner === actor ||
       (row.visibility === 'club' && this.active(actor, String(row.club))) ||
@@ -160,6 +179,7 @@ export class Office {
         .prepare('SELECT 1 FROM artifact_readers WHERE artifact=? AND account=?')
         .get(id, actor) ||
       this.identity.isGlobalAdministrator(actor) ||
+      planDocumentsReadable(this.store, this.identity, actor, id) ||
       this.store.db
         .prepare(
           'SELECT a.state FROM event_artifacts e JOIN activities a ON a.id=e.event WHERE e.artifact=?',
@@ -270,6 +290,9 @@ export class Office {
         phase: 'draft',
       };
       this.cancelWorkflows(id);
+      releasePlanResources(this.store, id);
+      this.store.db.prepare('DELETE FROM event_plans WHERE event=?').run(id);
+      this.store.db.prepare('DELETE FROM event_attendance WHERE event=?').run(id);
       this.save(event);
       this.store.db.prepare('DELETE FROM event_artifacts WHERE event=?').run(id);
       this.store.db.prepare('INSERT INTO event_artifacts VALUES(?,?)').run(id, event.brief);
@@ -308,9 +331,11 @@ export class Office {
       switch (command.action) {
         case 'submit':
           requireThat(event.phase === 'draft', 'Draft event required');
+          requirePlanReady(this.store, this.identity, event);
           event.phase = 'review';
           break;
         case 'publish':
+          requirePlanReady(this.store, this.identity, event);
           requireThat(
             event.phase === 'approved' && time < event.window.closesMs,
             'Approved event required',
@@ -323,10 +348,12 @@ export class Office {
             'Started event required',
           );
           event.phase = 'done';
+          releasePlanResources(this.store, id);
           break;
         case 'cancel':
           event.phase = 'cancelled';
           this.cancelWorkflows(id);
+          releasePlanResources(this.store, id);
           break;
         case 'signup': {
           requireThat(
@@ -339,7 +366,23 @@ export class Office {
               .get(id, actor),
             'Event signup already exists',
           );
-          const club = this.identity.affiliation(actor);
+          let club = this.identity.affiliation(actor);
+          const plan = loadPlan(this.store, id);
+          if (plan) {
+            requirePlanReady(this.store, this.identity, event);
+            const roster = plan.clubs.find((entry) => entry.participants.includes(actor));
+            club =
+              roster?.club ??
+              this.identity.affiliation(
+                actor,
+                plan.clubs.map((entry) => entry.club),
+              );
+            requireThat(
+              plan.clubs.some((entry) => entry.club === club) && (plan.kind === 'online' || roster),
+              'Planned club and meeting participant required',
+            );
+            this.identity.requireMembership(actor, club);
+          }
           this.store.db
             .prepare('INSERT INTO event_attendance VALUES(?,?,?,?,NULL)')
             .run(id, actor, club, time);
@@ -356,6 +399,7 @@ export class Office {
           );
           break;
         case 'checkin':
+          requirePlanReady(this.store, this.identity, event);
           requireThat(
             event.phase === 'open' && time >= event.checkinOpensMs && time < event.checkinClosesMs,
             'Event check-in closed',
@@ -634,6 +678,7 @@ export class Office {
         event.phase === 'review' && event.epoch === input.epoch,
         'Current event review required',
       );
+      requirePlanReady(this.store, this.identity, event);
       requireThat(
         !this.store.db
           .prepare(
@@ -667,7 +712,7 @@ export class Office {
         id: randomUUID(),
         club: event.club,
         event: event.id,
-        brief: event.brief,
+        brief: loadPlan(this.store, event.id)?.polished ?? event.brief,
         epoch: event.epoch,
         proposer: actor,
         stages,
@@ -811,6 +856,7 @@ export class Office {
       requireThat(this.workflowReadable(actor, workflow), 'Workflow event access required');
       const time = Date.now();
       if (command.action === 'execute') {
+        requirePlanReady(this.store, this.identity, event);
         requireThat(
           workflow.status === 'approved' &&
             event.phase === 'review' &&

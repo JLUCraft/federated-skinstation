@@ -31,6 +31,7 @@ import { LocalIdentity } from './permissions.js';
 import { registerIdentity } from './identity.js';
 import { registerCompetitions } from './league.js';
 import { registerOffice } from './office.js';
+import { registerPlanning } from './planning.js';
 import { registerPoints } from './points.js';
 import { registerAi } from './ai.js';
 import { contractSchemas, type AiGatewaySettings } from '../shared/contracts/generated.js';
@@ -305,6 +306,7 @@ export async function build(
   );
   registerCompetitions(app, db, localIdentity);
   const office = registerOffice(app, db, localIdentity);
+  registerPlanning(app, db, localIdentity, office);
   const points = registerPoints(app, db, localIdentity);
   registerAi(
     app,

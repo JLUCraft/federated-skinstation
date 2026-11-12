@@ -1,0 +1,199 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/planning",
+  "title": "PlanningSnapshot",
+  "$ref": "#/definitions/ActivityPlan",
+  "definitions": {
+    "PlanningId": { "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId" },
+    "ClubPlanningProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["club", "kind"],
+      "properties": {
+        "club": { "$ref": "#/definitions/PlanningId" },
+        "kind": { "enum": ["official", "independent"] }
+      }
+    },
+    "PlanClub": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["club", "kind", "participants"],
+      "properties": {
+        "club": { "$ref": "#/definitions/PlanningId" },
+        "kind": { "enum": ["official", "independent"] },
+        "participants": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/PlanningId" },
+          "uniqueItems": true,
+          "maxItems": 10000
+        }
+      }
+    },
+    "PlanDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "kind", "clubs", "candidates"],
+      "properties": {
+        "epoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "kind": { "enum": ["online", "meeting"] },
+        "clubs": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/PlanClub" },
+          "minItems": 1,
+          "maxItems": 128
+        },
+        "candidates": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/PlanningId" },
+          "uniqueItems": true,
+          "maxItems": 128
+        }
+      }
+    },
+    "PlanOpinion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["club", "actor", "document", "games"],
+      "properties": {
+        "club": { "type": "string" },
+        "actor": { "type": "string" },
+        "document": { "type": "string" },
+        "games": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "PlanConsent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["club", "actor", "document", "transcript"],
+      "properties": {
+        "club": { "type": "string" },
+        "actor": { "type": "string" },
+        "document": { "type": "string" },
+        "transcript": { "type": ["string", "null"] }
+      }
+    },
+    "PlanRewardRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["points", "material", "topPlaces"],
+      "properties": {
+        "points": { "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount" },
+        "material": { "type": ["string", "null"], "minLength": 1, "maxLength": 4096 },
+        "topPlaces": { "type": ["integer", "null"], "minimum": 1, "maximum": 10000 }
+      }
+    },
+    "PlanReward": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["club", "actor", "rule"],
+      "properties": {
+        "club": { "type": "string" },
+        "actor": { "type": "string" },
+        "rule": { "$ref": "#/definitions/PlanRewardRule" }
+      }
+    },
+    "ActivityPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "event",
+        "epoch",
+        "kind",
+        "clubs",
+        "candidates",
+        "selected",
+        "opinions",
+        "consents",
+        "rewards",
+        "finalized",
+        "evidence",
+        "polished"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "event": { "type": "string" },
+        "epoch": { "type": "integer" },
+        "kind": { "enum": ["online", "meeting"] },
+        "clubs": { "type": "array", "items": { "$ref": "#/definitions/PlanClub" } },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "selected": { "type": "array", "items": { "type": "string" } },
+        "opinions": { "type": "array", "items": { "$ref": "#/definitions/PlanOpinion" } },
+        "consents": { "type": "array", "items": { "$ref": "#/definitions/PlanConsent" } },
+        "rewards": { "type": "array", "items": { "$ref": "#/definitions/PlanReward" } },
+        "finalized": { "type": "boolean" },
+        "evidence": { "type": ["string", "null"] },
+        "polished": { "type": ["string", "null"] }
+      }
+    },
+    "PlanCommand": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "plan", "club", "document", "games"],
+          "properties": {
+            "action": { "const": "opinion" },
+            "plan": { "$ref": "#/definitions/PlanningId" },
+            "club": { "$ref": "#/definitions/PlanningId" },
+            "document": { "$ref": "#/definitions/PlanningId" },
+            "games": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/PlanningId" },
+              "uniqueItems": true,
+              "maxItems": 128
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "plan", "club", "document", "transcript"],
+          "properties": {
+            "action": { "const": "consent" },
+            "plan": { "$ref": "#/definitions/PlanningId" },
+            "club": { "$ref": "#/definitions/PlanningId" },
+            "document": { "$ref": "#/definitions/PlanningId" },
+            "transcript": { "anyOf": [{ "$ref": "#/definitions/PlanningId" }, { "type": "null" }] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "plan", "club", "rule"],
+          "properties": {
+            "action": { "const": "rewards" },
+            "plan": { "$ref": "#/definitions/PlanningId" },
+            "club": { "$ref": "#/definitions/PlanningId" },
+            "rule": { "$ref": "#/definitions/PlanRewardRule" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "plan", "selected"],
+          "properties": {
+            "action": { "const": "finalize" },
+            "plan": { "$ref": "#/definitions/PlanningId" },
+            "selected": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/PlanningId" },
+              "uniqueItems": true,
+              "maxItems": 128
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "plan", "document"],
+          "properties": {
+            "action": { "const": "polish" },
+            "plan": { "$ref": "#/definitions/PlanningId" },
+            "document": { "$ref": "#/definitions/PlanningId" }
+          }
+        }
+      ]
+    }
+  }
+}

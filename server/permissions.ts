@@ -69,13 +69,15 @@ export class LocalIdentity {
     this.authenticate(account);
     requireThat(this.isActiveMember(account, club), 'Active club membership required');
   }
-  affiliation(account: string) {
+  affiliation(account: string, clubs?: readonly string[]) {
     this.authenticate(account);
+    const eligible = clubs ? JSON.stringify(clubs) : null;
     const row = this.store.db
       .prepare(
-        "SELECT m.club FROM memberships m JOIN accounts a ON a.id=m.account JOIN clubs c ON c.id=m.club WHERE m.account=? AND m.status='active' ORDER BY (c.school=a.school) DESC,m.since,m.club LIMIT 1",
+        "SELECT m.club FROM memberships m JOIN accounts a ON a.id=m.account JOIN clubs c ON c.id=m.club WHERE m.account=? AND m.status='active' AND (? IS NULL OR m.club IN (SELECT value FROM json_each(?))) ORDER BY (c.school=a.school) DESC,m.since,m.club LIMIT 1",
       )
-      .get(account)!;
+      .get(account, eligible, eligible);
+    requireThat(row, 'Active club membership required');
     return String(row.club);
   }
   isGlobalAdministrator(account: string) {

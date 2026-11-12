@@ -195,6 +195,18 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
     `);
     },
   },
+  {
+    version: 9,
+    apply(db) {
+      db.exec(`
+      CREATE TABLE event_plans(event TEXT PRIMARY KEY REFERENCES activities(id),state TEXT NOT NULL CHECK(json_valid(state)));
+      CREATE TABLE club_planning_profiles(club TEXT PRIMARY KEY REFERENCES clubs(id),kind TEXT NOT NULL CHECK(kind IN ('official','independent')));
+      CREATE TABLE event_reservations(event TEXT NOT NULL REFERENCES activities(id),resource TEXT NOT NULL REFERENCES game_resources(id),endpoint TEXT NOT NULL,opens_ms INTEGER NOT NULL,ends_ms INTEGER NOT NULL,PRIMARY KEY(event,resource));
+      CREATE INDEX event_reservations_endpoint ON event_reservations(endpoint,ends_ms);
+      CREATE TABLE planning_documents(artifact TEXT NOT NULL REFERENCES office_artifacts(id),event TEXT NOT NULL REFERENCES activities(id),plan TEXT NOT NULL,club TEXT NOT NULL REFERENCES clubs(id),audience TEXT NOT NULL CHECK(audience IN ('club','personal','event')),PRIMARY KEY(artifact,event,plan,club,audience));
+    `);
+    },
+  },
 ];
 export class Store {
   readonly db: DatabaseSync;

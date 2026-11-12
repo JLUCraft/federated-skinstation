@@ -28,6 +28,7 @@ import {
   type CompetitionDisputeList,
 } from '../shared/contracts/generated.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
+import { gameEndpoint, gameResource } from './planning-state.js';
 import { now, requireThat, type Store } from './store.js';
 import { bearer, field, record } from './validate.js';
 
@@ -65,9 +66,7 @@ export class Competitions {
   }
 
   private resource(id: string): GameResource {
-    const row = this.store.db.prepare('SELECT definition FROM game_resources WHERE id=?').get(id);
-    requireThat(row, 'Game resource not found');
-    return JSON.parse(String(row.definition)) as GameResource;
+    return gameResource(this.store, id);
   }
 
   resources(actor: string) {
@@ -84,6 +83,13 @@ export class Competitions {
         .prepare('SELECT club FROM game_resources WHERE id=?')
         .get(resource.id);
       requireThat(!existing || existing.club === resource.club, 'Resource club is immutable');
+      gameEndpoint(resource.address);
+      requireThat(
+        !this.store.db
+          .prepare('SELECT 1 FROM event_reservations WHERE resource=? AND ends_ms>?')
+          .get(resource.id, Date.now()),
+        'Reserved game resource cannot be changed',
+      );
       requireThat(
         resource.rules.reconnectMinMs <= resource.rules.reconnectMaxMs,
         'Invalid reconnect interval',
@@ -381,12 +387,22 @@ export class Competitions {
             !league.schedule || time >= league.schedule.startsMs,
             'League start is scheduled later',
           );
+          const endpoint = gameEndpoint(this.resource(league.resource).address);
           requireThat(
             !this.store.db
+              .prepare('SELECT 1 FROM event_reservations WHERE endpoint=? AND ends_ms>?')
+              .get(endpoint, time),
+            'Game endpoint is reserved for an event',
+          );
+          requireThat(
+            this.store.db
               .prepare(
-                "SELECT 1 FROM leagues WHERE resource=? AND id!=? AND json_extract(state,'$.phase')='playing'",
+                "SELECT resource FROM leagues WHERE id!=? AND json_extract(state,'$.phase')='playing'",
               )
-              .get(league.resource, league.id),
+              .all(league.id)
+              .every(
+                (other) => gameEndpoint(this.resource(String(other.resource)).address) !== endpoint,
+              ),
             'Game resource is already playing',
           );
           for (const [team, roster] of Object.entries(league.teams)) {

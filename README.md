@@ -213,6 +213,44 @@ time. Assigned tasks require current participating-club membership. Authorizatio
 preparation and mutations share one write lock; rejected preparation retains its
 decision audit while failed mutations roll back business changes.
 
+`server/planning.ts` owns event planning in migration 9. Club managers configure
+their official or independent status through `GET` and
+`PUT /api/clubs/:id/planning-profile`. Managers create or replace an unfinalized
+draft through `PUT /api/events/:id/plan`, supplying the current event epoch,
+participating clubs and rosters, and candidate resources. Participating managers
+and named members read it through `GET` on the same route. Club lists match the
+event organizers, and each participant has one club in the plan.
+Meeting enrollment follows the named roster; online enrollment selects an active
+membership among participating clubs using the identity service's affiliation
+order. Enrollment and check-in recheck the current planning policy.
+
+`POST /api/events/:id/plan/actions` records club opinions, meeting consents,
+reward rules, the final game selection, and the polished document. Each action
+includes the current plan ID. Official meetings require a club manager's consent;
+independent meetings require every named participant's personal consent.
+Multi-club plans require every club's opinion. Every club sets its own point and
+material reward rule. Selecting a resource requires its owner's game-specific
+opinion. Finalization rechecks membership and authority and freezes a private
+snapshot of the plan and its source documents.
+
+Finalization reserves each selected Minecraft endpoint from check-in opening to
+event end. Endpoint identity includes its host and port, with port 25565 as the
+default. Aliases with the same endpoint share the reservation. Overlapping events,
+duplicate selections, and playing competitions are rejected atomically. Reserved
+resources cannot be edited before their reservation ends. Standalone competitions can start after outstanding
+event reservations expire or are released. Revision, cancellation, and completion
+release reservations; revision also clears the plan and attendance.
+
+Consent documents, transcripts, opinions, and frozen evidence stay private.
+Current event managers can read planning evidence; club managers can read their
+club's opinions and official consent. Individual consent remains available to its
+author and event managers. These documents cannot become event briefs or polished
+documents. Frozen input snapshots follow current event authority, including when
+the finalizer loses management permission. The polished document is shared with the event and becomes the human
+workflow's input. Plans must be finalized and polished before submission, review,
+execution, and publication; each transition rechecks current consent and club
+policy and event window. Events without a plan retain the direct approval workflow.
+
 ## Points and player activity
 
 `server/points.ts` owns the point ledger, activity sources and receipts, daily

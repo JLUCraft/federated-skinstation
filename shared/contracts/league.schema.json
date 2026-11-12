@@ -1,0 +1,232 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/league",
+  "title": "LeagueSnapshot",
+  "$ref": "#/definitions/Competition",
+  "definitions": {
+    "CompetitionRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crossClub", "seats", "reconnectMinMs", "reconnectMaxMs"],
+      "properties": {
+        "crossClub": { "type": "boolean" },
+        "seats": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "reconnectMinMs": { "type": "integer", "minimum": 1, "maximum": 600000 },
+        "reconnectMaxMs": { "type": "integer", "minimum": 1, "maximum": 600000 }
+      }
+    },
+    "CompetitionSchedule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["opensMs", "closesMs", "startsMs"],
+      "properties": {
+        "opensMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "closesMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "startsMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "CompetitionHealth": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rttMs", "jitterMs", "recoveryMs"],
+      "properties": {
+        "rttMs": { "type": "integer", "minimum": 0, "maximum": 60000 },
+        "jitterMs": { "type": "integer", "minimum": 0, "maximum": 60000 },
+        "recoveryMs": { "type": "integer", "minimum": 0, "maximum": 600000 }
+      }
+    },
+    "CompetitionTeam": {
+      "type": "object", "additionalProperties": false,
+      "required": ["club", "captain", "members", "invited", "registered"],
+      "properties": {
+        "club": { "type": "string" },
+        "captain": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "invited": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "registered": { "type": "boolean" }
+      }
+    },
+    "CompetitionSeat": {
+      "type": "object", "additionalProperties": false,
+      "required": ["player", "epoch", "disconnectedUntil"],
+      "properties": {
+        "player": { "type": "string" },
+        "epoch": { "type": "integer", "minimum": 1 },
+        "disconnectedUntil": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "CompetitionScores": {
+      "type": "object",
+      "propertyNames": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "additionalProperties": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+      "maxProperties": 10000
+    },
+    "Competition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "club", "title", "resource", "organizer", "host", "scorer", "rules", "phase", "teams", "online", "seats", "played", "playerScores", "teamScores", "health", "admitted", "schedule", "manualPause", "infrastructureDown", "pausedSince", "epoch"],
+      "properties": {
+        "id": { "type": "string" },
+        "club": { "type": "string" },
+        "title": { "type": "string" },
+        "resource": { "type": "string" },
+        "organizer": { "type": "string" },
+        "host": { "type": "string" },
+        "scorer": { "type": "string" },
+        "rules": { "$ref": "#/definitions/CompetitionRules" },
+        "phase": { "enum": ["registration", "playing", "finished"] },
+        "teams": { "type": "object", "additionalProperties": { "$ref": "#/definitions/CompetitionTeam" } },
+        "online": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "seats": { "type": "object", "additionalProperties": { "type": "array", "items": { "$ref": "#/definitions/CompetitionSeat" } } },
+        "played": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "playerScores": { "$ref": "#/definitions/CompetitionScores" },
+        "teamScores": { "$ref": "#/definitions/CompetitionScores" },
+        "health": { "type": "object", "additionalProperties": { "$ref": "#/definitions/CompetitionHealth" } },
+        "admitted": { "type": ["array", "null"], "items": { "type": "string" }, "uniqueItems": true },
+        "schedule": { "anyOf": [{ "$ref": "#/definitions/CompetitionSchedule" }, { "type": "null" }] },
+        "manualPause": { "type": "boolean" },
+        "infrastructureDown": { "type": "boolean" },
+        "pausedSince": { "type": ["integer", "null"], "minimum": 0 },
+        "epoch": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "GameResource": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "club", "title", "address", "host", "scorer", "rules", "automaticTeams"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]{1,128}$" },
+        "club": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "address": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "host": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "scorer": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "rules": { "$ref": "#/definitions/CompetitionRules" },
+        "automaticTeams": { "type": "boolean" }
+      }
+    },
+    "CompetitionCreate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "resource"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]{1,128}$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "resource": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "CompetitionCommand": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["action", "team"],
+          "properties": { "action": { "enum": ["create_team", "accept", "register"] }, "team": { "type": "string", "pattern": "^[a-zA-Z0-9_-]{1,128}$" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["action", "team", "member"],
+          "properties": { "action": { "const": "invite" }, "team": { "type": "string" }, "member": { "type": "string" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["action", "members", "automatic"],
+          "properties": { "action": { "const": "attendance" }, "members": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "maxItems": 10000 }, "automatic": { "type": "boolean" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["action", "member", "online", "health"],
+          "properties": { "action": { "const": "presence" }, "member": { "type": "string" }, "online": { "type": "boolean" }, "health": { "$ref": "#/definitions/CompetitionHealth" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["action"],
+          "properties": { "action": { "enum": ["start", "tick", "finish"] } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["action", "paused"],
+          "properties": { "action": { "const": "pause" }, "paused": { "type": "boolean" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["action", "healthy"],
+          "properties": { "action": { "const": "infrastructure" }, "healthy": { "type": "boolean" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["action", "event", "players", "teams"],
+          "properties": { "action": { "const": "score" }, "event": { "type": "string", "pattern": "^[a-zA-Z0-9_-]{1,128}$" }, "players": { "$ref": "#/definitions/CompetitionScores" }, "teams": { "$ref": "#/definitions/CompetitionScores" } }
+        }
+      ]
+    },
+    "CompetitionSeason": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "club", "title"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]{1,128}$" },
+        "club": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "CompetitionBooking": {
+      "type": "object", "additionalProperties": false, "required": ["season", "schedule"],
+      "properties": { "season": { "type": "string" }, "schedule": { "$ref": "#/definitions/CompetitionSchedule" } }
+    },
+    "CompetitionDisputeRequest": {
+      "type": "object", "additionalProperties": false, "required": ["reason"],
+      "properties": { "reason": { "type": "string", "minLength": 1, "maxLength": 4096 } }
+    },
+    "CompetitionResolution": {
+      "type": "object", "additionalProperties": false, "required": ["response", "players", "teams"],
+      "properties": {
+        "response": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "players": { "$ref": "#/definitions/CompetitionScores" },
+        "teams": { "$ref": "#/definitions/CompetitionScores" }
+      }
+    },
+    "CompetitionList": {
+      "type": "object", "additionalProperties": false, "required": ["leagues"],
+      "properties": { "leagues": { "type": "array", "items": { "$ref": "#/definitions/Competition" } } }
+    },
+    "GameResourceList": {
+      "type": "object", "additionalProperties": false, "required": ["resources"],
+      "properties": { "resources": { "type": "array", "items": { "$ref": "#/definitions/GameResource" } } }
+    },
+    "CompetitionSeasonList": {
+      "type": "object", "additionalProperties": false, "required": ["seasons"],
+      "properties": { "seasons": { "type": "array", "items": { "$ref": "#/definitions/CompetitionSeason" } } }
+    },
+    "CompetitionRankingEntry": {
+      "type": "object", "additionalProperties": false, "required": ["id", "score"],
+      "properties": { "id": { "type": "string" }, "score": { "type": "integer" } }
+    },
+    "CompetitionRankings": {
+      "type": "object", "additionalProperties": false, "required": ["players", "teams"],
+      "properties": {
+        "players": { "type": "array", "items": { "$ref": "#/definitions/CompetitionRankingEntry" } },
+        "teams": { "type": "array", "items": { "$ref": "#/definitions/CompetitionRankingEntry" } }
+      }
+    },
+    "CompetitionDispute": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "league", "account", "reason", "createdAt", "resolution", "reviewer", "resolvedAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "league": { "type": "string" },
+        "account": { "type": "string" },
+        "reason": { "type": "string" },
+        "createdAt": { "type": "integer" },
+        "resolution": { "anyOf": [{ "$ref": "#/definitions/CompetitionResolution" }, { "type": "null" }] },
+        "reviewer": { "type": ["string", "null"] },
+        "resolvedAt": { "type": ["integer", "null"] }
+      }
+    },
+    "CompetitionDisputeList": {
+      "type": "object", "additionalProperties": false, "required": ["disputes"],
+      "properties": { "disputes": { "type": "array", "items": { "$ref": "#/definitions/CompetitionDispute" } } }
+    },
+    "CompetitionDisputeCreated": {
+      "type": "object", "additionalProperties": false, "required": ["id"],
+      "properties": { "id": { "type": "string" } }
+    },
+    "CompetitionRoute": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["destination", "team", "epoch", "address"],
+          "properties": { "destination": { "const": "match" }, "team": { "type": "string" }, "epoch": { "type": "integer" }, "address": { "type": "string" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["destination"],
+          "properties": { "destination": { "enum": ["waiting", "unavailable"] } }
+        }
+      ]
+    }
+  }
+}

@@ -128,6 +128,18 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       );
     `);
   } },
+  { version: 5, apply(db) {
+    db.exec(`
+      CREATE TABLE game_resources(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),definition TEXT NOT NULL CHECK(json_valid(definition)));
+      CREATE TABLE leagues(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),resource TEXT NOT NULL REFERENCES game_resources(id),state TEXT NOT NULL CHECK(json_valid(state)));
+      CREATE INDEX leagues_resource ON leagues(resource);
+      CREATE TABLE seasons(id TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),title TEXT NOT NULL);
+      CREATE TABLE season_leagues(season TEXT NOT NULL REFERENCES seasons(id),league TEXT PRIMARY KEY REFERENCES leagues(id));
+      CREATE TABLE league_scores(league TEXT NOT NULL REFERENCES leagues(id),event TEXT NOT NULL,payload TEXT NOT NULL,received_at INTEGER NOT NULL,PRIMARY KEY(league,event));
+      CREATE TABLE league_disputes(id TEXT PRIMARY KEY,league TEXT NOT NULL REFERENCES leagues(id),account TEXT NOT NULL REFERENCES accounts(id),reason TEXT NOT NULL,created_at INTEGER NOT NULL,resolution TEXT,reviewer TEXT REFERENCES accounts(id),resolved_at INTEGER);
+      CREATE UNIQUE INDEX league_disputes_open ON league_disputes(league,account) WHERE resolution IS NULL;
+    `);
+  } },
 ];
 export class Store {
   readonly db: DatabaseSync;

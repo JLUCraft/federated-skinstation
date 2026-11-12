@@ -198,7 +198,10 @@ export class LocalIdentity {
       // The built-in MUA integration is global and has no club owner.
       return service ? `club:${service.club}` : parsed.id === 'mua' ? 'global' : undefined;
     }
-    // P2 resources have no ownership model yet: never guess a parent.
+    if (parsed.kind === 'league') {
+      const league = this.store.db.prepare('SELECT club FROM leagues WHERE id=?').get(parsed.id!);
+      return league ? `club:${league.club}` : undefined;
+    }
     return undefined;
   }
   authorize(account: string, scope: string, permission: string): boolean {
@@ -300,8 +303,8 @@ export class LocalIdentity {
         .run(now(), account, club);
       // Keep the chair epoch as history; an inactive chair derives no authority.
       this.store.db.prepare(
-        "UPDATE grants SET revoked_at=?,revoked_by=? WHERE revoked_at IS NULL AND principal_kind='user' AND principal=? AND (scope=? OR scope IN (SELECT 'service:'||id FROM services WHERE club=?))",
-      ).run(now(), actor, account, `club:${club}`, club);
+        "UPDATE grants SET revoked_at=?,revoked_by=? WHERE revoked_at IS NULL AND principal_kind='user' AND principal=? AND (scope=? OR scope IN (SELECT 'service:'||id FROM services WHERE club=?) OR scope IN (SELECT 'league:'||id FROM leagues WHERE club=?))",
+      ).run(now(), actor, account, `club:${club}`, club, club);
       if (!this.store.db.prepare("SELECT 1 FROM memberships WHERE account=? AND status='active'").get(account)) {
         this.store.revokeSessions(account);
       }

@@ -43,8 +43,8 @@ cannot authorize. Global administrators bypass membership checks. Other scoped
 permissions require active membership in the owning club, including service scopes.
 Service permissions inherit from their club and then global; clubs inherit from global.
 The built-in `service:mua` scope inherits directly from global.
-League, event, and workflow scopes parse but have no local resource implementation yet
-and deny scoped authorization until their ownership is implemented.
+League scopes inherit from their owning club. Event and workflow scopes
+deny scoped authorization until their ownership is implemented.
 
 The catalog contains `admin`, `manage`, `president`, `read`, `write`,
 `members.manage`, `chairs.manage`, `grants.manage`, `services.manage`, `accounts.recover`, and
@@ -127,3 +127,41 @@ authority, which is checked again at acceptance.
 Audit entries chain SHA-256 digests of the ordered entry fields and payload digests;
 SQLite triggers reject updates and deletes. This is local append-only history, not
 an external trust anchor.
+
+## Competitions
+
+`server/league.ts` owns game resources, leagues, teams, seasons, seating, scoring,
+and result disputes in SQLite. `shared/contracts/league.schema.json` owns the
+request and response contracts. JSON request validation rejects extra fields
+without changing command payloads while evaluating action alternatives.
+All participants, organizers, hosts, and scorers use account IDs and authenticate
+with Yggdrasil Bearer sessions. Club `services.manage` registers resources; club
+or league `manage` controls attendance, schedules, starts, pauses, and disputes.
+Host and scorer accounts must belong to the resource's club. Members of other
+clubs can enter through their own accounts. When `crossClub` is false, each team
+keeps its own club affiliation; when true, a team can mix club memberships.
+
+- `GET` and `POST /api/game-resources` list and register resource definitions.
+  A resource's club is immutable; its definition remains fixed while a league
+  using it is unfinished.
+- `GET` and `POST /api/leagues` list and create competitions.
+  `GET /api/leagues/:id` returns a snapshot.
+- `POST /api/leagues/:id/actions` accepts the schema's team, attendance,
+  presence, start, tick, infrastructure, pause, score, and finish commands.
+  Only the designated host submits measured presence and health; only the
+  designated scorer submits results and finishes a league.
+- `GET /api/leagues/:id/route/:member` returns the member's current destination,
+  team, and seat epoch for that member or the designated host.
+- `GET` and `POST /api/seasons` list and create seasons;
+  `POST /api/leagues/:id/schedule` assigns a season and registration/start window.
+  `GET /api/seasons/:id/rankings` aggregates finished results.
+- `POST /api/leagues/:id/disputes` opens a participant's result dispute.
+  Managers list them through `GET` on that route and resolve them through
+  `POST /api/league-disputes/:id/resolve`, applying recorded score deltas.
+
+Server time drives registration, grace periods, pauses, and explicit host ticks.
+Seating chooses online roster members at the service and advances a persistent
+epoch for each assignment. Pauses preserve remaining reconnection time, including
+overlapping infrastructure and manual pauses. Score event IDs are replayable only
+with the same deltas; failed mutations roll back scores and receipts together.
+Membership revocation removes league grants and blocks future participation.

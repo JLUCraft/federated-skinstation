@@ -32,6 +32,7 @@ const VERSION = createRequire(import.meta.url)('../package.json')
 import { type School } from './school.js';
 import { LocalIdentity } from './permissions.js';
 import { registerIdentity } from './identity.js';
+import { registerCompetitions } from './league.js';
 import { registerMua, type MuaConfig } from './mua.js';
 import { registerCommunity } from './community.js';
 import { registerWardrobe } from './wardrobe.js';
@@ -85,6 +86,7 @@ export async function build(
   localIdentity.seedAdmins(config.siteAdmins ?? [], config.mua?.member?.adminAccounts ?? []);
   await mkdir(config.textures, { recursive: true });
   const app = Fastify({
+    ajv: { customOptions: { removeAdditional: false } },
     trustProxy: config.trustProxy ?? false,
     logger: {
       redact: ['req.headers.authorization', 'req.headers.cookie', 'req.body'],
@@ -317,6 +319,7 @@ export async function build(
   registerPasskeys(app, db, config.origin, authorize, organization);
   registerIdentity(app, db, localIdentity, config.schools,
     (email, confirmation) => mail(email, confirmation, '账号恢复'));
+  registerCompetitions(app, db, localIdentity);
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);
   app.get('/api/capabilities', async () => ({

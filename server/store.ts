@@ -107,6 +107,15 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TABLE identity_seeds(name TEXT PRIMARY KEY);
     `);
   } },
+  { version: 3, apply(db) {
+    db.exec(`
+      INSERT OR IGNORE INTO identity_seeds SELECT 'site_admins'
+        WHERE EXISTS(SELECT 1 FROM grants WHERE principal_kind='user' AND granted_by='config' AND scope='global' AND permission='admin');
+      INSERT OR IGNORE INTO identity_seeds SELECT 'mua_admins'
+        WHERE EXISTS(SELECT 1 FROM grants WHERE principal_kind='user' AND granted_by='config' AND scope='service:mua' AND permission='admin');
+      DELETE FROM identity_seeds WHERE name='admins';
+    `);
+  } },
 ];
 export class Store {
   readonly db: DatabaseSync;
@@ -458,6 +467,7 @@ export class Store {
   }
   mint(account: string, client: string, now: number, selectProfile = true) {
     requireThat(client.length <= 256);
+    requireThat(this.account('id', account)?.disabled === 0, 'Account disabled');
     const token = secret();
     this.db.prepare('DELETE FROM tokens WHERE expires<=?').run(now);
     this.db
@@ -484,7 +494,7 @@ export class Store {
       'Invalid token',
     );
     const account = this.account('id', row.account);
-    requireThat(account);
+    requireThat(account?.disabled === 0, 'Account disabled');
     return account;
   }
   refresh(
@@ -542,6 +552,7 @@ export class Store {
     const foundProfile = this.profileNamed(name);
     if (!foundProfile) return undefined;
     const a = foundProfile.account;
+    if (a.disabled !== 0) return undefined;
     const found = this.db
       .prepare(
         'SELECT 1 FROM joins j JOIN tokens t ON t.hash=j.token WHERE j.server=? AND j.profile=? AND j.expires>? AND t.expires>? AND (? IS NULL OR j.ip=?)',

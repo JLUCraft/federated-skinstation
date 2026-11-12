@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {constants,createHmac,generateKeyPairSync,privateDecrypt,sign,verify} from 'node:crypto';
 import {site} from './helpers/site.js';
 import type {MuaConfig} from '../server/mua.js';
+import {join} from 'node:path';
+import {Store} from '../server/store.js';
 
 test('MUA member metadata uses its canonical root and string initialization markers', async () => {
  const host = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -29,6 +31,11 @@ test('member signed email lookup, cross-site binding ownership and administrator
  try{
   const a=await s.enroll('Member'),b=await s.enroll('Nonadmin');cfg.member!.adminAccounts!.push(a.user.id);
   const auth=(token:string)=>({authorization:`Bearer ${token}`});
+  assert.equal((await s.app.inject({url:'/api/mua/admin/blacklist',headers:auth(a.accessToken)})).statusCode,403);
+  const store=new Store(join(s.dir,'db'));
+  try {
+   store.db.prepare("INSERT INTO grants VALUES('mua-admin','user',?,'service:mua','admin','fixture',1,NULL,NULL)").run(a.user.id);
+  } finally {store.close();}
   assert.equal((await s.app.inject({url:'/api/mua/admin/blacklist',headers:auth(b.accessToken)})).statusCode,403);
   assert.equal((await s.app.inject({url:'/api/mua/admin/blacklist?page=2&q=test',headers:auth(a.accessToken)})).statusCode,200);
   assert.ok(calls.at(-1)!.url.endsWith('/blacklist/query?page=2&q=test'));

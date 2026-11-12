@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import {
-  createAuthorizer, parseScope, type Scope, type PermissionSource,
+  createAuthorizer, isPermission, parseScope, type Scope, type PermissionSource,
 } from '../shared/permissions.js';
+import type { IdentitySnapshot } from '../shared/contracts/generated.js';
 import { digest, now, requireThat, Rejected, type Store } from './store.js';
 import type { School } from './school.js';
 
-interface Membership { status: 'active' | 'revoked'; roles: string }
+interface Membership { status: IdentitySnapshot['memberships'][number]['status']; roles: string }
 interface Chair { account: string; epoch: number }
 interface Succession { club: string; proposed_by: string; nominee: string; epoch: number; status: string }
 
@@ -26,6 +27,115 @@ export function appendAudit(
 
 export class LocalIdentity {
   constructor(readonly store: Store) {}
+  authenticate(account: string) {
+    requireThat(this.enabled(account), 'Account disabled');
+    requireThat(this.store.db.prepare(
+      "SELECT 1 FROM memberships WHERE account=? AND status='active'",
+    ).get(account), 'Active club membership required');
+  }
+  hasSiteAdministrator() {
+    return !!this.store.db.prepare(
+      "SELECT 1 FROM grants g JOIN accounts a ON a.id=g.principal WHERE g.principal_kind='user' AND g.scope='global' AND g.permission='admin' AND g.revoked_at IS NULL AND a.disabled=0 AND EXISTS(SELECT 1 FROM memberships m WHERE m.account=a.id AND m.status='active') LIMIT 1",
+    ).get();
+  }
+  snapshot(account: string): IdentitySnapshot {
+    return this.store.transaction(() => {
+      this.authenticate(account);
+      const memberships = this.store.db.prepare(
+        'SELECT m.club,c.title,m.status,m.roles,h.account AS chair,COALESCE(h.epoch,0) AS epoch FROM memberships m JOIN clubs c ON c.id=m.club LEFT JOIN chairs h ON h.club=m.club WHERE m.account=? ORDER BY m.club',
+      ).all(account).map(row => ({
+        club: String(row.club), title: String(row.title),
+        status: row.status as Membership['status'],
+        roles: JSON.parse(String(row.roles)) as string[],
+        chair: row.status === 'active' && row.chair === account, epoch: Number(row.epoch),
+      }));
+      const grants = this.store.db.prepare(
+        "SELECT id,scope,permission FROM grants WHERE principal_kind='user' AND principal=? AND revoked_at IS NULL ORDER BY scope,permission,id",
+      ).all(account).map(row => ({
+        id: String(row.id), scope: String(row.scope), permission: String(row.permission),
+      }));
+      const successions = this.store.db.prepare(
+        "SELECT id,club,proposed_by,epoch FROM successions WHERE nominee=? AND status='open' ORDER BY created_at,id",
+      ).all(account).map(row => ({
+        id: String(row.id), club: String(row.club),
+        proposedBy: String(row.proposed_by), epoch: Number(row.epoch),
+      }));
+      return {
+        account, memberships, grants, successions,
+        siteAdmin: this.decide(account, 'global', 'admin'),
+        muaAdmin: this.decide(account, 'service:mua', 'admin'),
+      };
+    });
+  }
+  members(actor: string, club: string) {
+    return this.authorized(actor, `club:${club}`, 'members.manage', () => ({
+      members: this.store.db.prepare(
+        'SELECT m.account,a.name,m.status,m.source,m.roles,m.since,m.revoked_at,a.disabled FROM memberships m JOIN accounts a ON a.id=m.account WHERE m.club=? ORDER BY a.name,m.account',
+      ).all(club).map(row => ({ ...row, roles: JSON.parse(String(row.roles)) as string[] })),
+    }));
+  }
+  successions(actor: string, club: string) {
+    return this.authorized(actor, `club:${club}`, 'chairs.manage', () => ({
+      successions: this.store.db.prepare(
+        'SELECT id,proposed_by,nominee,status,epoch,created_at,closed_at FROM successions WHERE club=? ORDER BY created_at DESC,id',
+      ).all(club),
+    }));
+  }
+  listGrants(actor: string, scope: string) {
+    return this.authorized(actor, scope, 'grants.manage', () => ({
+      grants: this.store.db.prepare(
+        'SELECT id,principal_kind,principal,permission,granted_by,granted_at FROM grants WHERE scope=? AND revoked_at IS NULL ORDER BY granted_at,id',
+      ).all(scope),
+    }));
+  }
+  grantPermission(actor: string, account: string, scope: string, permission: string) {
+    requireThat(isPermission(permission) && permission !== 'president', 'Grantable permission required');
+    return this.authorized(actor, scope, ['grants.manage', permission], () => {
+      requireThat(this.parent(scope as Scope) !== undefined && this.enabled(account), 'Known scope and enabled account required');
+      let current: Scope | null | undefined = scope as Scope;
+      while (current) {
+        const parsed = parseScope(current)!;
+        if (parsed.kind === 'club')
+          requireThat(this.membership(account, parsed.id!)?.status === 'active', 'Active grantee membership required');
+        current = this.parent(current);
+      }
+      requireThat(permission !== 'accounts.disable' || scope === 'global', 'Global grant required');
+      const existing = this.store.db.prepare(
+        "SELECT id FROM grants WHERE principal_kind='user' AND principal=? AND scope=? AND permission=? AND revoked_at IS NULL",
+      ).get(account, scope, permission);
+      if (existing) return String(existing.id);
+      const id = randomUUID();
+      this.store.db.prepare("INSERT INTO grants VALUES(?,'user',?,?,?,?,?,NULL,NULL)")
+        .run(id, account, scope, permission, actor, now());
+      appendAudit(this.store, actor, scope, 'grant_permission', id, { account, permission });
+      return id;
+    });
+  }
+  revokeGrant(actor: string, id: string) {
+    const grant = this.store.db.prepare('SELECT scope,permission,revoked_at FROM grants WHERE id=?').get(id);
+    requireThat(grant, 'Grant not found');
+    this.authorized(actor, String(grant.scope), ['grants.manage', String(grant.permission)], () => {
+      if (grant.revoked_at !== null) return;
+      this.store.db.prepare('UPDATE grants SET revoked_at=?,revoked_by=? WHERE id=?')
+        .run(now(), actor, id);
+      appendAudit(this.store, actor, String(grant.scope), 'revoke_grant', id, {});
+    });
+  }
+  disableAccount(actor: string, account: string) {
+    this.authorized(actor, 'global', 'accounts.disable', () => {
+      requireThat(this.store.account('id', account), 'Account not found');
+      this.store.db.prepare('UPDATE accounts SET disabled=1 WHERE id=?').run(account);
+      this.revokeSessions(account);
+      appendAudit(this.store, actor, 'global', 'disable_account', account, {});
+    });
+  }
+  private revokeSessions(account: string) {
+    this.store.db.prepare('DELETE FROM tokens WHERE account=?').run(account);
+    for (const table of ['oauth_refresh', 'oauth_devices']) {
+      if (this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))
+        this.store.db.prepare(`DELETE FROM ${table} WHERE account=?`).run(account);
+    }
+  }
   private membership(account: string, club: string) {
     return this.store.db.prepare('SELECT status,roles FROM memberships WHERE account=? AND club=?')
       .get(account, club) as Membership | undefined;
@@ -73,12 +183,16 @@ export class LocalIdentity {
   }
 
   /** Keep the decision and mutation under one write lock, retaining failed decisions. */
-  private authorized<T>(actor: string, scope: string, permission: string, action: () => T): T {
+  private authorized<T>(actor: string, scope: string, permission: string | readonly string[], action: () => T): T {
     const result = this.store.transaction((): { value: T } | { error: unknown } => {
-      if (!this.decide(actor, scope, permission)) return { error: new Rejected('Local authority required') };
+      for (const required of typeof permission === 'string' ? [permission] : permission) {
+        if (!this.decide(actor, scope, required)) return { error: new Rejected('Local authority required') };
+      }
+      const hadAdministrator = this.hasSiteAdministrator();
       this.store.db.exec('SAVEPOINT identity_action');
       try {
         const value = action();
+        requireThat(!hadAdministrator || this.hasSiteAdministrator(), 'An active site administrator must remain');
         this.store.db.exec('RELEASE identity_action');
         return { value };
       } catch (error) {
@@ -93,14 +207,18 @@ export class LocalIdentity {
   /** One-time configuration import. Revoked grants are never reseeded on restart. */
   seedAdmins(siteAdmins: readonly string[], muaAdmins: readonly string[]) {
     this.store.transaction(() => {
-      if (this.store.db.prepare("SELECT 1 FROM identity_seeds WHERE name='admins'").get()) return;
-      for (const [scope, accounts] of [['global', siteAdmins], ['service:mua', muaAdmins]] as const)
+      for (const [name, scope, accounts] of [
+        ['site_admins', 'global', siteAdmins],
+        ['mua_admins', 'service:mua', muaAdmins],
+      ] as const) {
+        if (accounts.length === 0 || this.store.db.prepare('SELECT 1 FROM identity_seeds WHERE name=?').get(name)) continue;
         for (const account of new Set(accounts)) {
           this.store.db.prepare("INSERT INTO grants VALUES(?,'user',?,?,'admin','config',?,NULL,NULL)")
             .run(randomUUID(), account, scope, now());
           appendAudit(this.store, 'config', scope, 'seed_admin', account, { permission: 'admin' }, 'system');
         }
-      this.store.db.prepare("INSERT INTO identity_seeds VALUES('admins')").run();
+        this.store.db.prepare('INSERT INTO identity_seeds VALUES(?)').run(name);
+      }
     });
   }
 
@@ -108,7 +226,7 @@ export class LocalIdentity {
   configureSchools(schools: Record<string, School>) {
     this.store.transaction(() => {
       for (const [school, config] of Object.entries(schools)) {
-        const club = config.identity?.club ?? school;
+        const club = config.club ?? school;
         this.store.db.prepare("INSERT INTO clubs VALUES(?,?,'school',?) ON CONFLICT(id) DO NOTHING")
           .run(club, school, school);
         requireThat(this.store.db.prepare('SELECT school FROM clubs WHERE id=?').get(club)!.school === school,
@@ -125,7 +243,7 @@ export class LocalIdentity {
     const parts = a.email.toLowerCase().split('@');
     requireThat(school && parts.length === 2 && school.emailDomains.some(d => d.toLowerCase() === parts[1]),
       'Unsupported school email');
-    const club = school.identity?.club ?? a.school;
+    const club = school.club ?? a.school;
     if (this.membership(account, club)) return;
     const inserted = this.store.db.prepare(
       "INSERT INTO memberships(account,club,status,source,roles,since) VALUES(?,?,'active','email_domain','[]',?)",
@@ -146,12 +264,7 @@ export class LocalIdentity {
         "UPDATE grants SET revoked_at=?,revoked_by=? WHERE revoked_at IS NULL AND principal_kind='user' AND principal=? AND (scope=? OR scope IN (SELECT 'service:'||id FROM services WHERE club=?))",
       ).run(now(), actor, account, `club:${club}`, club);
       if (!this.store.db.prepare("SELECT 1 FROM memberships WHERE account=? AND status='active'").get(account)) {
-        this.store.db.prepare('DELETE FROM tokens WHERE account=?').run(account);
-        // These tables are owned by the optional connect routes.
-        for (const table of ['oauth_refresh', 'oauth_devices']) {
-          if (this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))
-            this.store.db.prepare(`DELETE FROM ${table} WHERE account=?`).run(account);
-        }
+        this.revokeSessions(account);
       }
       appendAudit(this.store, actor, `club:${club}`, 'revoke_membership', account, {});
     });
@@ -159,6 +272,7 @@ export class LocalIdentity {
 
   proposeSuccession(actor: string, club: string, nominee: string): string {
     return this.authorized(actor, `club:${club}`, 'chairs.manage', () => {
+      this.checkSelfNomination(actor, nominee, club);
       requireThat(this.enabled(nominee) && this.membership(nominee, club)?.status === 'active',
         'Nominee must be an active club member');
       const id = randomUUID();
@@ -175,6 +289,7 @@ export class LocalIdentity {
     const proposal = this.store.db.prepare('SELECT * FROM successions WHERE id=?').get(id) as Succession | undefined;
     requireThat(proposal && proposal.status === 'open' && proposal.nominee === actor, 'Open nomination required');
     this.authorized(proposal.proposed_by, `club:${proposal.club}`, 'chairs.manage', () => {
+      this.checkSelfNomination(proposal.proposed_by, actor, proposal.club);
       requireThat(this.store.db.prepare("SELECT 1 FROM successions WHERE id=? AND status='open'").get(id),
         'Open nomination required');
       requireThat(this.enabled(actor) && this.membership(actor, proposal.club)?.status === 'active',
@@ -187,5 +302,11 @@ export class LocalIdentity {
         .run(id, now(), proposal.club);
       appendAudit(this.store, actor, `club:${proposal.club}`, 'accept_succession', id, { epoch: proposal.epoch });
     });
+  }
+  private checkSelfNomination(actor: string, nominee: string, club: string) {
+    if (actor !== nominee || this.chair(club)?.account === actor) return;
+    requireThat(this.store.db.prepare(
+      "SELECT 1 FROM grants WHERE principal_kind='user' AND principal=? AND scope='global' AND permission='admin' AND revoked_at IS NULL",
+    ).get(actor), 'Self-nomination requires chair or site administrator authority');
   }
 }

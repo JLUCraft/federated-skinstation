@@ -2,6 +2,7 @@ import { createPrivateKey, createPublicKey, verify } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { isSecretName, type SecretState } from './secret-state.js';
 import { registerMemberFeatures } from './mua-member.js';
+import type { LocalIdentity } from './permissions.js';
 import { bearer, boundedValue, boundedJson, field, record } from './validate.js';
 import { Store, digest, now, requireThat, secret, type Account } from './store.js';
 
@@ -95,6 +96,7 @@ export async function registerMua(
   origin: string,
   authorize: (account: Account) => Promise<void>,
   organization: string,
+  identity: LocalIdentity,
   fetcher: typeof fetch = fetch,
   secrets?: SecretState,
 ) {
@@ -349,6 +351,7 @@ export async function registerMua(
       origin,
       memberFetch,
       memberKey,
+      identity,
     );
   if (!config.oauth) return;
   const oauth = config.oauth;

@@ -18,5 +18,5 @@ export async function site(mua?:MuaConfig,muaFetch?:typeof fetch,organization?:s
   await post('/api/email/confirm',{email:account.email,code});
   return (await post('/authserver/authenticate',{username:account.email,password:account.password,requestUser:true})).json();
  }
- return {app,dir,keys,post,enroll,close:async()=>{await app.close();await rm(dir,{recursive:true,force:true});}};
+ return {app,dir,keys,config,verificationCode:()=>code,post,enroll,close:async()=>{await app.close();await rm(dir,{recursive:true,force:true});}};
 }

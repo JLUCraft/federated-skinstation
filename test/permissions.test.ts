@@ -117,22 +117,25 @@ test('revocation keeps other-club tokens and grants, then removes all token fami
   try {
     const login = await s.enroll('Alice');
     const id = login.user.id as string;
+    const root: Account = { id: 'root', name: 'Root', email: 'root@school.test', school: 'jlu', password: 'unused', verified_at: 0 };
+    store.confirm(root.email, store.challenge(root, now()), now(),
+      account => identity.enrollVerifiedEmail(account, s.config.schools));
     store.db.prepare("INSERT INTO clubs VALUES('other','Other','school','other')").run();
     store.db.prepare("INSERT INTO memberships VALUES(?,'other','active','import','[]',?,NULL)").run(id, now());
     for (const [grantId, scope] of [['club', 'club:jlu'], ['service', 'service:owned'], ['other', 'club:other']])
       store.db.prepare("INSERT INTO grants VALUES(?,'user',?,?,'read','test',?,NULL,NULL)").run(grantId, id, scope, now());
     store.db.prepare("INSERT INTO services VALUES('owned','jlu','owned','key',?,?)").run(id, now());
-    store.db.prepare("INSERT INTO grants VALUES('root','user',?,'global','admin','test',?,NULL,NULL)").run(id, now());
+    store.db.prepare("INSERT INTO grants VALUES('root','user',?,'global','admin','test',?,NULL,NULL)").run(root.id, now());
     store.db.prepare("INSERT INTO oauth_refresh VALUES('refresh',?,?, 'client','scope',?)").run(id, id, now() + 100);
     store.db.prepare("INSERT INTO oauth_devices VALUES('device','CODE','client','scope',?,?,NULL,0,0)").run(now() + 100, id);
     store.join(login.accessToken, id, 'server', now());
-    identity.revokeMembership(id, id, 'jlu');
+    identity.revokeMembership(root.id, id, 'jlu');
     assert.equal(store.token(login.accessToken, undefined, now()).id, id);
     assert.notEqual(store.db.prepare("SELECT revoked_at FROM grants WHERE id='club'").get()!.revoked_at, null);
     assert.notEqual(store.db.prepare("SELECT revoked_at FROM grants WHERE id='service'").get()!.revoked_at, null);
     assert.equal(store.db.prepare("SELECT revoked_at FROM grants WHERE id='other'").get()!.revoked_at, null);
     assert.equal(store.db.prepare('SELECT count(*) AS n FROM oauth_refresh').get()!.n, 1);
-    identity.revokeMembership(id, id, 'other');
+    identity.revokeMembership(root.id, id, 'other');
     assert.throws(() => store.token(login.accessToken, undefined, now()));
     for (const table of ['tokens', 'joins', 'oauth_refresh', 'oauth_devices'])
       assert.equal(store.db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n, 0);
@@ -164,6 +167,9 @@ test('admin configuration seeds once, scopes MUA authority, and never revives re
   const store = new Store(':memory:');
   t.after(() => store.close());
   const identity = new LocalIdentity(store);
+  identity.seedAdmins([], []);
+  assert.equal(store.db.prepare('SELECT count(*) AS total FROM identity_seeds').get()!.total, 0);
+  identity.seedAdmins([], ['mua']);
   identity.seedAdmins(['site', 'site'], ['mua']);
   assert.equal(identity.authorize('site', 'global', 'admin'), false);
   for (const id of ['site', 'mua'])

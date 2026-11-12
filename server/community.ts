@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { Store, now, requireThat } from './store.js';
 import { bearer, field, record } from './validate.js';
+import type { LocalIdentity } from './permissions.js';
 import { TEXTURE_PAGE_SIZE } from '../shared/wardrobe.js';
 import {
   MAX_LIST_OFFSET,
@@ -49,14 +50,14 @@ export function notify(
 export function registerCommunity(
   app: FastifyInstance,
   db: Store,
-  admins: string[],
+  identity: LocalIdentity,
 ) {
   communitySchema(db);
   const account = (header: unknown) =>
     db.token(bearer(header), undefined, now());
   const admin = (header: unknown) => {
     const a = account(header);
-    requireThat(admins.includes(a.id), 'Site administrator required');
+    requireThat(identity.authorize(a.id, 'global', 'admin'), 'Site administrator required');
     return a;
   };
   app.put('/api/me/avatar', async (req) => {

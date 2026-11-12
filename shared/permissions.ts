@@ -1,4 +1,3 @@
-/** P0 permission catalog. Business permissions belong here when their owners ship. */
 export const PERMISSIONS = {
   admin: { globalOnly: false },
   manage: { globalOnly: false },
@@ -23,8 +22,9 @@ export function isPermission(value: string): value is Permission {
   return Object.hasOwn(PERMISSIONS, value);
 }
 export function permissionImplies(held: string, requested: Permission): boolean {
+  if (requested === 'president') return false;
   return held === requested || held === 'admin' ||
-    (!PERMISSIONS[requested].globalOnly && held === 'manage');
+    (!PERMISSIONS[requested].globalOnly && requested !== 'admin' && held === 'manage');
 }
 export const ROLE_PERMISSIONS: Readonly<Record<string, readonly Permission[]>> = {
   president: ['manage'],

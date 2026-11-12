@@ -4,6 +4,8 @@ import Fastify from 'fastify';
 import { Store, now, digest } from '../server/store.js';
 import { registerWardrobe } from '../server/wardrobe.js';
 import { registerCommunity } from '../server/community.js';
+import { LocalIdentity } from '../server/permissions.js';
+import { authority } from './helpers/identity.js';
 
 test('community publication, moderation, privacy, counters and ownership form one workflow', async () => {
   const db = new Store(':memory:'),
@@ -23,8 +25,9 @@ test('community publication, moderation, privacy, counters and ownership form on
     };
     db.confirm(a.email, db.challenge(a, now()), now());
   }
-  registerWardrobe(app, db, ['admin']);
-  registerCommunity(app, db, ['admin']);
+  const identity = authority(db, ['admin']);
+  registerWardrobe(app, db, identity);
+  registerCommunity(app, db, identity);
   const headers = (id: string) => ({
     authorization: `Bearer ${db.mint(id, 'community', now())}`,
   });
@@ -332,8 +335,9 @@ function communityFixture(admins: string[]) {
     };
     db.confirm(account.email, db.challenge(account, now()), now());
   }
-  registerWardrobe(app, db, admins);
-  registerCommunity(app, db, admins);
+  const identity = authority(db, admins);
+  registerWardrobe(app, db, identity);
+  registerCommunity(app, db, identity);
   const headers = (id: string) => ({
     authorization: `Bearer ${db.mint(id, 'community-regression', now())}`,
   });
@@ -456,7 +460,7 @@ test('deleting a collected copy updates author counts and preserves event notice
 test('community routes initialize their schema without wardrobe route registration', async () => {
   const db = new Store(':memory:');
   const app = Fastify();
-  registerCommunity(app, db, []);
+  registerCommunity(app, db, new LocalIdentity(db));
   try {
     assert.equal((await app.inject('/api/announcements')).statusCode, 200);
     assert.deepEqual((await app.inject('/api/announcements')).json(), { announcements: [] });

@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IdentitySnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["account", "memberships", "grants", "successions", "siteAdmin", "muaAdmin"],
+  "properties": {
+    "account": { "type": "string" },
+    "siteAdmin": { "type": "boolean" },
+    "muaAdmin": { "type": "boolean" },
+    "memberships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["club", "title", "status", "roles", "chair", "epoch"],
+        "properties": {
+          "club": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "enum": ["active", "revoked"] },
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "chair": { "type": "boolean" },
+          "epoch": { "type": "integer" }
+        }
+      }
+    },
+    "grants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "scope", "permission"],
+        "properties": {
+          "id": { "type": "string" },
+          "scope": { "type": "string" },
+          "permission": { "type": "string" }
+        }
+      }
+    },
+    "successions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "club", "proposedBy", "epoch"],
+        "properties": {
+          "id": { "type": "string" },
+          "club": { "type": "string" },
+          "proposedBy": { "type": "string" },
+          "epoch": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

@@ -65,7 +65,7 @@ function libraryFilter(query: Record<string, unknown>): LibraryFilter {
 export function registerWardrobe(
   app: FastifyInstance,
   db: Store,
-  admins: string[],
+  identity: import('./permissions.js').LocalIdentity,
 ) {
   communitySchema(db);
   const account = (header: string | undefined) => {
@@ -379,7 +379,7 @@ export function registerWardrobe(
       'Collected textures cannot be published',
     );
     requireThat(
-      !body.published || admins.length > 0,
+      !body.published || identity.hasSiteAdministrator(),
       'Publication requires a site administrator',
     );
     const title = body.title.trim();

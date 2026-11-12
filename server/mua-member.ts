@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Store, requireThat, digest, secret, now } from './store.js';
 import { bearer, field, record } from './validate.js';
 import type { MuaConfig } from './mua.js';
+import type { LocalIdentity } from './permissions.js';
 
 const string = field;
 const object = record;
@@ -24,6 +25,7 @@ export async function registerMemberFeatures(
   origin: string,
   memberFetch: MemberFetch,
   memberKey: () => string,
+  identity: LocalIdentity,
 ) {
   const authenticate = (req: FastifyRequest) => {
     return db.token(bearer(req.headers.authorization), undefined, now());
@@ -31,7 +33,7 @@ export async function registerMemberFeatures(
   const admin = (req: FastifyRequest) => {
     const a = authenticate(req);
     requireThat(
-      config.member?.adminAccounts?.includes(a.id),
+      identity.authorize(a.id, 'service:mua', 'admin'),
       'Administrator required',
     );
     return a;

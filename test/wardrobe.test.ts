@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { Store } from '../server/store.js';
 import { registerCommunity } from '../server/community.js';
 import { registerWardrobe } from '../server/wardrobe.js';
+import { authority } from './helpers/identity.js';
 
 test('wardrobe publication, collection, ownership and applying survive source removal', async () => {
   const db = new Store(':memory:'),
@@ -23,8 +24,9 @@ test('wardrobe publication, collection, ownership and applying survive source re
   db.db
     .prepare('INSERT INTO profile_textures VALUES(?,?,?,?)')
     .run('alice', 'skin', 'a'.repeat(64), 'slim');
-  registerWardrobe(app, db, ['alice']);
-  registerCommunity(app, db, ['alice']);
+  const identity = authority(db, ['alice']);
+  registerWardrobe(app, db, identity);
+  registerCommunity(app, db, identity);
   db.db
     .prepare('INSERT INTO wardrobe VALUES(?,?,?,?,?,?,?)')
     .run('item', 'alice', '', 'skin', 'a'.repeat(64), 'slim', 0);
@@ -178,8 +180,9 @@ test('library search, tags, likes and sorting are enforced by the server', async
     };
     db.confirm(a.email, db.challenge(a, now), now);
   }
-  registerWardrobe(app, db, ['alice']);
-  registerCommunity(app, db, ['alice']);
+  const identity = authority(db, ['alice']);
+  registerWardrobe(app, db, identity);
+  registerCommunity(app, db, identity);
   const insert = db.db.prepare('INSERT INTO wardrobe VALUES(?,?,?,?,?,?,?)');
   insert.run(
     'one',

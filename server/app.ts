@@ -13,7 +13,6 @@ import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { PNG } from 'pngjs';
 import nodemailer from 'nodemailer';
-import { peerIdFromString } from '@libp2p/peer-id';
 import {
   Store,
   Rejected,
@@ -32,12 +31,7 @@ const VERSION = createRequire(import.meta.url)('../package.json')
   .version as string;
 import { type School } from './school.js';
 import { LocalIdentity } from './permissions.js';
-import {
-  GAME_PROFILE,
-  identityProposal,
-  confirmIdentity,
-  authorizeAccount,
-} from './unified-identity.js';
+import { registerIdentity } from './identity.js';
 import { registerMua, type MuaConfig } from './mua.js';
 import { registerCommunity } from './community.js';
 import { registerWardrobe } from './wardrobe.js';
@@ -122,9 +116,7 @@ export async function build(
     return payload;
   });
   const authorize = async (account: Account) => {
-    const school = config.schools[account.school];
-    requireThat(school);
-    await authorizeAccount(db, account, school);
+    localIdentity.authenticate(account.id);
   };
   app.addHook('preHandler', async (req) => {
     if (
@@ -323,8 +315,9 @@ export async function build(
     organization,
   });
   registerPasskeys(app, db, config.origin, authorize, organization);
-  registerWardrobe(app, db, config.siteAdmins ?? []);
-  registerCommunity(app, db, config.siteAdmins ?? []);
+  registerIdentity(app, db, localIdentity);
+  registerWardrobe(app, db, localIdentity);
+  registerCommunity(app, db, localIdentity);
   app.get('/api/capabilities', async () => ({
     schools: Object.keys(config.schools).map((id) => ({
       id,
@@ -564,53 +557,10 @@ export async function build(
       textures: db.db
         .prepare('SELECT kind,hash,model FROM profile_textures WHERE account=?')
         .all(a.id),
-      siteAdmin: config.siteAdmins?.includes(a.id) ?? false,
+      siteAdmin: localIdentity.authorize(a.id, 'global', 'admin'),
       avatar: db.db.prepare('SELECT hash FROM site_avatars WHERE account=?').get(a.id)?.hash ?? null,
-      muaAdmin: config.mua?.member?.adminAccounts?.includes(a.id) ?? false,
+      muaAdmin: localIdentity.authorize(a.id, 'service:mua', 'admin'),
     };
-  });
-  app.post('/api/identity/proposal', async (req) => {
-    const account = db.token(
-      bearer(req.headers.authorization),
-      undefined,
-      now(),
-    );
-    const body = obj(req.body);
-    const holder = text(body.holder);
-    try {
-      peerIdFromString(holder);
-    } catch {
-      throw new Rejected('Invalid holder.', 400, 'Bad Request');
-    }
-    const school = config.schools[account.school];
-    requireThat(school);
-    requireThat(body.kind === 'membership' || body.kind === 'profile');
-    return identityProposal(
-      db,
-      account,
-      holder,
-      school,
-      body.kind === 'profile',
-      body.profileId === undefined
-        ? db.profileId(account)
-        : db.ownProfile(account, text(body.profileId, 32)).id,
-    );
-  });
-  app.post('/api/identity/confirm', async (req) => {
-    const account = db.token(
-      bearer(req.headers.authorization),
-      undefined,
-      now(),
-    );
-    const school = config.schools[account.school];
-    requireThat(school);
-    const record = obj(req.body).record;
-    const action = obj(obj(record).action);
-    const profileId =
-      action.type === 'bind_attribute' && action.kind === GAME_PROFILE
-        ? db.ownProfile(account, text(action.value, 32)).id
-        : db.profileId(account);
-    return confirmIdentity(db, account, school, record, profileId);
   });
   const saveTexture = async (
     account: Account,
@@ -733,6 +683,7 @@ export async function build(
         config.origin,
         authorize,
         organization,
+        localIdentity,
         dependencies.muaFetch,
         secrets,
       );

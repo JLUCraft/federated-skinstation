@@ -47,7 +47,7 @@ League, event, and workflow scopes parse but have no local resource implementati
 and deny scoped authorization until their ownership is implemented.
 
 The catalog contains `admin`, `manage`, `president`, `read`, `write`,
-`members.manage`, `chairs.manage`, `grants.manage`, `services.manage`, and
+`members.manage`, `chairs.manage`, `grants.manage`, `services.manage`, `accounts.recover`, and
 the global-only `accounts.disable`. Scoped `manage` covers scoped permissions
 except `admin` and the derived `president`; it cannot grant global-only authority.
 Grant creation requires both grant-management authority and the permission being
@@ -95,6 +95,27 @@ The current HTTP management surface uses Yggdrasil Bearer access tokens:
   `POST /api/identity/grants` accepts `account`, `scope`, and `permission`;
   `DELETE /api/identity/grants/:id` revokes a grant.
 - `POST /api/admin/accounts/:account/disable` disables an account and revokes its sessions.
+- `GET /api/clubs` returns manageable clubs and server-computed action availability.
+  Member and grant responses use the named definitions in the identity contract;
+  grant metadata includes only permissions the caller can delegate.
+- `POST /api/clubs/:club/recoveries` sends a recovery confirmation to a new mailbox;
+  `POST /api/recovery/confirm` accepts that confirmation and a new password.
+
+The portal's club management page provides membership, succession, grant,
+disablement, and recovery actions using those server-reported permissions.
+The login page links to the recovery confirmation form. Recovery belongs to the
+account's configured home club, requires `accounts.recover`, and confirms the new
+mailbox within 15 minutes. An account with global grants requires a global
+administrator to initiate recovery. Confirmation rechecks the initiating
+authority, the target's active membership, and expiry, then changes the email and
+password under one transaction. It retains the account ID, profiles, memberships,
+and grants, revokes previous session families and passkeys, and consumes the
+confirmation. Migration 4 owns the pending recovery records and the account's
+server-owned credential revision. Every token issuance rechecks the account
+snapshot against that revision; session revocation advances it, fencing password,
+OAuth, or passkey authentication that was still in progress before revocation.
+Password constraints
+originate in the identity contract and are shared by the service and portal.
 
 Grant revocation requires the permission being removed as well as grant-management
 authority. Once an enabled global administrator with active membership exists,

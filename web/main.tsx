@@ -18,6 +18,8 @@ import { PasskeysPanel, loginWithPasskey } from './PasskeysPanel';
 import { ConnectPanel } from './ConnectPanel';
 import { DevicePanel } from './DevicePanel';
 import { ApiError, apiRequest, errorText } from './api';
+import { IdentityPanel, RecoveryPanel } from './IdentityPanel';
+import { PASSWORD_RULES } from '../shared/identity';
 
 type MsgKind = 'success' | 'error';
 type AuthTab = 'login' | 'register' | 'reset';
@@ -30,6 +32,7 @@ type Page =
   | 'wardrobe'
   | 'library'
   | 'account'
+  | 'clubs'
   | 'community';
 const SUCCESS_NOTICE_MS = 6000;
 /** Decorative marks for the static value list; never announced. */
@@ -64,6 +67,9 @@ function App() {
   const [schools, setSchools] = useState<SchoolOption[]>([]);
   const [capsLoading, setCapsLoading] = useState(true);
   const [page, setPage] = useState<Page>('login');
+  const [recovering, setRecovering] = useState(
+    () => new URLSearchParams(window.location.search).get('recover') === '1',
+  );
   const [deviceCode, setDeviceCode] = useState(
     () => new URLSearchParams(window.location.search).get('user_code') ?? '',
   );
@@ -164,6 +170,7 @@ function App() {
   /** Detail and author pages belong to the library section, so keep that nav item lit. */
   const activePage: Page | null = publicView ? 'library' : view;
   function goto(next: Page) {
+    setRecovering(false);
     setPublicPath('');
     if (publicView) window.history.pushState(null, '', '/portal/');
     if (next === 'notifications') refreshNotices();
@@ -367,7 +374,7 @@ function App() {
               ...(token && siteAdmin
                 ? ([['admin', t('站点管理')]] as const)
                 : []),
-              ...(token ? ([['account', t('账号安全')]] as const) : []),
+              ...(token ? ([['clubs', t('社团管理')], ['account', t('账号安全')]] as const) : []),
               ...(token && (muaEnabled || muaMember)
                 ? ([['community', t('高校社区')]] as const)
                 : []),
@@ -411,7 +418,7 @@ function App() {
         />
       ) : (
         <div
-          className={`portal-body${view === 'login' && !deviceCode ? ' auth-layout' : ''}`}
+          className={`portal-body${view === 'login' && !deviceCode && !recovering ? ' auth-layout' : ''}`}
         >
           {view === 'login' && deviceCode && (
             <section
@@ -441,7 +448,14 @@ function App() {
               }}
             />
           )}
-          {view === 'login' && !deviceCode && (
+          {view === 'login' && !deviceCode && recovering && (
+            <RecoveryPanel onCancel={() => setRecovering(false)} onDone={() => {
+              setRecovering(false);
+              setPassword('');
+              notify(t('账号已恢复，请重新登录'), 'success');
+            }} />
+          )}
+          {view === 'login' && !deviceCode && !recovering && (
             <div className="hero">
               <p className="hero-lead">
                 {t('一个账号，进入各高校的 Minecraft 服务器。')}
@@ -461,7 +475,7 @@ function App() {
               </ul>
             </div>
           )}
-          {(view === 'login' || (token && view === 'account')) && (
+          {((view === 'login' && !recovering) || (token && view === 'account')) && (
             <section
               className={`panel${view === 'login' ? ' panel--narrow' : ''}`}
               aria-label={token ? undefined : t('登录或注册')}
@@ -532,7 +546,7 @@ function App() {
                               autoComplete="current-password"
                               value={password}
                               onChange={(e) => setPassword(e.target.value)}
-                              minLength={12}
+                              minLength={PASSWORD_RULES.minLength}
                               required
                             />
                           </label>
@@ -574,6 +588,10 @@ function App() {
                         onClick={enterReset}
                       >
                         {t('忘记密码')}
+                      </button>
+                      <button type="button" className="btn btn--link" disabled={busy}
+                        onClick={() => setRecovering(true)}>
+                        {t('通过社团恢复账号')}
                       </button>
                     </div>
                   )}
@@ -644,7 +662,7 @@ function App() {
                                   className="input"
                                   type="password"
                                   autoComplete="new-password"
-                                  minLength={12}
+                                  minLength={PASSWORD_RULES.minLength}
                                   value={password}
                                   onChange={(e) => setPassword(e.target.value)}
                                   required
@@ -804,7 +822,7 @@ function App() {
                                   setPassword(e.target.value),
                                 )
                               }
-                              minLength={12}
+                              minLength={PASSWORD_RULES.minLength}
                               required
                               aria-describedby="password-hint"
                             />
@@ -908,6 +926,7 @@ function App() {
           {token && view === 'notifications' && (
             <Notifications token={token} onRead={refreshNotices} />
           )}
+          {token && view === 'clubs' && <IdentityPanel token={token} />}
           {token && siteAdmin && view === 'admin' && (
             <AdminPanel token={token} />
           )}
@@ -944,7 +963,7 @@ function App() {
         </div>
       )}
       <footer className="site-footer">
-        {t('JLUCraft 联邦皮肤站 · 兼容 Yggdrasil 外置登录')}
+        {t('JLUCraft 皮肤站')}
       </footer>
     </main>
   );

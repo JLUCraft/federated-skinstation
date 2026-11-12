@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
-  createAuthorizer, isPermission, parseScope, type Scope, type PermissionSource,
+  PERMISSIONS, createAuthorizer, isPermission, parseScope, type Scope, type Permission, type PermissionSource,
 } from '../shared/permissions.js';
-import type { IdentitySnapshot } from '../shared/contracts/generated.js';
+import type { ClubDirectory, ClubMembers, GrantList, IdentitySnapshot } from '../shared/contracts/generated.js';
 import { digest, now, requireThat, Rejected, type Store } from './store.js';
 import type { School } from './school.js';
 
@@ -27,6 +27,11 @@ export function appendAudit(
 
 export class LocalIdentity {
   constructor(readonly store: Store) {}
+  isGlobalAdministrator(account: string) {
+    return this.enabled(account) && !!this.store.db.prepare(
+      "SELECT 1 FROM grants WHERE principal_kind='user' AND principal=? AND scope='global' AND permission='admin' AND revoked_at IS NULL",
+    ).get(account);
+  }
   authenticate(account: string) {
     requireThat(this.enabled(account), 'Account disabled');
     requireThat(this.store.db.prepare(
@@ -67,11 +72,41 @@ export class LocalIdentity {
       };
     });
   }
-  members(actor: string, club: string) {
+  clubs(account: string): ClubDirectory {
+    return this.store.transaction(() => {
+      this.authenticate(account);
+      const clubs = this.store.db.prepare(
+        "SELECT c.id,c.title,a.name AS chair_name,COALESCE(h.epoch,0) AS epoch FROM clubs c LEFT JOIN chairs h ON h.club=c.id LEFT JOIN memberships m ON m.account=h.account AND m.club=c.id AND m.status='active' LEFT JOIN accounts a ON a.id=m.account AND a.disabled=0 ORDER BY c.title,c.id",
+      ).all().map(row => {
+        const id = String(row.id);
+        return {
+          id, title: String(row.title), chairName: row.chair_name === null ? null : String(row.chair_name),
+          epoch: Number(row.epoch),
+          permissions: {
+            members: this.decide(account, `club:${id}`, 'members.manage'),
+            chairs: this.decide(account, `club:${id}`, 'chairs.manage'),
+            grants: this.decide(account, `club:${id}`, 'grants.manage'),
+            recovery: this.decide(account, `club:${id}`, 'accounts.recover'),
+            selfNomination: this.canNominateSelf(account, id),
+          },
+        };
+      }).filter(club => club.permissions.members || club.permissions.chairs || club.permissions.grants || club.permissions.recovery);
+      return {
+        clubs,
+        globalGrants: this.decide(account, 'global', 'grants.manage'),
+        muaGrants: this.decide(account, 'service:mua', 'grants.manage'),
+        disableAccounts: this.decide(account, 'global', 'accounts.disable'),
+      };
+    });
+  }
+  members(actor: string, club: string): ClubMembers {
     return this.authorized(actor, `club:${club}`, 'members.manage', () => ({
       members: this.store.db.prepare(
-        'SELECT m.account,a.name,m.status,m.source,m.roles,m.since,m.revoked_at,a.disabled FROM memberships m JOIN accounts a ON a.id=m.account WHERE m.club=? ORDER BY a.name,m.account',
-      ).all(club).map(row => ({ ...row, roles: JSON.parse(String(row.roles)) as string[] })),
+        'SELECT m.account,a.name,m.status,m.roles,m.since,a.disabled FROM memberships m JOIN accounts a ON a.id=m.account WHERE m.club=? ORDER BY a.name,m.account',
+      ).all(club).map(row => ({
+        account: String(row.account), name: String(row.name), status: row.status as Membership['status'],
+        roles: JSON.parse(String(row.roles)) as string[], disabled: row.disabled === 1, since: Number(row.since),
+      })),
     }));
   }
   successions(actor: string, club: string) {
@@ -81,12 +116,23 @@ export class LocalIdentity {
       ).all(club),
     }));
   }
-  listGrants(actor: string, scope: string) {
-    return this.authorized(actor, scope, 'grants.manage', () => ({
-      grants: this.store.db.prepare(
-        'SELECT id,principal_kind,principal,permission,granted_by,granted_at FROM grants WHERE scope=? AND revoked_at IS NULL ORDER BY granted_at,id',
-      ).all(scope),
-    }));
+  listGrants(actor: string, scope: string): GrantList {
+    return this.authorized(actor, scope, 'grants.manage', () => {
+      requireThat(this.parent(scope as Scope) !== undefined, 'Known scope required');
+      return {
+        grants: this.store.db.prepare(
+          "SELECT g.id,g.principal_kind,g.principal,g.permission,g.granted_by,g.granted_at,a.name FROM grants g LEFT JOIN accounts a ON g.principal_kind='user' AND a.id=g.principal WHERE g.scope=? AND g.revoked_at IS NULL ORDER BY g.granted_at,g.id",
+        ).all(scope).map(row => ({
+          id: String(row.id), principal: String(row.principal),
+          principalKind: row.principal_kind as 'user' | 'service',
+          name: row.name === null ? null : String(row.name), permission: String(row.permission),
+          grantedBy: String(row.granted_by), grantedAt: Number(row.granted_at),
+        })),
+        grantablePermissions: (Object.keys(PERMISSIONS) as Permission[]).filter(permission =>
+          permission !== 'president' && (!PERMISSIONS[permission].globalOnly || scope === 'global') &&
+          this.decide(actor, scope, permission)),
+      };
+    });
   }
   grantPermission(actor: string, account: string, scope: string, permission: string) {
     requireThat(isPermission(permission) && permission !== 'president', 'Grantable permission required');
@@ -125,16 +171,9 @@ export class LocalIdentity {
     this.authorized(actor, 'global', 'accounts.disable', () => {
       requireThat(this.store.account('id', account), 'Account not found');
       this.store.db.prepare('UPDATE accounts SET disabled=1 WHERE id=?').run(account);
-      this.revokeSessions(account);
+      this.store.revokeSessions(account);
       appendAudit(this.store, actor, 'global', 'disable_account', account, {});
     });
-  }
-  private revokeSessions(account: string) {
-    this.store.db.prepare('DELETE FROM tokens WHERE account=?').run(account);
-    for (const table of ['oauth_refresh', 'oauth_devices']) {
-      if (this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))
-        this.store.db.prepare(`DELETE FROM ${table} WHERE account=?`).run(account);
-    }
   }
   private membership(account: string, club: string) {
     return this.store.db.prepare('SELECT status,roles FROM memberships WHERE account=? AND club=?')
@@ -183,7 +222,7 @@ export class LocalIdentity {
   }
 
   /** Keep the decision and mutation under one write lock, retaining failed decisions. */
-  private authorized<T>(actor: string, scope: string, permission: string | readonly string[], action: () => T): T {
+  authorized<T>(actor: string, scope: string, permission: string | readonly string[], action: () => T): T {
     const result = this.store.transaction((): { value: T } | { error: unknown } => {
       for (const required of typeof permission === 'string' ? [permission] : permission) {
         if (!this.decide(actor, scope, required)) return { error: new Rejected('Local authority required') };
@@ -264,7 +303,7 @@ export class LocalIdentity {
         "UPDATE grants SET revoked_at=?,revoked_by=? WHERE revoked_at IS NULL AND principal_kind='user' AND principal=? AND (scope=? OR scope IN (SELECT 'service:'||id FROM services WHERE club=?))",
       ).run(now(), actor, account, `club:${club}`, club);
       if (!this.store.db.prepare("SELECT 1 FROM memberships WHERE account=? AND status='active'").get(account)) {
-        this.revokeSessions(account);
+        this.store.revokeSessions(account);
       }
       appendAudit(this.store, actor, `club:${club}`, 'revoke_membership', account, {});
     });
@@ -304,9 +343,10 @@ export class LocalIdentity {
     });
   }
   private checkSelfNomination(actor: string, nominee: string, club: string) {
-    if (actor !== nominee || this.chair(club)?.account === actor) return;
-    requireThat(this.store.db.prepare(
-      "SELECT 1 FROM grants WHERE principal_kind='user' AND principal=? AND scope='global' AND permission='admin' AND revoked_at IS NULL",
-    ).get(actor), 'Self-nomination requires chair or site administrator authority');
+    requireThat(actor !== nominee || this.canNominateSelf(actor, club),
+      'Self-nomination requires chair or site administrator authority');
+  }
+  private canNominateSelf(actor: string, club: string) {
+    return this.chair(club)?.account === actor || this.isGlobalAdministrator(actor);
   }
 }

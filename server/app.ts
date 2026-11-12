@@ -315,7 +315,8 @@ export async function build(
     organization,
   });
   registerPasskeys(app, db, config.origin, authorize, organization);
-  registerIdentity(app, db, localIdentity);
+  registerIdentity(app, db, localIdentity, config.schools,
+    (email, confirmation) => mail(email, confirmation, '账号恢复'));
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);
   app.get('/api/capabilities', async () => ({
@@ -427,7 +428,7 @@ export async function build(
       return loginReply(
         a,
         db.transaction(() =>
-          db.mint(a.id, client, now(), db.profiles(a).length === 1),
+          db.mint(a, client, now(), db.profiles(a).length === 1),
         ),
         client,
         body.requestUser === true,
@@ -474,7 +475,10 @@ export async function build(
     requireThat(
       a && (await verifyPassword(text(b.password, 1024), a.password)),
     );
-    db.db.prepare('DELETE FROM tokens WHERE account=?').run(a.id);
+    db.transaction(() => {
+      db.requireCredentials(a);
+      db.revokeSessions(a.id);
+    });
     return reply.code(204).send();
   });
   app.post('/sessionserver/session/minecraft/join', async (req, reply) => {

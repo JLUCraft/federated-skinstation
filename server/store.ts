@@ -1,4 +1,5 @@
 import { MAX_PROFILES, type GameProfile } from '../shared/profiles.js';
+import { PASSWORD_RULES } from '../shared/identity.js';
 import { DatabaseSync } from 'node:sqlite';
 import {
   createHash,
@@ -38,18 +39,19 @@ export interface Account {
   password: string;
   verified_at: number;
   disabled?: number;
+  credential_revision?: number;
 }
 export async function encodePassword(password: string) {
   requireThat(
-    password.length >= 12 && Buffer.byteLength(password) <= 1024,
-    'Use a password of 12–1024 bytes',
+    password.length >= PASSWORD_RULES.minLength && Buffer.byteLength(password) <= PASSWORD_RULES.maxLength,
+    `Use a password of ${PASSWORD_RULES.minLength}–${PASSWORD_RULES.maxLength} bytes`,
   );
   const salt = randomBytes(16).toString('hex');
   const hash = (await derive(password, salt, 64)) as Buffer;
   return `scrypt$${salt}$${hash.toString('hex')}`;
 }
 export async function verifyPassword(password: string, encoded: string) {
-  if (Buffer.byteLength(password) > 1024) return false;
+  if (Buffer.byteLength(password) > PASSWORD_RULES.maxLength) return false;
   const [kind, salt, value] = encoded.split('$');
   if (kind !== 'scrypt' || !salt || !value) return false;
   const expected = Buffer.from(value, 'hex');
@@ -114,6 +116,16 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       INSERT OR IGNORE INTO identity_seeds SELECT 'mua_admins'
         WHERE EXISTS(SELECT 1 FROM grants WHERE principal_kind='user' AND granted_by='config' AND scope='service:mua' AND permission='admin');
       DELETE FROM identity_seeds WHERE name='admins';
+    `);
+  } },
+  { version: 4, apply(db) {
+    db.exec(`
+      ALTER TABLE accounts ADD COLUMN credential_revision INTEGER NOT NULL DEFAULT 0;
+      CREATE TABLE account_recoveries(
+        id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL REFERENCES accounts(id),
+        club TEXT NOT NULL REFERENCES clubs(id), requested_by TEXT NOT NULL REFERENCES accounts(id),
+        email TEXT NOT NULL COLLATE NOCASE, token TEXT NOT NULL, expires INTEGER NOT NULL
+      );
     `);
   } },
 ];
@@ -461,28 +473,42 @@ export class Store {
       this.db
         .prepare('DELETE FROM password_resets WHERE account=?')
         .run(account.id);
-      this.db.prepare('DELETE FROM tokens WHERE account=?').run(account.id);
+      this.revokeSessions(account.id);
       this.db.prepare('DELETE FROM challenges WHERE email=?').run(email);
     });
   }
-  mint(account: string, client: string, now: number, selectProfile = true) {
+  requireCredentials(account: Account) {
+    const current = this.account('id', account.id);
+    requireThat(current?.disabled === 0, 'Account disabled');
+    requireThat(current.credential_revision === account.credential_revision,
+      'Credentials changed; sign in again');
+  }
+  mint(account: Account, client: string, now: number, selectProfile = true) {
     requireThat(client.length <= 256);
-    requireThat(this.account('id', account)?.disabled === 0, 'Account disabled');
+    this.requireCredentials(account);
     const token = secret();
     this.db.prepare('DELETE FROM tokens WHERE expires<=?').run(now);
     this.db
       .prepare(
         'DELETE FROM tokens WHERE hash IN (SELECT hash FROM tokens WHERE account=? ORDER BY expires DESC LIMIT -1 OFFSET 9)',
       )
-      .run(account);
+      .run(account.id);
     this.db
       .prepare('INSERT INTO tokens VALUES(?,?,?,?)')
-      .run(digest(token), client, account, now + 86400);
+      .run(digest(token), client, account.id, now + 86400);
     if (!selectProfile)
       this.db
         .prepare('INSERT INTO token_profiles VALUES(?,NULL)')
         .run(digest(token));
     return token;
+  }
+  revokeSessions(account: string) {
+    this.db.prepare('UPDATE accounts SET credential_revision = credential_revision + 1 WHERE id=?').run(account);
+    this.db.prepare('DELETE FROM tokens WHERE account=?').run(account);
+    for (const table of ['oauth_refresh', 'oauth_devices']) {
+      if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))
+        this.db.prepare(`DELETE FROM ${table} WHERE account=?`).run(account);
+    }
   }
   token(token: string, client: string | undefined, now: number) {
     const row = this.db
@@ -516,7 +542,7 @@ export class Store {
         .prepare('SELECT client FROM tokens WHERE hash=?')
         .get(digest(token)) as { client: string };
       if (profile !== undefined) this.ownProfile(a, profile);
-      const next = this.mint(a.id, stored.client, now);
+      const next = this.mint(a, stored.client, now);
       this.db
         .prepare('INSERT INTO token_profiles VALUES(?,?)')
         .run(digest(next), profile ?? selected ?? null);

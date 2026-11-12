@@ -238,7 +238,7 @@ export function registerPasskeys(
         .prepare('UPDATE passkeys SET counter=? WHERE id=? AND counter=?')
         .run(result.authenticationInfo.newCounter, c.id, c.counter);
       requireThat(updated.changes === 1, 'Passkey changed; retry');
-      return db.mint(a.id, secret(), now());
+      return db.mint(a, secret(), now());
     });
     return {
       accessToken,

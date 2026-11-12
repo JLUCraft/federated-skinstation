@@ -9,6 +9,7 @@ export const PERMISSIONS = {
   'grants.manage': { globalOnly: false },
   'services.manage': { globalOnly: false },
   'accounts.disable': { globalOnly: true },
+  'accounts.recover': { globalOnly: false },
 } as const;
 export type Permission = keyof typeof PERMISSIONS;
 export type ScopeKind = 'club' | 'service' | 'league' | 'event' | 'workflow';

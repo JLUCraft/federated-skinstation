@@ -10,5 +10,12 @@ for (const filename of (await readdir(directory)).filter(name => name.endsWith('
     `export const ${variable} = ${JSON.stringify(schema, null, 2)} as const;`,
     `export type ${name} = FromSchema<typeof ${variable}>;`,
   );
+  for (const definition of Object.keys(schema.definitions ?? {})) {
+    const reference = definition[0].toLowerCase() + definition.slice(1) + 'Schema';
+    output.push(
+      `export const ${reference} = { ...${variable}.definitions.${definition}, definitions: ${variable}.definitions } as const;`,
+      `export type ${definition} = FromSchema<typeof ${reference}>;`,
+    );
+  }
 }
 await writeFile(new URL('generated.ts', directory), output.join('\n') + '\n');

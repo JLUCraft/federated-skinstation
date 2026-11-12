@@ -10,8 +10,8 @@ test('password recovery is single use, scoped, expiring and revokes game session
   db.confirm(a.email,db.challenge(a,100),100);
   const b={...a,id:'b',email:'b@school.test',name:'B'};
   db.confirm(b.email,db.challenge(b,100),100);
-  const token=db.mint('a','client',100);db.join(token,'a','game',100);
-  const other=db.mint('b','client',100);
+  const token=db.mint(db.account('id','a')!,'client',100);db.join(token,'a','game',100);
+  const other=db.mint(db.account('id','b')!,'client',100);
   const first=db.passwordReset(a.email,101)!;
   const code=db.passwordReset(a.email,102)!;
   assert.throws(()=>db.resetPassword(a.email,first,next,103));

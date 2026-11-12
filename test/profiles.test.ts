@@ -245,7 +245,7 @@ test('extra profile remapping preserves textures, rejects collisions and revokes
     const first = db.createProfile(account, 'Builder');
     const second = db.createProfile(account, 'Explorer');
     db.setTexture(account, first.id, 'skin', 'f'.repeat(64), 'slim');
-    const token = db.mint(account.id, 'client', now);
+    const token = db.mint(db.account('id', account.id)!, 'client', now);
     const next = 'b'.repeat(32);
     assert.throws(() => db.remapProfiles({ [first.id]: second.id }));
     assert.throws(() =>

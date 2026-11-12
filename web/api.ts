@@ -1,4 +1,19 @@
 import { t } from './i18n';
+const ERROR_MESSAGES: Record<string, string> = {
+  'Publication requires a site administrator': t('站点尚未配置管理员，暂时无法公开材质'),
+  'An active site administrator must remain': t('至少保留一位有效的站点管理员'),
+  'Local authority required': t('没有执行此操作的权限'),
+  'Active club membership required': t('请重新验证学校邮箱'),
+  'Account disabled': t('账号已停用'),
+  'Credentials changed; sign in again': t('登录凭据已更新，请重新登录'),
+  'Self-nomination requires chair or site administrator authority': t('仅现任会长或站点管理员可以提名自己'),
+  'Recovery belongs to the account home club': t('请联系账号所属社团处理恢复'),
+  'Site administrator required to recover global authority': t('此账号需要站点管理员恢复'),
+  'Active recovery membership required': t('恢复账号的成员资格已撤销'),
+  'Invalid recovery confirmation': t('恢复验证码无效或已过期'),
+  'Invalid or expired recovery confirmation': t('恢复验证码无效或已过期'),
+  'Recovery email already in use': t('该邮箱已被其他账号使用'),
+};
 type ApiOptions = {
   method?: string;
   token?: string;
@@ -44,8 +59,8 @@ export async function apiRequest(
   if (!response.ok) {
     const failure = await response.json().catch(() => null);
     const message =
-      failure?.errorMessage === 'Publication requires a site administrator'
-        ? t('站点尚未配置管理员，暂时无法公开材质')
+      typeof failure?.errorMessage === 'string' && Object.hasOwn(ERROR_MESSAGES, failure.errorMessage)
+        ? ERROR_MESSAGES[failure.errorMessage]
         : errorMessage;
     throw new ApiError(message, response.status);
   }

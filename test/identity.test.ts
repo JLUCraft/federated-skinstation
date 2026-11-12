@@ -113,7 +113,7 @@ test('HTTP membership revocation and account disablement invalidate every sessio
     assert.equal((await service.post('/authserver/authenticate', {
       username: 'alice@school.test', password: credentials.password,
     })).statusCode, 403);
-    assert.throws(() => store.mint(alice.user.id, 'client', now()), /Account disabled/);
+    assert.throws(() => store.mint(store.account('id', alice.user.id)!, 'client', now()), /Account disabled/);
   } finally {
     store.close();
     await service.close();

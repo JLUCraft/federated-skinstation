@@ -263,7 +263,7 @@ export function registerConnect(
   ) => {
     const scopes = scope.split(' ');
     const access = db.transaction(() => {
-      const token = db.mint(account.id, `oauth:${client}`, now(), false);
+      const token = db.mint(account, `oauth:${client}`, now(), false);
       db.db
         .prepare('UPDATE token_profiles SET profile=? WHERE token=?')
         .run(profile, digest(token));

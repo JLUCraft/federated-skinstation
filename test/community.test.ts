@@ -29,7 +29,7 @@ test('community publication, moderation, privacy, counters and ownership form on
   registerWardrobe(app, db, identity);
   registerCommunity(app, db, identity);
   const headers = (id: string) => ({
-    authorization: `Bearer ${db.mint(id, 'community', now())}`,
+    authorization: `Bearer ${db.mint(db.account('id', id)!, 'community', now())}`,
   });
   const alice = headers('alice'),
     bob = headers('bob'),
@@ -339,7 +339,7 @@ function communityFixture(admins: string[]) {
   registerWardrobe(app, db, identity);
   registerCommunity(app, db, identity);
   const headers = (id: string) => ({
-    authorization: `Bearer ${db.mint(id, 'community-regression', now())}`,
+    authorization: `Bearer ${db.mint(db.account('id', id)!, 'community-regression', now())}`,
   });
   const insert = (id: string, published: boolean) =>
     db.db

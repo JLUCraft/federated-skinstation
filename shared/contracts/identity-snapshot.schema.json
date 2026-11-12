@@ -1,5 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/identity.json",
   "title": "IdentitySnapshot",
   "type": "object",
   "additionalProperties": false,
@@ -17,7 +18,7 @@
         "properties": {
           "club": { "type": "string" },
           "title": { "type": "string" },
-          "status": { "enum": ["active", "revoked"] },
+          "status": { "$ref": "#/definitions/MembershipStatus" },
           "roles": { "type": "array", "items": { "type": "string" } },
           "chair": { "type": "boolean" },
           "epoch": { "type": "integer" }
@@ -49,6 +50,113 @@
           "proposedBy": { "type": "string" },
           "epoch": { "type": "integer" }
         }
+      }
+    }
+  },
+  "definitions": {
+    "MembershipStatus": { "enum": ["active", "revoked"] },
+    "Password": { "type": "string", "minLength": 12, "maxLength": 1024 },
+    "ClubDirectory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clubs", "globalGrants", "muaGrants", "disableAccounts"],
+      "properties": {
+        "globalGrants": { "type": "boolean" },
+        "muaGrants": { "type": "boolean" },
+        "disableAccounts": { "type": "boolean" },
+        "clubs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "title", "chairName", "epoch", "permissions"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "chairName": { "type": ["string", "null"] },
+              "epoch": { "type": "integer" },
+              "permissions": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["members", "chairs", "grants", "recovery", "selfNomination"],
+                "properties": {
+                  "members": { "type": "boolean" },
+                  "chairs": { "type": "boolean" },
+                  "grants": { "type": "boolean" },
+                  "recovery": { "type": "boolean" },
+                  "selfNomination": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ClubMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "name", "status", "roles", "disabled", "since"],
+      "properties": {
+        "account": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "$ref": "#/definitions/MembershipStatus" },
+        "roles": { "type": "array", "items": { "type": "string" } },
+        "disabled": { "type": "boolean" },
+        "since": { "type": "integer" }
+      }
+    },
+    "ClubMembers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["members"],
+      "properties": {
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ClubMember" }
+        }
+      }
+    },
+    "GrantList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grants", "grantablePermissions"],
+      "properties": {
+        "grantablePermissions": { "type": "array", "items": { "type": "string" } },
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "principal", "principalKind", "name", "permission", "grantedBy", "grantedAt"],
+            "properties": {
+              "id": { "type": "string" },
+              "principal": { "type": "string" },
+              "principalKind": { "enum": ["user", "service"] },
+              "name": { "type": ["string", "null"] },
+              "permission": { "type": "string" },
+              "grantedBy": { "type": "string" },
+              "grantedAt": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "RecoveryRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "email"],
+      "properties": {
+        "account": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "email": { "type": "string", "format": "email", "maxLength": 256 }
+      }
+    },
+    "RecoveryConfirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confirmation", "password"],
+      "properties": {
+        "confirmation": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "password": { "$ref": "#/definitions/Password" }
       }
     }
   }

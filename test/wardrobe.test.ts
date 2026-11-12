@@ -31,7 +31,7 @@ test('wardrobe publication, collection, ownership and applying survive source re
     .prepare('INSERT INTO wardrobe VALUES(?,?,?,?,?,?,?)')
     .run('item', 'alice', '', 'skin', 'a'.repeat(64), 'slim', 0);
   const headers = (user: string) => ({
-    authorization: `Bearer ${db.mint(user, 'test', now)}`,
+    authorization: `Bearer ${db.mint(db.account('id', user)!, 'test', now)}`,
   });
   const alice = headers('alice'),
     bob = headers('bob');
@@ -203,8 +203,8 @@ test('library search, tags, likes and sorting are enforced by the server', async
     1,
   );
   insert.run('draft', 'alice', 'Private', 'skin', 'c'.repeat(64), 'default', 0);
-  const alice = { authorization: `Bearer ${db.mint('alice', 't', now)}` },
-    bob = { authorization: `Bearer ${db.mint('bob', 't', now)}` };
+  const alice = { authorization: `Bearer ${db.mint(db.account('id', 'alice')!, 't', now)}` },
+    bob = { authorization: `Bearer ${db.mint(db.account('id', 'bob')!, 't', now)}` };
   const get = async (url: string, headers?: Record<string, string>) =>
     (await app.inject({ url, headers })).json();
   try {

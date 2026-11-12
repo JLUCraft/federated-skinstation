@@ -1,8 +1,8 @@
-import { aiLimitsSchema, type AiLimits } from './contracts/generated.js';
+import { aiLimitsSchema, aiOutputTokensSchema, type AiLimits } from './contracts/generated.js';
 
 const limits = aiLimitsSchema.properties;
 export const AI_LIMITS: AiLimits = {
-  maxOutputTokens: limits.maxOutputTokens.const,
+  maxOutputTokens: aiOutputTokensSchema.maximum,
   maxInputBytes: limits.maxInputBytes.const,
   maxOutputBytes: limits.maxOutputBytes.const,
   maxResponseBytes: limits.maxResponseBytes.const,

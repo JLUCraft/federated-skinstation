@@ -7,6 +7,22 @@ export function loadPlan(store: Store, event: string): ActivityPlan | undefined 
   return row ? (JSON.parse(String(row.state)) as ActivityPlan) : undefined;
 }
 
+export function setPolishedPlan(
+  store: Store,
+  event: ActivityRecord,
+  plan: ActivityPlan,
+  artifact: string,
+) {
+  requireThat(
+    event.phase === 'draft' && plan.finalized && plan.epoch === event.epoch && !plan.polished,
+    'Finalized draft plan required',
+  );
+  plan.polished = artifact;
+  store.db
+    .prepare('UPDATE event_plans SET state=? WHERE event=?')
+    .run(JSON.stringify(plan), event.id);
+  store.db.prepare('INSERT OR IGNORE INTO event_artifacts VALUES(?,?)').run(event.id, artifact);
+}
 export function gameResource(store: Store, id: string): GameResource {
   const row = store.db.prepare('SELECT definition FROM game_resources WHERE id=?').get(id);
   requireThat(row, 'Game resource not found');

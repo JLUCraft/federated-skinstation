@@ -217,6 +217,17 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
     `);
     },
   },
+  {
+    version: 11,
+    apply(db) {
+      db.exec(`
+      CREATE TABLE office_ai_tasks(id TEXT PRIMARY KEY,event TEXT NOT NULL REFERENCES activities(id),job TEXT UNIQUE NOT NULL REFERENCES ai_jobs(id),state TEXT NOT NULL CHECK(json_valid(state)));
+      CREATE INDEX office_ai_tasks_event ON office_ai_tasks(event);
+      CREATE TABLE office_ai_artifacts(artifact TEXT NOT NULL REFERENCES office_artifacts(id),task TEXT NOT NULL REFERENCES office_ai_tasks(id),PRIMARY KEY(artifact,task));
+      CREATE TABLE event_summaries(event TEXT PRIMARY KEY REFERENCES activities(id),plan TEXT NOT NULL,output TEXT NOT NULL REFERENCES office_artifacts(id),created_at INTEGER NOT NULL,published_at INTEGER);
+    `);
+    },
+  },
 ];
 export class Store {
   readonly db: DatabaseSync;

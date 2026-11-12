@@ -36,7 +36,16 @@ import {
   type ApprovalRecord,
   type ApprovalApprover,
   type ApprovalCommand,
+  type AiJob,
+  type AiReview,
+  type OfficeAiTask,
 } from '../shared/contracts/generated.js';
+import { points } from './points.js';
+import {
+  approvedAiStage,
+  officeAiArtifactAccess,
+  privateOfficeAiArtifact,
+} from './office-ai-state.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
 import { cancelEventGames, requireEventGamesFinished } from './event-game-state.js';
 import {
@@ -124,7 +133,10 @@ export class Office {
     );
     requireThat(this.readableArtifact(actor, draft.brief), 'Readable event brief required');
     requireThat(
-      !this.store.db.prepare('SELECT 1 FROM planning_documents WHERE artifact=?').get(draft.brief),
+      !privateOfficeAiArtifact(this.store, draft.brief) &&
+        !this.store.db
+          .prepare('SELECT 1 FROM planning_documents WHERE artifact=?')
+          .get(draft.brief),
       'Private planning evidence cannot be an event brief',
     );
   }
@@ -164,6 +176,8 @@ export class Office {
 
   private readableArtifact(actor: string, id: string) {
     const row = this.artifact(id);
+    const documentAccess = officeAiArtifactAccess(this.store, this.identity, actor, id);
+    if (documentAccess !== undefined) return documentAccess;
     if (
       this.store.db
         .prepare("SELECT 1 FROM planning_documents WHERE artifact=? AND audience='event'")
@@ -252,6 +266,21 @@ export class Office {
     requireThat(this.readableArtifact(actor, id), 'Artifact access required');
     const row = this.artifact(id);
     return { content: Buffer.from(row.content as Uint8Array), metadata: this.metadata(id) };
+  }
+
+  storeSnapshot(actor: string, club: string, title: string, value: unknown) {
+    const content = Buffer.from(JSON.stringify(value));
+    requireThat(
+      content.byteLength > 0 && content.byteLength <= MAX_ARTIFACT_BYTES,
+      'Document snapshot exceeds artifact limit',
+    );
+    const id = randomUUID();
+    this.store.db
+      .prepare(
+        "INSERT INTO office_artifacts(id,club,owner,title,mime,content,parent,created_at,visibility) VALUES(?,?,?,?,'application/json',?,NULL,?,'private')",
+      )
+      .run(id, club, actor, title, content, Date.now());
+    return id;
   }
 
   download(actor: string, id: string) {
@@ -600,6 +629,11 @@ export class Office {
       'Invalid approval escalation',
     );
     const approver = stage.approver;
+    if (approver.kind === 'ai')
+      requireThat(
+        approver.purpose.trim() && points(approver.maxPoints) > 0n && stage.onTimeout === 'reject',
+        'AI review requires a purpose, spending limit, and reject timeout policy',
+      );
     if (approver.kind === 'member')
       requireThat(this.active(approver.account), 'Active approver required');
     if (approver.kind === 'role') {
@@ -666,7 +700,7 @@ export class Office {
     });
   }
 
-  private loadWorkflow(id: string): ApprovalInstance {
+  loadWorkflow(id: string): ApprovalInstance {
     const row = this.store.db.prepare('SELECT state FROM workflows WHERE id=?').get(id);
     requireThat(row, 'Workflow not found');
     return JSON.parse(String(row.state)) as ApprovalInstance;
@@ -745,6 +779,7 @@ export class Office {
 
   private eligible(approver: ApprovalApprover, actor: string, club?: string): string | undefined {
     if (!this.active(actor)) return undefined;
+    if (approver.kind === 'ai') return undefined;
     if (approver.kind === 'member') return approver.account === actor ? 'member' : undefined;
     if (approver.kind === 'role') {
       if (!this.active(actor, approver.club)) return undefined;
@@ -800,7 +835,14 @@ export class Office {
     return delegation && this.eligible(approver, delegation.from, own) === own ? undefined : own;
   }
 
-  private approved(stage: ApprovalStage, record: ApprovalRecord) {
+  private approved(
+    stage: ApprovalStage,
+    record: ApprovalRecord,
+    workflow: ApprovalInstance,
+    index: number,
+  ) {
+    if (stage.approver.kind === 'ai')
+      return approvedAiStage(this.store, this.identity, workflow, index);
     const threshold =
       stage.approver.kind === 'presidents'
         ? stage.approver.clubs.length
@@ -883,7 +925,11 @@ export class Office {
         requireThat(
           workflow.stages.every((stage, index) => {
             const evidence = workflow.records[index];
-            return evidence.escalated || evidence.autoApproved || this.approved(stage, evidence);
+            return (
+              evidence.escalated ||
+              evidence.autoApproved ||
+              this.approved(stage, evidence, workflow, index)
+            );
           }),
           'Current approval authority required',
         );
@@ -976,7 +1022,8 @@ export class Office {
                 writable: true,
                 configurable: true,
               });
-              if (this.approved(stage, evidence)) this.advance(workflow);
+              if (this.approved(stage, evidence, workflow, workflow.current))
+                this.advance(workflow);
             }
           }
         }
@@ -988,6 +1035,39 @@ export class Office {
         return workflow;
       };
     });
+  }
+  applyAiReview(task: OfficeAiTask, job: AiJob, review: AiReview) {
+    requireThat(task.workflow !== null && task.stage !== null, 'AI workflow task required');
+    const workflow = this.loadWorkflow(task.workflow);
+    const event = this.load(workflow.event);
+    requireThat(
+      workflow.status === 'active' &&
+        workflow.event === task.event &&
+        workflow.epoch === task.epoch &&
+        event.epoch === task.epoch &&
+        event.phase === 'review' &&
+        workflow.current === task.stage &&
+        workflow.stages[workflow.current].approver.kind === 'ai' &&
+        (workflow.deadlineMs === null || Date.now() < workflow.deadlineMs),
+      'Current AI review stage required',
+    );
+    this.identity.requireMembership(job.providerAccount, job.providerClub);
+    const evidence = workflow.records[workflow.current];
+    if (review.decision === 'approve') {
+      evidence.approvals.ai = { account: job.providerAccount, comment: task.id, at: Date.now() };
+      requireThat(
+        this.approved(workflow.stages[workflow.current], evidence, workflow, workflow.current),
+        'Current AI approval required',
+      );
+      this.advance(workflow);
+    } else {
+      evidence.rejected =
+        review.decision === 'reject' ? 'AI review rejected' : 'AI review requested changes';
+      workflow.status = review.decision === 'reject' ? 'rejected' : 'changes_requested';
+      workflow.deadlineMs = null;
+    }
+    this.saveWorkflow(workflow);
+    return workflow;
   }
 }
 

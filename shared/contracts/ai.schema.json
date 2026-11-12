@@ -4,6 +4,7 @@
   "title": "AiJobSnapshot",
   "$ref": "#/definitions/AiJob",
   "definitions": {
+    "AiOutputTokens": { "type": "integer", "minimum": 1, "maximum": 8192 },
     "AiLimits": {
       "type": "object",
       "additionalProperties": false,
@@ -17,7 +18,7 @@
         "maxAttempts"
       ],
       "properties": {
-        "maxOutputTokens": { "type": "integer", "const": 8192 },
+        "maxOutputTokens": { "$ref": "#/definitions/AiOutputTokens" },
         "maxInputBytes": { "type": "integer", "const": 8388608 },
         "maxOutputBytes": { "type": "integer", "const": 1048576 },
         "maxResponseBytes": { "type": "integer", "const": 8388608 },
@@ -123,7 +124,7 @@
         "model": { "type": "string", "minLength": 1, "maxLength": 128 },
         "mode": { "enum": ["generate", "review"] },
         "purpose": { "type": "string", "minLength": 1, "maxLength": 4096 },
-        "maxTokens": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "maxTokens": { "$ref": "#/definitions/AiOutputTokens" },
         "maxPoints": {
           "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
         },

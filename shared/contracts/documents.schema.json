@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/documents",
+  "title": "OfficeDocumentSnapshot",
+  "$ref": "#/definitions/OfficeAiTask",
+  "definitions": {
+    "OfficeAiRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "plan", "model", "maxTokens", "maxPoints"],
+      "properties": {
+        "kind": { "enum": ["polish", "summary"] },
+        "plan": { "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId" },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "maxTokens": {
+          "$ref": "https://skin.jlucraft.com/contracts/ai#/definitions/AiOutputTokens"
+        },
+        "maxPoints": {
+          "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+        }
+      }
+    },
+    "OfficeAiTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "event",
+        "plan",
+        "epoch",
+        "kind",
+        "workflow",
+        "stage",
+        "input",
+        "attachments",
+        "job",
+        "output",
+        "appliedAt"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "event": { "type": "string" },
+        "plan": { "type": "string" },
+        "epoch": { "type": "integer" },
+        "kind": { "enum": ["polish", "review", "summary"] },
+        "workflow": { "type": ["string", "null"] },
+        "stage": { "type": ["integer", "null"] },
+        "input": { "type": "string" },
+        "attachments": { "type": "array", "items": { "type": "string" } },
+        "job": { "type": "string" },
+        "output": { "type": ["string", "null"] },
+        "appliedAt": { "type": ["integer", "null"] }
+      }
+    },
+    "OfficeAiTaskView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task", "job"],
+      "properties": {
+        "task": { "$ref": "#/definitions/OfficeAiTask" },
+        "job": { "$ref": "https://skin.jlucraft.com/contracts/ai#/definitions/AiJob" }
+      }
+    },
+    "OfficeAiTaskList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tasks"],
+      "properties": {
+        "tasks": { "type": "array", "items": { "$ref": "#/definitions/OfficeAiTaskView" } }
+      }
+    },
+    "OfficeAiCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": { "action": { "enum": ["apply", "publish"] } }
+    }
+  }
+}

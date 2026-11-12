@@ -23,6 +23,7 @@ import { AI_LIMITS } from '../shared/ai.js';
 import { POINT_LIMIT } from '../shared/points.js';
 import { AiGateway, type AiMaterial, type AiCompletion } from './ai-gateway.js';
 import type { Office } from './office.js';
+import { requireOfficeAiJobCurrent, restrictOfficeAiOutput } from './office-ai-state.js';
 import { PointLedger, points } from './points.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
 import { now, requireThat, type Store } from './store.js';
@@ -131,6 +132,10 @@ export class Ai {
     };
   }
 
+  jobState(id: string) {
+    return this.snapshot(this.load(id));
+  }
+
   private materials(actor: string, input: AiJobRequest): AiMaterial[] {
     return [...new Set([input.input, ...(input.attachments ?? [])])].map((id) => {
       const artifact = this.office.artifactContent(actor, id);
@@ -236,65 +241,68 @@ export class Ai {
   }
 
   request(actor: string, input: AiJobRequest) {
-    return this.identity.action(actor, input.scope ?? `club:${input.club}`, 'request_ai', () => {
-      this.identity.authenticate(actor);
-      requireThat(input.purpose.trim(), 'AI task purpose required');
-      points(input.maxPoints);
-      const materials = this.materials(actor, input);
-      const provider = this.availableGateway().select(input, materials);
-      const pricing = this.price(input.model);
-      let payer = actor;
-      let allowance: StoredJob['allowance'] = null;
-      if (input.scope) {
-        const current = this.store.db
-          .prepare('SELECT * FROM point_allowances WHERE scope=?')
-          .get(input.scope);
-        requireThat(current && current.club === input.club, 'AI spending authorization required');
-        payer = String(current.account);
-        requireThat(
-          (input.scope === `member:${actor}` && payer === actor) ||
-            (input.scope.startsWith('event:') &&
-              this.identity.decide(actor, input.scope, 'manage')),
-          'AI budget scope authority required',
-        );
-        allowance = { scope: input.scope, epoch: Number(current.epoch) };
-      }
-      const time = Date.now();
-      const job: StoredJob = {
-        id: randomUUID(),
-        request: input,
-        proposer: actor,
-        payer,
-        club: input.club,
-        provider: provider.id,
-        providerAccount: provider.account,
-        providerClub: this.identity.affiliation(provider.account),
-        contextTokens: provider.contextTokens,
-        pricing,
-        allowance,
-        status: 'queued',
-        startedAt: time,
-        deadlineMs: time + AI_LIMITS.jobTimeoutMs,
-        attempts: [this.emptyAttempt(0)],
-      };
-      this.spendingAuthority(job);
-      this.quote(job);
-      return () => {
-        this.store.db
-          .prepare('INSERT INTO ai_jobs VALUES(?,?,?,?,?)')
-          .run(job.id, payer, job.club, allowance?.scope ?? null, JSON.stringify(job));
-        this.reserve(job);
-        appendAudit(
-          this.store,
-          actor,
-          input.scope ?? `club:${input.club}`,
-          'request_ai',
-          job.id,
-          this.snapshot(job),
-        );
-        return this.snapshot(job);
-      };
-    });
+    return this.identity.action(actor, input.scope ?? `club:${input.club}`, 'request_ai', () =>
+      this.prepareRequest(actor, input),
+    );
+  }
+
+  prepareRequest(actor: string, input: AiJobRequest) {
+    this.identity.authenticate(actor);
+    requireThat(input.purpose.trim(), 'AI task purpose required');
+    points(input.maxPoints);
+    const materials = this.materials(actor, input);
+    const provider = this.availableGateway().select(input, materials);
+    const pricing = this.price(input.model);
+    let payer = actor;
+    let allowance: StoredJob['allowance'] = null;
+    if (input.scope) {
+      const current = this.store.db
+        .prepare('SELECT * FROM point_allowances WHERE scope=?')
+        .get(input.scope);
+      requireThat(current && current.club === input.club, 'AI spending authorization required');
+      payer = String(current.account);
+      requireThat(
+        (input.scope === `member:${actor}` && payer === actor) ||
+          (input.scope.startsWith('event:') && this.identity.decide(actor, input.scope, 'manage')),
+        'AI budget scope authority required',
+      );
+      allowance = { scope: input.scope, epoch: Number(current.epoch) };
+    }
+    const time = Date.now();
+    const job: StoredJob = {
+      id: randomUUID(),
+      request: input,
+      proposer: actor,
+      payer,
+      club: input.club,
+      provider: provider.id,
+      providerAccount: provider.account,
+      providerClub: this.identity.affiliation(provider.account),
+      contextTokens: provider.contextTokens,
+      pricing,
+      allowance,
+      status: 'queued',
+      startedAt: time,
+      deadlineMs: time + AI_LIMITS.jobTimeoutMs,
+      attempts: [this.emptyAttempt(0)],
+    };
+    this.spendingAuthority(job);
+    this.quote(job);
+    return () => {
+      this.store.db
+        .prepare('INSERT INTO ai_jobs VALUES(?,?,?,?,?)')
+        .run(job.id, payer, job.club, allowance?.scope ?? null, JSON.stringify(job));
+      this.reserve(job);
+      appendAudit(
+        this.store,
+        actor,
+        input.scope ?? `club:${input.club}`,
+        'request_ai',
+        job.id,
+        this.snapshot(job),
+      );
+      return this.snapshot(job);
+    };
   }
 
   get(actor: string, id: string) {
@@ -399,7 +407,7 @@ export class Ai {
     return this.snapshot(job);
   }
 
-  private review(content: string): AiReview {
+  reviewOutput(content: string): AiReview {
     const value: unknown = JSON.parse(content);
     requireThat(this.validateReview(value), 'Invalid AI review output');
     const review = value as AiReview;
@@ -442,7 +450,7 @@ export class Ai {
       if (job.request.mode === 'review') {
         try {
           requireThat(!completion.truncated, 'Incomplete AI review output');
-          content = JSON.stringify(this.review(content));
+          content = JSON.stringify(this.reviewOutput(content));
         } catch {
           return this.release(
             job,
@@ -469,6 +477,7 @@ export class Ai {
           Date.now(),
         );
       this.store.db.prepare('INSERT INTO artifact_readers VALUES(?,?)').run(output, job.proposer);
+      restrictOfficeAiOutput(this.store, job.id, output);
       return this.release(job, completion.usage, output, null, completion.truncated, 'completed');
     });
   }
@@ -481,6 +490,7 @@ export class Ai {
         this.canRead(actor, job) && job.status === 'queued' && Date.now() < job.deadlineMs,
         'Current queued AI job required',
       );
+      requireOfficeAiJobCurrent(this.store, id);
       this.spendingAuthority(job);
       this.identity.requireMembership(job.providerAccount, job.providerClub);
       const materials = this.materials(job.proposer, job.request);
@@ -543,6 +553,7 @@ export class Ai {
         'AI job control authority required',
       );
       if (action === 'retry') {
+        requireOfficeAiJobCurrent(this.store, id);
         requireThat(
           job.status === 'failed' && job.attempts.length < AI_LIMITS.maxAttempts,
           'Retryable AI job required',

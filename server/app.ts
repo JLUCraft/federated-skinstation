@@ -35,6 +35,7 @@ import { registerPlanning } from './planning.js';
 import { registerEventGames } from './event-games.js';
 import { registerPoints } from './points.js';
 import { registerAi } from './ai.js';
+import { registerOfficeAi } from './office-ai.js';
 import { contractSchemas, type AiGatewaySettings } from '../shared/contracts/generated.js';
 import { registerMua, type MuaConfig } from './mua.js';
 import { registerCommunity } from './community.js';
@@ -310,7 +311,7 @@ export async function build(
   registerPlanning(app, db, localIdentity, office);
   const points = registerPoints(app, db, localIdentity);
   registerEventGames(app, db, localIdentity, office, competitions, points.ledger);
-  registerAi(
+  const ai = registerAi(
     app,
     db,
     localIdentity,
@@ -319,6 +320,7 @@ export async function build(
     config.ai,
     dependencies.aiFetch ?? fetch,
   );
+  registerOfficeAi(app, db, localIdentity, office, ai);
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);
   app.get('/api/capabilities', async (): Promise<Capabilities> => ({

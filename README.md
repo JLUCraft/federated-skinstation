@@ -198,6 +198,9 @@ Fastify. Canonical schemas are registered once at service startup.
   advances an elapsed deadline, cancels, or executes the approved review.
 
 Templates select individual members, club roles, club quorums, or current chairs.
+They can also include an AI review stage with its model, optional provider,
+purpose, output-token limit, and point cap. AI stages require a reject timeout
+policy and use the document workflow described below.
 Instances snapshot their stages and input artifact. Every event review ends with
 mandatory consent from each organizing club's current chair, with no automatic
 timeout or delegation for that final stage. Other stages can delegate within a
@@ -364,3 +367,33 @@ choose `private` visibility, which revisions inherit unless changed by the owner
 AI output is private to the payer and requester; a site administrator can
 inspect it. Structured review output is schema-validated, and incomplete reviews
 fail. Documents and provider output remain evidence for human decisions.
+
+`server/office-ai.ts` binds AI jobs to finalized activity plans and review stages.
+Migration 11 stores document tasks, their private artifact links, and activity
+summaries. The document contract references the gateway's model and token limits.
+
+- `POST /api/events/:id/documents` requests `polish` for a finalized draft or
+  `summary` for a completed, reward-settled activity, using its current plan ID.
+  `GET` lists the event's document tasks for its managers.
+- `POST /api/workflows/:id/ai` requests the current AI stage using the template's
+  settings. Human votes and delegation cannot supply an AI decision.
+- Run or retry the returned job through the AI job actions. Then use
+  `POST /api/document-tasks/:id/actions` with `apply` to attach completed output
+  to its plan, review stage, or summary. Repeated requests reuse a pending task
+  with the same target and settings. `GET /api/document-tasks/:id` returns the
+  task and its current job.
+- Applied polish becomes the event's shared review document. AI approval advances
+  to the following stage, including the mandatory current-chair consent.
+  Rejection or `changes_requested` closes that workflow; managers revise the
+  event and start a new review. Execution rechecks the provider's membership.
+- Applied summaries remain private until a manager sends `publish` to the
+  document task actions. Publication shares the output through the event.
+
+All document jobs consume the event's existing point authorization. Source
+snapshots include the plan, original consent documents and transcripts, and,
+for reviews and summaries, recorded attendance, games, awards, and tasks.
+Inputs and unapplied outputs require current event management; payer or uploader
+ownership alone grants no access. Private review details stay outside shared
+workflow records. Revision fences old jobs and their private artifacts by plan
+and event epoch. Work already running still settles measured usage through the
+gateway, while its stale output cannot be applied.

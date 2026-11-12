@@ -247,6 +247,23 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["kind", "model", "purpose", "maxTokens", "maxPoints"],
+          "properties": {
+            "kind": { "const": "ai" },
+            "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "provider": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "purpose": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "maxTokens": {
+              "$ref": "https://skin.jlucraft.com/contracts/ai#/definitions/AiOutputTokens"
+            },
+            "maxPoints": {
+              "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["kind", "account"],
           "properties": {
             "kind": { "const": "member" },
@@ -401,7 +418,9 @@
         "stages": { "type": "array", "items": { "$ref": "#/definitions/ApprovalStage" } },
         "records": { "type": "array", "items": { "$ref": "#/definitions/ApprovalRecord" } },
         "current": { "type": "integer" },
-        "status": { "enum": ["active", "approved", "executed", "rejected", "cancelled"] },
+        "status": {
+          "enum": ["active", "approved", "executed", "rejected", "changes_requested", "cancelled"]
+        },
         "deadlineMs": { "type": ["integer", "null"] },
         "startedAt": { "type": "integer" }
       }

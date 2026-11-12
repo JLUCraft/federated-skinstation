@@ -3,7 +3,6 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   activityPlanSchema,
   clubPlanningProfileSchema,
-  officeArtifactSchema,
   planDraftSchema,
   planCommandSchema,
   type ActivityPlan,
@@ -14,7 +13,14 @@ import {
 } from '../shared/contracts/generated.js';
 import type { Office } from './office.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
-import { gameEndpoint, gameResource, loadPlan, requirePlanPolicy } from './planning-state.js';
+import {
+  gameEndpoint,
+  gameResource,
+  loadPlan,
+  requirePlanPolicy,
+  setPolishedPlan,
+} from './planning-state.js';
+import { privateOfficeAiArtifact } from './office-ai-state.js';
 import { points } from './points.js';
 import { now, requireThat, type Store } from './store.js';
 import { bearer, field, record } from './validate.js';
@@ -214,17 +220,11 @@ export class Planning {
         content: Buffer.from(row.content as Uint8Array).toString('base64'),
       };
     });
-    const content = Buffer.from(JSON.stringify({ event, plan, materials }));
-    requireThat(
-      content.byteLength <= officeArtifactSchema.properties.size.maximum,
-      'Planning evidence exceeds artifact limit',
-    );
-    const id = randomUUID();
-    this.store.db
-      .prepare(
-        "INSERT INTO office_artifacts(id,club,owner,title,mime,content,parent,created_at,visibility) VALUES(?,?,?,?,'application/json',?,NULL,?,'private')",
-      )
-      .run(id, event.club, actor, event.title, content, Date.now());
+    const id = this.office.storeSnapshot(actor, event.club, event.title, {
+      event,
+      plan,
+      materials,
+    });
     this.store.db
       .prepare("INSERT INTO planning_documents VALUES(?,?,?,?,'event')")
       .run(id, event.id, plan.id, event.club);
@@ -321,15 +321,13 @@ export class Planning {
             const artifact = this.office.artifactContent(actor, command.document);
             requireThat(
               ['text/plain', 'text/markdown'].includes(artifact.metadata.mime) &&
+                !privateOfficeAiArtifact(this.store, command.document) &&
                 !this.store.db
                   .prepare('SELECT 1 FROM planning_documents WHERE artifact=?')
                   .get(command.document),
               'Publishable polished document required',
             );
-            plan.polished = command.document;
-            this.store.db
-              .prepare('INSERT OR IGNORE INTO event_artifacts VALUES(?,?)')
-              .run(eventId, command.document);
+            setPolishedPlan(this.store, event, plan, command.document);
             break;
           }
         }

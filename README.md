@@ -438,3 +438,44 @@ payer, or requester ownership. Current club managers retain access to requiremen
 after chair succession. Superseded jobs cannot start or retry; running work still
 settles measured usage and its output stays private. Cancel queued jobs through
 the AI actions to refund their reserved points.
+
+## Agent management through MCP
+
+Connect an agent to `POST /mcp` with a Yggdrasil or MUA OAuth access token in
+`Authorization: Bearer <token>`. The endpoint uses JSON responses over Streamable
+HTTP with protocol `2025-11-25`, the protocol already used by the game host.
+It is stateless: clients send their session token on every request. Browser
+origins must match the configured site origin. Invalid or revoked sessions
+return HTTP 401; GET and DELETE return HTTP 405. Notifications return HTTP 202.
+
+Use `initialize`, `tools/list`, `tools/call`, and `ping`. The catalog covers
+identity and club management, competitions, activities and approvals, points,
+AI document jobs, and reports. Tool names derive from the HTTP method and
+route, replacing path parameters with `by_<parameter>`; for example,
+`post_reports_by_id_actions` maps to `POST /api/reports/:id/actions`.
+
+Each tool accepts only the `path`, `query`, and `body` objects declared by its
+input schema. Those schemas expand the existing route's canonical contracts.
+For example, publishing report version 2 uses:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "post_reports_by_id_actions",
+    "arguments": {
+      "path": { "id": "annual-report" },
+      "body": { "action": "publish", "version": 2 }
+    }
+  }
+}
+```
+
+Calls invoke the existing local HTTP route with the caller's token and address.
+That route owns authorization, audit, transactions, spending, and validation.
+JSON responses provide structured content; document downloads provide text,
+images, or an embedded PDF resource. Business denials return tool results with
+`isError`; invalid RPC methods and arguments return JSON-RPC errors.
+Membership and grant changes apply to the next call, including after restart.

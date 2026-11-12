@@ -149,6 +149,32 @@
         }
       }
     },
+    "ChairNomination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nominee"],
+      "properties": {
+        "nominee": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "GrantQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope"],
+      "properties": {
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "GrantRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "scope", "permission"],
+      "properties": {
+        "account": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "permission": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
     "RecoveryRequest": {
       "type": "object",
       "additionalProperties": false,

@@ -7,10 +7,16 @@ import {
   clubDirectorySchema,
   clubMembersSchema,
   grantListSchema,
+  chairNominationSchema,
+  grantRequestSchema,
+  grantQuerySchema,
   recoveryRequestSchema,
   recoveryConfirmationSchema,
   type RecoveryRequest,
   type RecoveryConfirmation,
+  type ChairNomination,
+  type GrantRequest,
+  type GrantQuery,
 } from '../shared/contracts/generated.js';
 import { AccountRecovery } from './recovery.js';
 import type { School } from './school.js';
@@ -55,35 +61,36 @@ export function registerIdentity(
   app.get('/api/clubs/:club/successions', async (request) =>
     identity.successions(actor(request), club(request)),
   );
-  app.post('/api/clubs/:club/successions', async (request) => ({
-    id: identity.proposeSuccession(
-      actor(request),
-      club(request),
-      field(record(request.body).nominee),
-    ),
-  }));
+  app.post<{ Body: ChairNomination }>(
+    '/api/clubs/:club/successions',
+    { schema: { body: chairNominationSchema } },
+    async (request) => ({
+      id: identity.proposeSuccession(actor(request), club(request), request.body.nominee),
+    }),
+  );
   app.post('/api/identity/successions/:id/accept', async (request, reply) => {
     identity.acceptSuccession(actor(request), field(record(request.params).id));
     return reply.code(204).send();
   });
-  app.get(
+  app.get<{ Querystring: GrantQuery }>(
     '/api/identity/grants',
     {
-      schema: { response: { 200: grantListSchema } },
+      schema: { querystring: grantQuerySchema, response: { 200: grantListSchema } },
     },
-    async (request) => identity.listGrants(actor(request), field(record(request.query).scope)),
+    async (request) => identity.listGrants(actor(request), request.query.scope),
   );
-  app.post('/api/identity/grants', async (request) => {
-    const body = record(request.body);
-    return {
+  app.post<{ Body: GrantRequest }>(
+    '/api/identity/grants',
+    { schema: { body: grantRequestSchema } },
+    async (request) => ({
       id: identity.grantPermission(
         actor(request),
-        field(body.account),
-        field(body.scope),
-        field(body.permission),
+        request.body.account,
+        request.body.scope,
+        request.body.permission,
       ),
-    };
-  });
+    }),
+  );
   app.delete('/api/identity/grants/:id', async (request, reply) => {
     identity.revokeGrant(actor(request), field(record(request.params).id));
     return reply.code(204).send();

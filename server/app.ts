@@ -37,6 +37,7 @@ import { registerPoints } from './points.js';
 import { registerAi } from './ai.js';
 import { registerOfficeAi } from './office-ai.js';
 import { registerReports } from './reports.js';
+import { Mcp } from './mcp.js';
 import { contractSchemas, type AiGatewaySettings } from '../shared/contracts/generated.js';
 import { registerMua, type MuaConfig } from './mua.js';
 import { registerCommunity } from './community.js';
@@ -128,6 +129,7 @@ export async function build(
     localIdentity.authenticate(account.id);
   };
   app.addHook('preHandler', async (req) => {
+    if (req.routeOptions.url === '/mcp') return;
     if (req.url === '/authserver/invalidate' || req.url === '/authserver/signout') return;
     const header = req.headers.authorization;
     const body =
@@ -304,6 +306,7 @@ export async function build(
     organization,
   });
   registerPasskeys(app, db, config.origin, authorize, organization);
+  const mcp = new Mcp(app, db, localIdentity, origin.origin, VERSION);
   registerIdentity(app, db, localIdentity, config.schools, (email, confirmation) =>
     mail(email, confirmation, '账号恢复'),
   );
@@ -323,6 +326,7 @@ export async function build(
   );
   registerOfficeAi(app, db, localIdentity, office, ai);
   registerReports(app, db, localIdentity, office, ai);
+  mcp.register();
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);
   app.get('/api/capabilities', async (): Promise<Capabilities> => ({

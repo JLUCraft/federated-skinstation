@@ -313,7 +313,7 @@ export async function build(
   const competitions = registerCompetitions(app, db, localIdentity);
   const office = registerOffice(app, db, localIdentity);
   registerPlanning(app, db, localIdentity, office);
-  const points = registerPoints(app, db, localIdentity);
+  const points = registerPoints(app, db, localIdentity, office);
   registerEventGames(app, db, localIdentity, office, competitions, points.ledger);
   const ai = registerAi(
     app,

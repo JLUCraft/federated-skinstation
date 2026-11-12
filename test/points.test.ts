@@ -6,6 +6,7 @@ import { ACTIVITY_LIMITS, POINT_LIMIT } from '../shared/points.js';
 import { site } from './helpers/site.js';
 import type {
   ActivitySourceConfig,
+  ActivityDelivery,
   OfficeArtifact,
   ActivityReceipt,
   MemberPoints,
@@ -286,6 +287,130 @@ test('point credits remain exact beyond JavaScript numbers and roll back the who
       store.db.prepare('SELECT count(*) AS total FROM activity_receipts').get()!.total,
       1,
     );
+  } finally {
+    store.close();
+    await service.close();
+  }
+});
+
+test('activity delivery archives private profile evidence and credits atomically across retries and restart', async (context) => {
+  const service = await site();
+  const store = new Store(join(service.dir, 'db'));
+  try {
+    const root = await service.enroll('Admin');
+    const host = await service.enroll('Host');
+    const alice = await service.enroll('Alice');
+    const bob = await service.enroll('Bob');
+    store.db
+      .prepare("INSERT INTO grants VALUES('admin','user',?,'global','admin','fixture',?,NULL,NULL)")
+      .run(root.user.id, now());
+    const call = service.requestJson;
+    await call(
+      root,
+      'POST',
+      '/api/game-resources',
+      {
+        id: 'world',
+        club: 'jlu',
+        title: 'World',
+        address: 'game.example.test:25565',
+        host: host.user.id,
+        scorer: host.user.id,
+        automaticTeams: false,
+        rules: { crossClub: true, seats: 4, reconnectMinMs: 100, reconnectMaxMs: 1000 },
+      },
+      204,
+    );
+    const config: ActivitySourceConfig = {
+      id: 'world',
+      title: 'World',
+      club: 'jlu',
+      account: host.user.id,
+      resource: 'world',
+      weightBps: ACTIVITY_LIMITS.weightDenominator,
+      pointsPerSlice: '10',
+      maxBonusPerSlice: '0',
+      dailySourceCap: '100',
+      enabled: true,
+    };
+    await call(root, 'POST', '/api/activity-sources', config);
+    await call(root, 'POST', '/api/points/policy', { dailyMemberCap: '100' });
+    const time = Math.floor(Date.now() / ACTIVITY_LIMITS.sliceMs) * ACTIVITY_LIMITS.sliceMs;
+    context.mock.method(Date, 'now', () => time);
+    const extra = store.createProfile(store.account('id', alice.user.id)!, 'AliceExtra');
+    const delivery = {
+      source: 'world',
+      windowStartMs: time - ACTIVITY_LIMITS.sliceMs,
+      windowEndMs: time,
+      players: { [alice.user.id]: { activeSlices: 1, afkSlices: 0, bonusPoints: '0' } },
+      profiles: { [extra.id]: alice.user.id },
+      telemetry: JSON.stringify({ slices: [{ active: true, uuid: extra.id }] }),
+    };
+    const endpoint = '/api/points/activity-deliveries';
+    await call(bob, 'POST', endpoint, delivery, 403);
+    await call(
+      host,
+      'POST',
+      endpoint,
+      { ...delivery, profiles: { [bob.user.id]: alice.user.id } },
+      403,
+    );
+    const receipt = await call<ActivityReceipt>(host, 'POST', endpoint, delivery);
+    assert.equal(receipt.awarded[alice.user.id], '10');
+    const artifact = store.db
+      .prepare('SELECT visibility,owner FROM office_artifacts WHERE id=?')
+      .get(receipt.attestation.evidence)!;
+    assert.equal(artifact.visibility, 'private');
+    assert.equal(artifact.owner, host.user.id);
+    assert.deepEqual(
+      await call<Pick<ActivityDelivery, 'profiles' | 'telemetry'>>(
+        host,
+        'GET',
+        `/api/artifacts/${receipt.attestation.evidence}/content`,
+      ),
+      { profiles: delivery.profiles, telemetry: delivery.telemetry },
+    );
+    await call(
+      alice,
+      'GET',
+      `/api/artifacts/${receipt.attestation.evidence}/content`,
+      undefined,
+      403,
+    );
+    store.deleteProfile(store.account('id', alice.user.id)!, extra.id);
+    await service.restart();
+    assert.deepEqual(await call<ActivityReceipt>(host, 'POST', endpoint, delivery), receipt);
+    await call(host, 'POST', endpoint, { ...delivery, telemetry: '{"slices":[]}' }, 403);
+    await call(
+      host,
+      'POST',
+      endpoint,
+      { ...delivery, profiles: { [alice.user.id]: alice.user.id } },
+      403,
+    );
+    assert.equal(store.db.prepare('SELECT count(*) AS n FROM office_artifacts').get()!.n, 1);
+    assert.equal(store.db.prepare('SELECT count(*) AS n FROM point_ledger').get()!.n, 1);
+    const next = {
+      ...delivery,
+      windowStartMs: time,
+      windowEndMs: time + ACTIVITY_LIMITS.sliceMs,
+      profiles: { [alice.user.id]: alice.user.id },
+    };
+    context.mock.method(Date, 'now', () => time + ACTIVITY_LIMITS.sliceMs);
+    store.db
+      .prepare('UPDATE point_balances SET available=? WHERE account=?')
+      .run(POINT_LIMIT.toString(), alice.user.id);
+    await call(host, 'POST', endpoint, next, 403);
+    assert.equal(store.db.prepare('SELECT count(*) AS n FROM office_artifacts').get()!.n, 1);
+    assert.equal(store.db.prepare('SELECT count(*) AS n FROM activity_receipts').get()!.n, 1);
+    store.db
+      .prepare('UPDATE point_balances SET available=? WHERE account=?')
+      .run('10', alice.user.id);
+    const nextReceipt = await call<ActivityReceipt>(host, 'POST', endpoint, next);
+    assert.equal(nextReceipt.awarded[alice.user.id], '10');
+    await call(root, 'POST', '/api/activity-sources', { ...config, enabled: false });
+    await call(host, 'POST', endpoint, next, 403);
+    assert.equal(store.db.prepare('SELECT count(*) AS n FROM office_artifacts').get()!.n, 2);
   } finally {
     store.close();
     await service.close();

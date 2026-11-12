@@ -4,6 +4,42 @@
   "title": "PointOverview",
   "$ref": "#/definitions/MemberPoints",
   "definitions": {
+    "ActivityDelivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "windowStartMs", "windowEndMs", "players", "profiles", "telemetry"],
+      "properties": {
+        "source": {
+          "$ref": "#/definitions/ActivityAttestation/properties/source"
+        },
+        "windowStartMs": {
+          "$ref": "#/definitions/ActivityAttestation/properties/windowStartMs"
+        },
+        "windowEndMs": {
+          "$ref": "#/definitions/ActivityAttestation/properties/windowEndMs"
+        },
+        "players": {
+          "$ref": "#/definitions/ActivityAttestation/properties/players"
+        },
+        "profiles": {
+          "type": "object",
+          "maxProperties": 256,
+          "propertyNames": {
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "telemetry": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2097152
+        }
+      }
+    },
     "PointSpendingScope": {
       "type": "string",
       "minLength": 1,

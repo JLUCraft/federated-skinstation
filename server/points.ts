@@ -1,3 +1,4 @@
+import type { Office } from './office.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   pointPolicyUpdateSchema,
@@ -6,6 +7,8 @@ import {
   activitySourceListSchema,
   activitySourceRecordSchema,
   activityAttestationSchema,
+  activityDeliverySchema,
+  officeArtifactSchema,
   activityReceiptSchema,
   memberPointsSchema,
   pointAllowanceRequestSchema,
@@ -16,6 +19,7 @@ import {
   type ActivitySourceConfig,
   type ActivitySourceRecord,
   type ActivityAttestation,
+  type ActivityDelivery,
   type ActivityReceipt,
   type MemberPoints,
   type PointAllowanceRequest,
@@ -25,7 +29,7 @@ import {
 } from '../shared/contracts/generated.js';
 import { ACTIVITY_LIMITS, POINT_LIMIT, pointAmount } from '../shared/points.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
-import { now, requireThat, type Store } from './store.js';
+import { now, requireThat, Rejected, type Store } from './store.js';
 import { bearer } from './validate.js';
 
 const LEDGER_PAGE_SIZE = 100;
@@ -94,6 +98,7 @@ export class Points {
   constructor(
     private readonly store: Store,
     private readonly identity: LocalIdentity,
+    private readonly office: Office,
   ) {
     this.ledger = new PointLedger(store);
   }
@@ -179,7 +184,21 @@ export class Points {
       .map((row) => this.source(String(row.id)));
   }
 
-  attest(actor: string, input: ActivityAttestation) {
+  deliver(actor: string, delivery: ActivityDelivery) {
+    return this.attest(
+      actor,
+      {
+        source: delivery.source,
+        windowStartMs: delivery.windowStartMs,
+        windowEndMs: delivery.windowEndMs,
+        players: delivery.players,
+        evidence: '',
+      },
+      delivery,
+    );
+  }
+
+  attest(actor: string, input: ActivityAttestation, delivery?: ActivityDelivery) {
     const club = this.source(input.source).config.club;
     return this.identity.action(actor, `club:${club}`, 'activity_attest', () => {
       const source = this.source(input.source);
@@ -202,40 +221,97 @@ export class Points {
           Object.keys(input.players).length <= limits.maxPlayers,
         'Invalid activity window',
       );
-      const payload = JSON.stringify({
-        source: input.source,
-        windowStartMs: start,
-        windowEndMs: end,
-        players: Object.fromEntries(
-          Object.keys(input.players)
-            .sort()
-            .map((account) => {
-              const total = input.players[account];
-              return [
-                account,
-                {
-                  activeSlices: total.activeSlices,
-                  afkSlices: total.afkSlices,
-                  bonusPoints: total.bonusPoints,
-                },
-              ];
-            }),
-        ),
-        evidence: input.evidence,
-      });
       const id = `${input.source}:${start}:${end}`;
       const previous = this.store.db
         .prepare('SELECT payload,receipt FROM activity_receipts WHERE id=?')
         .get(id);
+      let telemetry: Buffer | undefined;
+      if (delivery) {
+        telemetry = Buffer.from(
+          JSON.stringify({
+            profiles: Object.fromEntries(
+              Object.entries(delivery.profiles).sort(([left], [right]) =>
+                left.localeCompare(right),
+              ),
+            ),
+            telemetry: delivery.telemetry,
+          }),
+        );
+        requireThat(
+          telemetry.byteLength <= officeArtifactSchema.properties.size.maximum,
+          'Activity evidence exceeds artifact limit',
+        );
+        let document: unknown;
+        try {
+          document = JSON.parse(delivery.telemetry);
+        } catch {
+          throw new Rejected('Valid JSON activity evidence required');
+        }
+        requireThat(
+          document !== null && typeof document === 'object' && !Array.isArray(document),
+          'Activity evidence object required',
+        );
+        if (previous) {
+          const receipt = JSON.parse(String(previous.receipt)) as ActivityReceipt;
+          input = { ...input, evidence: receipt.attestation.evidence };
+          const stored = this.store.db
+            .prepare('SELECT owner,content FROM office_artifacts WHERE id=?')
+            .get(input.evidence);
+          requireThat(
+            stored?.owner === actor &&
+              stored.content instanceof Uint8Array &&
+              telemetry.equals(stored.content),
+            'Activity evidence differs from the recorded receipt',
+          );
+        } else {
+          const accounts = new Set(Object.values(delivery.profiles));
+          requireThat(
+            Object.keys(input.players).every((account) => accounts.has(account)) &&
+              [...accounts].every((account) => Object.hasOwn(input.players, account)),
+            'Activity profile accounts must match measured players',
+          );
+          for (const [uuid, account] of Object.entries(delivery.profiles))
+            requireThat(
+              this.store.profile(uuid)?.id === account,
+              'Current activity profile ownership required',
+            );
+        }
+      }
+      const payload = () =>
+        JSON.stringify({
+          source: input.source,
+          windowStartMs: start,
+          windowEndMs: end,
+          players: Object.fromEntries(
+            Object.keys(input.players)
+              .sort()
+              .map((account) => {
+                const total = input.players[account];
+                return [
+                  account,
+                  {
+                    activeSlices: total.activeSlices,
+                    afkSlices: total.afkSlices,
+                    bonusPoints: total.bonusPoints,
+                  },
+                ];
+              }),
+          ),
+          evidence: input.evidence,
+        });
       if (previous) {
-        requireThat(previous.payload === payload, 'Activity receipt reused with different payload');
+        requireThat(
+          previous.payload === payload(),
+          'Activity receipt reused with different payload',
+        );
         return () => JSON.parse(String(previous.receipt)) as ActivityReceipt;
       }
       requireThat(start >= source.lastWindowEndMs, 'Activity windows must not overlap');
       requireThat(
-        this.store.db
-          .prepare('SELECT 1 FROM office_artifacts WHERE id=? AND owner=?')
-          .get(input.evidence, actor),
+        delivery ||
+          this.store.db
+            .prepare('SELECT 1 FROM office_artifacts WHERE id=? AND owner=?')
+            .get(input.evidence, actor),
         'Source-owned activity evidence required',
       );
       const slices = duration / limits.sliceMs;
@@ -250,6 +326,18 @@ export class Points {
         );
       }
       return () => {
+        if (telemetry) {
+          input = {
+            ...input,
+            evidence: this.office.storeDocument(
+              actor,
+              config.club,
+              'Activity telemetry',
+              'application/json',
+              telemetry,
+            ),
+          };
+        }
         const day = Math.floor(time / limits.dayMs);
         const previousSource = this.store.db
           .prepare('SELECT * FROM activity_source_days WHERE source=? AND day=?')
@@ -316,7 +404,7 @@ export class Points {
         };
         this.store.db
           .prepare('INSERT INTO activity_receipts VALUES(?,?,?,?)')
-          .run(id, input.source, payload, JSON.stringify(receipt));
+          .run(id, input.source, payload(), JSON.stringify(receipt));
         appendAudit(this.store, actor, `club:${config.club}`, 'activity_attest', id, receipt);
         return receipt;
       };
@@ -431,8 +519,13 @@ export class Points {
   }
 }
 
-export function registerPoints(app: FastifyInstance, store: Store, identity: LocalIdentity) {
-  const service = new Points(store, identity);
+export function registerPoints(
+  app: FastifyInstance,
+  store: Store,
+  identity: LocalIdentity,
+  office: Office,
+) {
+  const service = new Points(store, identity, office);
   const actor = (request: FastifyRequest) =>
     store.token(bearer(request.headers.authorization), undefined, now()).id;
   app.get(
@@ -458,6 +551,14 @@ export function registerPoints(app: FastifyInstance, store: Store, identity: Loc
       schema: { body: activitySourceConfigSchema, response: { 200: activitySourceRecordSchema } },
     },
     async (request) => service.setSource(actor(request), request.body),
+  );
+  app.post<{ Body: ActivityDelivery }>(
+    '/api/points/activity-deliveries',
+    {
+      bodyLimit: activityDeliverySchema.properties.telemetry.maxLength * 6 + 65536,
+      schema: { body: activityDeliverySchema, response: { 200: activityReceiptSchema } },
+    },
+    async (request) => service.deliver(actor(request), request.body),
   );
   app.post<{ Body: ActivityAttestation }>(
     '/api/points/activity',

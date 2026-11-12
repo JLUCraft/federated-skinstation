@@ -187,6 +187,12 @@ export class Competitions {
       .map((row) => JSON.parse(String(row.state)) as Competition);
   }
 
+  hosted(actor: string) {
+    return this.list(actor).filter(
+      (league) => league.host === actor && this.identity.isActiveMember(actor, league.club),
+    );
+  }
+
   snapshot(actor: string, id: string) {
     this.active(actor);
     return this.load(id);
@@ -857,6 +863,11 @@ export function registerCompetitions(app: FastifyInstance, store: Store, identit
     '/api/leagues',
     { schema: { response: { 200: competitionListSchema } } },
     async (request) => ({ leagues: competitions.list(actor(request)) }),
+  );
+  app.get(
+    '/api/hosted-leagues',
+    { schema: { response: { 200: competitionListSchema } } },
+    async (request) => ({ leagues: competitions.hosted(actor(request)) }),
   );
   app.post<{ Body: CompetitionCreate }>(
     '/api/leagues',

@@ -162,6 +162,8 @@ keeps its own club affiliation; when true, a team can mix club memberships.
   team, and seat epoch for that member or the designated host. Registered,
   eligible participants wait during registration or a pause; finished games
   have no destination.
+- `GET /api/hosted-leagues` lists the caller's assigned leagues while the caller
+  remains an active member of each league's club.
 - `GET /api/leagues/:id/admission/:profile` lets the designated host resolve a
   current primary or extra Minecraft UUID to its account and authorized route.
   It checks current membership, registration, event check-in and planning policy,

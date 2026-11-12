@@ -5,6 +5,7 @@ import { Store, now } from '../server/store.js';
 import { site } from './helpers/site.js';
 import type {
   Competition,
+  CompetitionList,
   GameResource,
   CompetitionRoute,
   CompetitionDisputeCreated,
@@ -39,6 +40,15 @@ test('central league journey keeps team identity, replacement epochs, scores and
     await call(admin, 'POST', '/api/game-resources', resource, 204);
     await call(admin, 'POST', '/api/seasons', { id: 'winter', club: 'jlu', title: 'Winter' });
     await call(admin, 'POST', '/api/leagues', { id: 'round', title: 'Round', resource: 'arena' });
+    assert.deepEqual(
+      (await call<CompetitionList>(host, 'GET', '/api/hosted-leagues')).leagues.map(
+        (league) => league.id,
+      ),
+      ['round'],
+    );
+    assert.deepEqual(await call<CompetitionList>(scorer, 'GET', '/api/hosted-leagues'), {
+      leagues: [],
+    });
     let time = Date.now();
     context.mock.method(Date, 'now', () => time);
     await call(admin, 'POST', '/api/leagues/round/schedule', {

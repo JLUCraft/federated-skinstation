@@ -17,6 +17,14 @@ bun run test
 
 Read [AGENTS.md](AGENTS.md) before making changes.
 
+`shared/contracts/*.schema.json` owns the central service's cross-language contracts.
+`bun run contracts` derives the TypeScript schemas and types used by the routes;
+installation and the service, build, and test commands run it automatically.
+Generated TypeScript is ignored by Git. The sibling game host's build script reads
+the same JSON Schema with `typify`; do not maintain handwritten copies of those types.
+The first contract is the Yggdrasil session profile returned by `hasJoined` and
+profile lookup. Add business contracts here as their central services are implemented.
+
 The `SKIN_CONFIG` JSON accepts an optional `organization` string of 1–64 lowercase letters, digits, or hyphens, defaulting to `jlucraft`. Changing it prevents decryption of existing AAD-bound MUA secrets and changes the passkey cookie name, launcher client ID used by stored authorization records, and Yggdrasil version string; plan for these effects before changing an existing deployment.
 
 ## Local identity foundation

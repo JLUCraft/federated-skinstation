@@ -46,6 +46,7 @@ import { registerProfiles } from './profiles.js';
 import { registerConnect } from './connect.js';
 import { SecretState } from './secret-state.js';
 import { resolveOrganization } from './organization.js';
+import { sessionProfileSchema, type SessionProfile } from '../shared/contracts/generated.js';
 
 export interface Config {
   organization?: string;
@@ -61,11 +62,6 @@ export interface Config {
   smtp: { host: string; port: number; from: string };
   webRoot?: string;
   mua?: MuaConfig;
-}
-interface Profile {
-  id: string;
-  name: string;
-  properties?: Array<{ name: string; value: string; signature?: string }>;
 }
 const text = field;
 const obj = record;
@@ -210,7 +206,7 @@ export async function build(
     account: Account,
     signed = true,
     id = db.profileId(account),
-  ): Profile => {
+  ): SessionProfile => {
     const selected = db.ownProfile(account, id);
     const textures: Record<string, unknown> = {};
     const saved = db.textures(account, id);
@@ -499,7 +495,9 @@ export async function build(
     );
     return reply.code(204).send();
   });
-  app.get('/sessionserver/session/minecraft/hasJoined', async (req, reply) => {
+  app.get('/sessionserver/session/minecraft/hasJoined', {
+    schema: { response: { 200: sessionProfileSchema, 204: { type: 'null' } } },
+  }, async (req, reply) => {
     const q = obj(req.query);
     const username = text(q.username, 16),
       serverId = text(q.serverId, 64);
@@ -515,6 +513,7 @@ export async function build(
   });
   app.get(
     '/sessionserver/session/minecraft/profile/:id',
+    { schema: { response: { 200: sessionProfileSchema, 204: { type: 'null' } } } },
     async (req, reply) => {
       const a = db.profile(text(obj(req.params).id, 32));
       return a

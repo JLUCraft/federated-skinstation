@@ -7,3 +7,4 @@ dist/
 config.local.json
 textures/
 .local/
+shared/contracts/generated.ts

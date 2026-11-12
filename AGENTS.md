@@ -10,4 +10,13 @@ Keep project documentation in the root `AGENTS.md` and `README.md` only. Product
 
 `server/` owns authentication and persistence, `shared/` owns shared contracts, and `web/` owns the portal. Install dependencies with `bun install --frozen-lockfile`. Set `SKIN_CONFIG` to an external JSON configuration matching `server/app.ts::Config`; use `bun run dev` for the service and `bun run dev:web` for the portal. `bun run start` runs the service; the frontend output is `dist/`.
 
+The skin station is the central account and authorization authority. Consolidate
+identity, permissions, league, events, approvals, and points here, keyed by
+`accounts.id`. Retire federation bridge consumers as each subsystem moves here.
+Institutional email verification enrolls the matching club; membership revocation
+is permanent. Chair succession and recovery belong to each club.
+Cross-language contracts originate in `shared/contracts/*.schema.json`.
+Generate TypeScript with `bun run contracts` and Rust with the host's `typify`
+build script. Never edit generated types.
+
 Change only the affected subsystem. Use existing dependencies and build directories. Finish each batch before validation; select one validation channel and reuse successful evidence for unchanged inputs. Report skipped checks and device execution limits explicitly.

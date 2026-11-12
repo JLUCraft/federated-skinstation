@@ -7,11 +7,13 @@
     "node": ">=22.22"
   },
   "scripts": {
-    "dev": "tsx watch server/main.ts",
+    "contracts": "tsx scripts/generate-contracts.ts",
+    "postinstall": "bun run contracts",
+    "dev": "bun run contracts && tsx watch server/main.ts",
     "dev:web": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
-    "start": "tsx server/main.ts",
-    "test": "tsx --test test/*.test.ts"
+    "build": "bun run contracts && tsc --noEmit && vite build",
+    "start": "bun run contracts && tsx server/main.ts",
+    "test": "bun run contracts && tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.4",
@@ -30,13 +32,14 @@
     "skinview3d": "^3.4.2"
   },
   "devDependencies": {
-    "typescript": "^7.0.2",
-    "tsx": "^4.23.15",
-    "vite": "^8.3.5",
     "@types/node": "^26.6.5",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@types/nodemailer": "^8.0.2",
-    "@types/pngjs": "^6.0.5"
+    "json-schema-to-ts": "^3.1.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
   }
 }

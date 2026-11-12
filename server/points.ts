@@ -140,19 +140,15 @@ export class Points {
     const row = this.store.db
       .prepare('SELECT definition FROM game_resources WHERE id=?')
       .get(config.resource);
-    requireThat(row, 'Activity game resource required');
+    if (!row) return undefined;
     const resource = JSON.parse(String(row.definition)) as GameResource;
-    requireThat(
-      resource.club === config.club && resource.host === config.account,
-      'Current resource host required',
-    );
-    return resource;
+    return resource.club === config.club && resource.host === config.account ? resource : undefined;
   }
 
   setSource(actor: string, config: ActivitySourceConfig) {
     return this.identity.authorized(actor, 'global', 'admin', () => {
       this.identity.requireMembership(config.account, config.club);
-      this.resource(config);
+      requireThat(this.resource(config), 'Current resource host required');
       requireThat(
         points(config.pointsPerSlice) > 0n && points(config.dailySourceCap) > 0n,
         'Positive activity source rates required',
@@ -184,6 +180,16 @@ export class Points {
       .map((row) => this.source(String(row.id)));
   }
 
+  hostedSources(actor: string) {
+    return this.sources(actor).filter(
+      ({ config }) =>
+        config.enabled &&
+        config.account === actor &&
+        this.identity.isActiveMember(actor, config.club) &&
+        this.resource(config),
+    );
+  }
+
   deliver(actor: string, delivery: ActivityDelivery) {
     return this.attest(
       actor,
@@ -205,7 +211,7 @@ export class Points {
       const config = source.config;
       requireThat(config.enabled && config.account === actor, 'Enabled activity source required');
       this.identity.requireMembership(actor, config.club);
-      this.resource(config);
+      requireThat(this.resource(config), 'Current resource host required');
       const policy = this.policy();
       const start = input.windowStartMs;
       const end = input.windowEndMs;
@@ -544,6 +550,11 @@ export function registerPoints(
     '/api/activity-sources',
     { schema: { response: { 200: activitySourceListSchema } } },
     async (request) => ({ sources: service.sources(actor(request)) }),
+  );
+  app.get(
+    '/api/hosted-activity-sources',
+    { schema: { response: { 200: activitySourceListSchema } } },
+    async (request) => ({ sources: service.hostedSources(actor(request)) }),
   );
   app.post<{ Body: ActivitySourceConfig }>(
     '/api/activity-sources',

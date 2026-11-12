@@ -6,6 +6,8 @@ import { ACTIVITY_LIMITS, POINT_LIMIT } from '../shared/points.js';
 import { site } from './helpers/site.js';
 import type {
   ActivitySourceConfig,
+  ActivitySourceList,
+  GameResource,
   ActivityDelivery,
   OfficeArtifact,
   ActivityReceipt,
@@ -272,6 +274,11 @@ test('point credits remain exact beyond JavaScript numbers and roll back the who
       .prepare("INSERT INTO memberships VALUES(?,'other','active','import','[]',?,NULL)")
       .run(host.user.id, now());
     await call(root, `/api/clubs/jlu/members/${host.user.id}/revoke`, {}, 204);
+    assert.deepEqual(
+      (await service.requestJson<ActivitySourceList>(host, 'GET', '/api/hosted-activity-sources'))
+        .sources,
+      [],
+    );
     await call(
       host,
       '/api/points/activity',
@@ -335,6 +342,15 @@ test('activity delivery archives private profile evidence and credits atomically
     };
     await call(root, 'POST', '/api/activity-sources', config);
     await call(root, 'POST', '/api/points/policy', { dailyMemberCap: '100' });
+    const assignments = '/api/hosted-activity-sources';
+    assert.deepEqual(
+      (await call<ActivitySourceList>(host, 'GET', assignments)).sources.map(
+        ({ config }) => config.id,
+      ),
+      ['world'],
+    );
+    assert.deepEqual((await call<ActivitySourceList>(bob, 'GET', assignments)).sources, []);
+
     const time = Math.floor(Date.now() / ACTIVITY_LIMITS.sliceMs) * ACTIVITY_LIMITS.sliceMs;
     context.mock.method(Date, 'now', () => time);
     const extra = store.createProfile(store.account('id', alice.user.id)!, 'AliceExtra');
@@ -408,7 +424,17 @@ test('activity delivery archives private profile evidence and credits atomically
       .run('10', alice.user.id);
     const nextReceipt = await call<ActivityReceipt>(host, 'POST', endpoint, next);
     assert.equal(nextReceipt.awarded[alice.user.id], '10');
+    const resource = JSON.parse(
+      String(
+        store.db.prepare("SELECT definition FROM game_resources WHERE id='world'").get()!
+          .definition,
+      ),
+    ) as GameResource;
+    await call(root, 'POST', '/api/game-resources', { ...resource, host: bob.user.id }, 204);
+    assert.deepEqual((await call<ActivitySourceList>(host, 'GET', assignments)).sources, []);
+    await call(root, 'POST', '/api/game-resources', resource, 204);
     await call(root, 'POST', '/api/activity-sources', { ...config, enabled: false });
+    assert.deepEqual((await call<ActivitySourceList>(host, 'GET', assignments)).sources, []);
     await call(host, 'POST', endpoint, next, 403);
     assert.equal(store.db.prepare('SELECT count(*) AS n FROM office_artifacts').get()!.n, 2);
   } finally {

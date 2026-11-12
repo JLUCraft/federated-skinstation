@@ -318,6 +318,8 @@ active club selection are shared through `LocalIdentity`.
 - `GET` and `POST /api/activity-sources` list and configure activity sources.
   A global administrator binds each source to a game resource and its host
   account. Reconfiguration preserves the source's processed-window position.
+- `GET /api/hosted-activity-sources` lists enabled sources assigned to the caller
+  whose club membership and current game-resource host assignment remain active.
 - `POST /api/points/activity-deliveries` accepts the generated `ActivityDelivery`
   contract, atomically archives private telemetry and profile bindings, and
   credits measured activity. Initial delivery validates current UUID ownership.

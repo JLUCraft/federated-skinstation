@@ -24,25 +24,8 @@ export class Competitions {
     this.identity.authenticate(account);
   }
 
-  private affiliated(account: string, club: string) {
-    this.active(account);
-    requireThat(this.store.db.prepare(
-      "SELECT 1 FROM memberships WHERE account=? AND club=? AND status='active'",
-    ).get(account, club), 'Active participant membership required');
-  }
-
-  private affiliation(account: string) {
-    this.active(account);
-    const row = this.store.db.prepare(
-      "SELECT m.club FROM memberships m JOIN accounts a ON a.id=m.account JOIN clubs c ON c.id=m.club WHERE m.account=? AND m.status='active' ORDER BY (c.school=a.school) DESC,m.since,m.club LIMIT 1",
-    ).get(account)!;
-    return String(row.club);
-  }
-
   private eligible(league: Competition, team: string, account: string) {
-    return !!this.store.db.prepare(
-      "SELECT 1 FROM accounts a JOIN memberships m ON m.account=a.id WHERE a.id=? AND a.disabled=0 AND m.status='active' AND (? OR m.club=?)",
-    ).get(account, league.rules.crossClub ? 1 : 0, league.teams[team].club);
+    return this.identity.isActiveMember(account, league.rules.crossClub ? undefined : league.teams[team].club);
   }
 
   private load(id: string): Competition {
@@ -72,8 +55,8 @@ export class Competitions {
       const existing = this.store.db.prepare('SELECT club FROM game_resources WHERE id=?').get(resource.id);
       requireThat(!existing || existing.club === resource.club, 'Resource club is immutable');
       requireThat(resource.rules.reconnectMinMs <= resource.rules.reconnectMaxMs, 'Invalid reconnect interval');
-      this.affiliated(resource.host, resource.club);
-      this.affiliated(resource.scorer, resource.club);
+      this.identity.requireMembership(resource.host, resource.club);
+      this.identity.requireMembership(resource.scorer, resource.club);
       requireThat(!this.store.db.prepare(
         "SELECT 1 FROM leagues WHERE resource=? AND json_extract(state,'$.phase')!='finished'",
       ).get(resource.id), 'Game resource is in use');
@@ -88,8 +71,8 @@ export class Competitions {
     const owner = this.resource(input.resource).club;
     return this.identity.authorized(actor, `club:${owner}`, 'manage', () => {
       const resource = this.resource(input.resource);
-      this.affiliated(resource.host, resource.club);
-      this.affiliated(resource.scorer, resource.club);
+      this.identity.requireMembership(resource.host, resource.club);
+      this.identity.requireMembership(resource.scorer, resource.club);
       requireThat(!this.store.db.prepare('SELECT 1 FROM leagues WHERE id=?').get(input.id), 'League already exists');
       const league: Competition = {
         id: input.id, club: resource.club, title: input.title, resource: resource.id,
@@ -137,7 +120,7 @@ export class Competitions {
 
   private delegate(league: Competition, actor: string, kind: 'host' | 'scorer') {
     requireThat(actor === league[kind], `League ${kind} required`);
-    this.affiliated(actor, league.club);
+    this.identity.requireMembership(actor, league.club);
   }
 
   private registration(league: Competition, time: number, window = true) {
@@ -210,7 +193,7 @@ export class Competitions {
           requireThat(Object.keys(league.teams).length < MAX_PARTICIPANTS, 'League capacity reached');
           this.claimTeam(id, command.team, actor);
           Object.defineProperty(league.teams, command.team, {
-            value: { club: this.affiliation(actor), captain: actor, members: [actor], invited: [], registered: false },
+            value: { club: this.identity.affiliation(actor), captain: actor, members: [actor], invited: [], registered: false },
             enumerable: true, configurable: true, writable: true,
           });
           break;
@@ -259,7 +242,7 @@ export class Competitions {
             requireThat(!Object.keys(league.teams).length, 'Automatic teams require an empty league');
             const groups = new Map<string, string[]>();
             for (const member of [...command.members].sort()) {
-              const club = league.rules.crossClub ? league.club : this.affiliation(member);
+              const club = league.rules.crossClub ? league.club : this.identity.affiliation(member);
               const group = groups.get(club) ?? [];
               group.push(member);
               groups.set(club, group);

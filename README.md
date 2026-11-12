@@ -207,3 +207,34 @@ shared through an event. Attendance uses the authenticated account and service
 time. Assigned tasks require current participating-club membership. Authorization
 preparation and mutations share one write lock; rejected preparation retains its
 decision audit while failed mutations roll back business changes.
+
+## Points and player activity
+
+`server/points.ts` owns the point ledger, activity sources and receipts, daily
+limits, and spending authorizations. Migration 7 stores exact unsigned point
+amounts as decimal text; calculations use `BigInt`. The points contract owns the
+amount limit and activity constants. Membership eligibility and the default
+active club selection are shared through `LocalIdentity`.
+
+- `GET` and `POST /api/points/policy` read and configure the daily member cap.
+  Configuration requires a global administrator.
+- `GET` and `POST /api/activity-sources` list and configure activity sources.
+  A global administrator binds each source to a game resource and its host
+  account. Reconfiguration preserves the source's processed-window position.
+- `POST /api/points/activity` submits measured, aligned activity slices with
+  source-owned immutable telemetry. Current host authority, resource ownership,
+  membership, window bounds, active/AFK totals, and bonus limits are checked
+  before any credits. Daily member limits apply across sources; source limits
+  apply to each source. The service's receipt time selects the credit day.
+- `GET /api/points/me` returns the caller's club balances, today's measured
+  activity, and the latest 100 ledger entries.
+- `GET` and `POST /api/points/allowances` list and authorize the caller's spending
+  budgets for a personal request or managed event. Replacement advances the
+  authorization epoch. An owner can revoke an existing budget after losing its
+  club membership; a fresh authorization requires current membership and scope
+  authority. Authorization alone does not debit a balance.
+
+Exact receipt replays return their existing result without another credit.
+Conflicting payloads and overlapping windows are rejected. Balances, daily
+usage, receipt storage, the source position, and audit changes share one
+transaction; an overflow rolls back the entire credit batch.

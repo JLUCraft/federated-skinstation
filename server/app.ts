@@ -34,6 +34,7 @@ import { LocalIdentity } from './permissions.js';
 import { registerIdentity } from './identity.js';
 import { registerCompetitions } from './league.js';
 import { registerOffice } from './office.js';
+import { registerPoints } from './points.js';
 import { contractSchemas } from '../shared/contracts/generated.js';
 import { registerMua, type MuaConfig } from './mua.js';
 import { registerCommunity } from './community.js';
@@ -324,6 +325,7 @@ export async function build(
     (email, confirmation) => mail(email, confirmation, '账号恢复'));
   registerCompetitions(app, db, localIdentity);
   registerOffice(app, db, localIdentity);
+  registerPoints(app, db, localIdentity);
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);
   app.get('/api/capabilities', async () => ({

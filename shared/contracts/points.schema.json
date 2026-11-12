@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/points",
+  "title": "PointOverview",
+  "$ref": "#/definitions/MemberPoints",
+  "definitions": {
+    "PointAmount": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,19})$" },
+    "PointLimit": { "type": "string", "const": "18446744073709551615" },
+    "ActivityLimits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sliceMs", "dayMs", "maxBatchSlices", "maxPlayers", "weightDenominator", "maxWeightBps"],
+      "properties": {
+        "sliceMs": { "type": "integer", "const": 300000 },
+        "dayMs": { "type": "integer", "const": 86400000 },
+        "maxBatchSlices": { "type": "integer", "const": 12 },
+        "maxPlayers": { "type": "integer", "const": 256 },
+        "weightDenominator": { "type": "integer", "const": 10000 },
+        "maxWeightBps": { "type": "integer", "const": 20000 }
+      }
+    },
+    "PointPolicyUpdate": {
+      "type": "object", "additionalProperties": false, "required": ["dailyMemberCap"],
+      "properties": { "dailyMemberCap": { "$ref": "#/definitions/PointAmount" } }
+    },
+    "PointPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["dailyMemberCap", "limits"],
+      "properties": {
+        "dailyMemberCap": { "$ref": "#/definitions/PointAmount" },
+        "limits": { "$ref": "#/definitions/ActivityLimits" }
+      }
+    },
+    "ActivitySourceConfig": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "club", "account", "resource", "weightBps", "pointsPerSlice", "maxBonusPerSlice", "dailySourceCap", "enabled"],
+      "properties": {
+        "id": { "$ref": "https://skin.jlucraft.com/contracts/office#/definitions/OfficeId" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "club": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "account": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "resource": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "weightBps": { "type": "integer", "minimum": 1, "maximum": 20000 },
+        "pointsPerSlice": { "$ref": "#/definitions/PointAmount" },
+        "maxBonusPerSlice": { "$ref": "#/definitions/PointAmount" },
+        "dailySourceCap": { "$ref": "#/definitions/PointAmount" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "ActivitySourceRecord": {
+      "type": "object", "additionalProperties": false, "required": ["config", "lastWindowEndMs"],
+      "properties": {
+        "config": { "$ref": "#/definitions/ActivitySourceConfig" },
+        "lastWindowEndMs": { "type": "integer" }
+      }
+    },
+    "ActivitySourceList": {
+      "type": "object", "additionalProperties": false, "required": ["sources"],
+      "properties": { "sources": { "type": "array", "items": { "$ref": "#/definitions/ActivitySourceRecord" } } }
+    },
+    "ActivityTotals": {
+      "type": "object", "additionalProperties": false, "required": ["activeSlices", "afkSlices", "bonusPoints"],
+      "properties": {
+        "activeSlices": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "afkSlices": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "bonusPoints": { "$ref": "#/definitions/PointAmount" }
+      }
+    },
+    "ActivityAttestation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "windowStartMs", "windowEndMs", "players", "evidence"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "windowStartMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "windowEndMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "players": { "type": "object", "maxProperties": 256, "additionalProperties": { "$ref": "#/definitions/ActivityTotals" } },
+        "evidence": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "ActivityReceipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "attestation", "creditedAt", "creditedDay", "accounts", "awarded"],
+      "properties": {
+        "id": { "type": "string" },
+        "attestation": { "$ref": "#/definitions/ActivityAttestation" },
+        "creditedAt": { "type": "integer" },
+        "creditedDay": { "type": "integer" },
+        "accounts": { "type": "object", "additionalProperties": { "type": "string" } },
+        "awarded": { "type": "object", "additionalProperties": { "$ref": "#/definitions/PointAmount" } }
+      }
+    },
+    "PointLedgerEntry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["seq", "club", "account", "kind", "reference", "credit", "amount", "balance", "at"],
+      "properties": {
+        "seq": { "type": "integer" },
+        "club": { "type": "string" },
+        "account": { "type": "string" },
+        "kind": { "type": "string" },
+        "reference": { "type": "string" },
+        "credit": { "type": "boolean" },
+        "amount": { "$ref": "#/definitions/PointAmount" },
+        "balance": { "$ref": "#/definitions/PointAmount" },
+        "at": { "type": "integer" }
+      }
+    },
+    "MemberPoints": {
+      "type": "object", "additionalProperties": false,
+      "required": ["account", "asOfMs", "dayEndsMs", "earnedToday", "activeSlices", "afkSlices", "balances", "entries"],
+      "properties": {
+        "account": { "type": "string" },
+        "asOfMs": { "type": "integer" },
+        "dayEndsMs": { "type": "integer" },
+        "earnedToday": { "$ref": "#/definitions/PointAmount" },
+        "activeSlices": { "type": "integer" },
+        "afkSlices": { "type": "integer" },
+        "balances": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["club", "available"],
+            "properties": { "club": { "type": "string" }, "available": { "$ref": "#/definitions/PointAmount" } }
+          }
+        },
+        "entries": { "type": "array", "items": { "$ref": "#/definitions/PointLedgerEntry" } }
+      }
+    },
+    "PointAllowanceRequest": {
+      "type": "object", "additionalProperties": false, "required": ["scope", "club", "budget"],
+      "properties": {
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^(event|member):[^:\\s]+$" },
+        "club": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "budget": { "$ref": "#/definitions/PointAmount" }
+      }
+    },
+    "PointAllowance": {
+      "type": "object", "additionalProperties": false, "required": ["scope", "club", "account", "epoch", "remaining"],
+      "properties": {
+        "scope": { "type": "string" },
+        "club": { "type": "string" },
+        "account": { "type": "string" },
+        "epoch": { "type": "integer" },
+        "remaining": { "$ref": "#/definitions/PointAmount" }
+      }
+    },
+    "PointAllowanceList": {
+      "type": "object", "additionalProperties": false, "required": ["allowances"],
+      "properties": { "allowances": { "type": "array", "items": { "$ref": "#/definitions/PointAllowance" } } }
+    }
+  }
+}

@@ -27,6 +27,22 @@ export function appendAudit(
 
 export class LocalIdentity {
   constructor(readonly store: Store) {}
+  isActiveMember(account: string, club?: string) {
+    return !!this.store.db.prepare(
+      "SELECT 1 FROM accounts a JOIN memberships m ON m.account=a.id WHERE a.id=? AND a.disabled=0 AND m.status='active' AND (? IS NULL OR m.club=?)",
+    ).get(account, club ?? null, club ?? null);
+  }
+  requireMembership(account: string, club: string) {
+    this.authenticate(account);
+    requireThat(this.isActiveMember(account, club), 'Active club membership required');
+  }
+  affiliation(account: string) {
+    this.authenticate(account);
+    const row = this.store.db.prepare(
+      "SELECT m.club FROM memberships m JOIN accounts a ON a.id=m.account JOIN clubs c ON c.id=m.club WHERE m.account=? AND m.status='active' ORDER BY (c.school=a.school) DESC,m.since,m.club LIMIT 1",
+    ).get(account)!;
+    return String(row.club);
+  }
   isGlobalAdministrator(account: string) {
     return this.enabled(account) && !!this.store.db.prepare(
       "SELECT 1 FROM grants WHERE principal_kind='user' AND principal=? AND scope='global' AND permission='admin' AND revoked_at IS NULL",
@@ -34,9 +50,7 @@ export class LocalIdentity {
   }
   authenticate(account: string) {
     requireThat(this.enabled(account), 'Account disabled');
-    requireThat(this.store.db.prepare(
-      "SELECT 1 FROM memberships WHERE account=? AND status='active'",
-    ).get(account), 'Active club membership required');
+    requireThat(this.isActiveMember(account), 'Active club membership required');
   }
   hasSiteAdministrator() {
     return !!this.store.db.prepare(

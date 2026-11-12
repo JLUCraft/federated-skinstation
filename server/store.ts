@@ -154,6 +154,21 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE INDEX workflows_event ON workflows(event);
     `);
   } },
+  { version: 7, apply(db) {
+    db.exec(`
+      CREATE TABLE point_policy(id INTEGER PRIMARY KEY CHECK(id=1),daily_member_cap TEXT NOT NULL);
+      CREATE TABLE activity_sources(id TEXT PRIMARY KEY,config TEXT NOT NULL CHECK(json_valid(config)),last_window_end_ms INTEGER NOT NULL);
+      CREATE TABLE activity_source_days(source TEXT NOT NULL REFERENCES activity_sources(id),day INTEGER NOT NULL,points TEXT NOT NULL,active_slices INTEGER NOT NULL,afk_slices INTEGER NOT NULL,PRIMARY KEY(source,day));
+      CREATE TABLE activity_member_days(account TEXT NOT NULL REFERENCES accounts(id),day INTEGER NOT NULL,points TEXT NOT NULL,active_slices INTEGER NOT NULL,afk_slices INTEGER NOT NULL,PRIMARY KEY(account,day));
+      CREATE TABLE activity_receipts(id TEXT PRIMARY KEY,source TEXT NOT NULL REFERENCES activity_sources(id),payload TEXT NOT NULL CHECK(json_valid(payload)),receipt TEXT NOT NULL CHECK(json_valid(receipt)));
+      CREATE TABLE point_balances(account TEXT NOT NULL REFERENCES accounts(id),club TEXT NOT NULL REFERENCES clubs(id),available TEXT NOT NULL,PRIMARY KEY(account,club));
+      CREATE TABLE point_ledger(seq INTEGER PRIMARY KEY AUTOINCREMENT,club TEXT NOT NULL REFERENCES clubs(id),account TEXT NOT NULL REFERENCES accounts(id),kind TEXT NOT NULL,reference TEXT NOT NULL,credit INTEGER NOT NULL CHECK(credit IN (0,1)),amount TEXT NOT NULL,balance TEXT NOT NULL,at INTEGER NOT NULL,UNIQUE(club,account,kind,reference));
+      CREATE INDEX point_ledger_account ON point_ledger(account,seq);
+      CREATE TRIGGER point_ledger_no_update BEFORE UPDATE ON point_ledger BEGIN SELECT RAISE(ABORT,'Point entries are immutable'); END;
+      CREATE TRIGGER point_ledger_no_delete BEFORE DELETE ON point_ledger BEGIN SELECT RAISE(ABORT,'Point entries are immutable'); END;
+      CREATE TABLE point_allowances(scope TEXT PRIMARY KEY,club TEXT NOT NULL REFERENCES clubs(id),account TEXT NOT NULL REFERENCES accounts(id),epoch INTEGER NOT NULL,remaining TEXT NOT NULL);
+    `);
+  } },
 ];
 export class Store {
   readonly db: DatabaseSync;

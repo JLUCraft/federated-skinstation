@@ -22,9 +22,7 @@ export class Office {
   constructor(private readonly store: Store, private readonly identity: LocalIdentity) {}
 
   private active(account: string, club?: string) {
-    return !!this.store.db.prepare(
-      "SELECT 1 FROM accounts a JOIN memberships m ON m.account=a.id WHERE a.id=? AND a.disabled=0 AND m.status='active' AND (? IS NULL OR m.club=?)",
-    ).get(account, club ?? null, club ?? null);
+    return this.identity.isActiveMember(account, club);
   }
 
   private chair(account: string, club: string) {
@@ -214,11 +212,9 @@ export class Office {
             time < event.window.closesMs, 'Event registration closed');
           requireThat(!this.store.db.prepare('SELECT 1 FROM event_attendance WHERE event=? AND account=?').get(id, actor),
             'Event signup already exists');
-          const membership = this.store.db.prepare(
-            "SELECT m.club FROM memberships m JOIN clubs c ON c.id=m.club JOIN accounts a ON a.id=m.account WHERE m.account=? AND m.status='active' ORDER BY (c.school=a.school) DESC,m.since,m.club LIMIT 1",
-          ).get(actor)!;
+          const club = this.identity.affiliation(actor);
           this.store.db.prepare('INSERT INTO event_attendance VALUES(?,?,?,?,NULL)')
-            .run(id, actor, String(membership.club), time);
+            .run(id, actor, club, time);
           break;
         }
         case 'cancel_signup':

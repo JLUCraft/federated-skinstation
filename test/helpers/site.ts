@@ -48,7 +48,8 @@ export async function site(
     await rm(dir, { recursive: true, force: true });
     throw error;
   });
-  const post = (url: string, payload: object) => app.inject({ method: 'POST', url, payload });
+  const post = (url: string, payload: object, remoteAddress = '127.0.0.1') =>
+    app.inject({ method: 'POST', url, payload, remoteAddress });
   type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   function requestJson<Result = unknown>(
     login: Login,
@@ -81,22 +82,26 @@ export async function site(
     if (status === 200) assert.ok(response.body, 'Expected a JSON response');
     return response.body ? response.json<unknown>() : undefined;
   }
-  async function enroll(name: string) {
+  async function enroll(name: string, remoteAddress = '127.0.0.1') {
     const account = {
       email: name.toLowerCase() + '@school.test',
       name,
       school: 'jlu',
       password: 'password-for-contract-testing',
     };
-    const start = await post('/api/email/start', account);
+    const start = await post('/api/email/start', account, remoteAddress);
     if (start.statusCode !== 202) throw new Error(start.body);
-    await post('/api/email/confirm', { email: account.email, code });
+    await post('/api/email/confirm', { email: account.email, code }, remoteAddress);
     return (
-      await post('/authserver/authenticate', {
-        username: account.email,
-        password: account.password,
-        requestUser: true,
-      })
+      await post(
+        '/authserver/authenticate',
+        {
+          username: account.email,
+          password: account.password,
+          requestUser: true,
+        },
+        remoteAddress,
+      )
     ).json<Login>();
   }
   return {

@@ -126,6 +126,82 @@
         "polished": { "type": ["string", "null"] }
       }
     },
+    "EventGameRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan", "resource"],
+      "properties": {
+        "plan": { "$ref": "#/definitions/PlanningId" },
+        "resource": { "$ref": "#/definitions/PlanningId" }
+      }
+    },
+    "EventGameList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["games"],
+      "properties": {
+        "games": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resource", "competition"],
+            "properties": {
+              "resource": { "type": "string" },
+              "competition": {
+                "$ref": "https://skin.jlucraft.com/contracts/league#/definitions/Competition"
+              }
+            }
+          }
+        }
+      }
+    },
+    "EventSettlementRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan"],
+      "properties": { "plan": { "$ref": "#/definitions/PlanningId" } }
+    },
+    "EventAward": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "account",
+        "club",
+        "rank",
+        "points",
+        "material",
+        "deliveredBy",
+        "receivedAt"
+      ],
+      "properties": {
+        "event": { "type": "string" },
+        "account": { "type": "string" },
+        "club": { "type": "string" },
+        "rank": { "type": "integer", "minimum": 1 },
+        "points": { "$ref": "https://skin.jlucraft.com/contracts/points#/definitions/PointAmount" },
+        "material": { "type": ["string", "null"] },
+        "deliveredBy": { "type": ["string", "null"] },
+        "receivedAt": { "type": ["integer", "null"] }
+      }
+    },
+    "EventRewards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "settledAt", "awards"],
+      "properties": {
+        "event": { "type": "string" },
+        "settledAt": { "type": ["integer", "null"] },
+        "awards": { "type": "array", "items": { "$ref": "#/definitions/EventAward" } }
+      }
+    },
+    "EventAwardCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": { "action": { "enum": ["deliver", "receive"] } }
+    },
     "PlanCommand": {
       "oneOf": [
         {

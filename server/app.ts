@@ -32,6 +32,7 @@ import { registerIdentity } from './identity.js';
 import { registerCompetitions } from './league.js';
 import { registerOffice } from './office.js';
 import { registerPlanning } from './planning.js';
+import { registerEventGames } from './event-games.js';
 import { registerPoints } from './points.js';
 import { registerAi } from './ai.js';
 import { contractSchemas, type AiGatewaySettings } from '../shared/contracts/generated.js';
@@ -304,10 +305,11 @@ export async function build(
   registerIdentity(app, db, localIdentity, config.schools, (email, confirmation) =>
     mail(email, confirmation, '账号恢复'),
   );
-  registerCompetitions(app, db, localIdentity);
+  const competitions = registerCompetitions(app, db, localIdentity);
   const office = registerOffice(app, db, localIdentity);
   registerPlanning(app, db, localIdentity, office);
   const points = registerPoints(app, db, localIdentity);
+  registerEventGames(app, db, localIdentity, office, competitions, points.ledger);
   registerAi(
     app,
     db,

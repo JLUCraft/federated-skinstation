@@ -251,6 +251,42 @@ workflow's input. Plans must be finalized and polished before submission, review
 execution, and publication; each transition rechecks current consent and club
 policy and event window. Events without a plan retain the direct approval workflow.
 
+## Event games and rewards
+
+`server/event-games.ts` connects planned activities to the league and point
+authorities. Migration 10 stores each event/resource's league binding, one
+settlement, and award delivery receipts.
+
+- `POST /api/events/:id/games` prepares a selected game with its current plan ID
+  and resource ID after check-in opens. Repeating the request returns the same
+  league. `GET` on that route returns the bound competitions.
+- Players use the league team routes during check-in for manual teams.
+  Automatic resources form teams from current check-ins at game start.
+  Enrollment owns each player's club for team eligibility and later rewards.
+- Event managers start and pause bound leagues through their existing actions.
+  The selected resource's host supplies presence and ticks; its scorer supplies
+  scores and completion. The event's schedule, check-ins, consent, resource
+  approval, and reservation govern play and routing. Direct attendance updates
+  and league rescheduling are closed for event games.
+- Preparing a game closes event revision. Completing an online activity requires
+  every selected game to finish. Cancellation closes all bound leagues, clears
+  seating, and releases reservations in the same transaction.
+- `POST /api/events/:id/rewards` settles a completed plan once; repeats return
+  the recorded awards. Online ranks use exact aggregate scores from players who
+  played in the selected leagues. Meetings rank checked-in participants equally.
+  Each club's reward rule applies to its enrolled members; place limits include
+  ties. Open score disputes must be resolved first. Settlement closes further
+  result disputes and changes.
+- `GET /api/events/:id/rewards` shows personal awards, each club manager's own
+  club awards, or all awards for an event manager.
+  `POST /api/events/:id/awards/:account` records `deliver` by the award club's
+  current manager and then `receive` by the recipient, using service time.
+
+Point credits, the settlement marker, and award records commit together. A failed
+credit rolls back the whole settlement. Historical enrollment determines the
+award club; later membership changes keep the earned record, while current
+identity and permissions continue to govern spending, management, and play.
+
 ## Points and player activity
 
 `server/points.ts` owns the point ledger, activity sources and receipts, daily

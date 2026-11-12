@@ -29,6 +29,13 @@ import {
 } from '../shared/contracts/generated.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
 import { gameEndpoint, gameResource } from './planning-state.js';
+import {
+  currentGameMembers,
+  eventEnrollment,
+  eventGame,
+  requireEventGameCurrent,
+  requireUnsettledGame,
+} from './event-game-state.js';
 import { now, requireThat, type Store } from './store.js';
 import { bearer, field, record } from './validate.js';
 
@@ -47,19 +54,28 @@ export class Competitions {
   }
 
   private eligible(league: Competition, team: string, account: string) {
+    const binding = eventGame(this.store, league.id);
+    if (binding) {
+      const club = eventEnrollment(this.store, binding.event, account);
+      return (
+        !!club &&
+        this.identity.isActiveMember(account, club) &&
+        (league.rules.crossClub || club === league.teams[team].club)
+      );
+    }
     return this.identity.isActiveMember(
       account,
       league.rules.crossClub ? undefined : league.teams[team].club,
     );
   }
 
-  private load(id: string): Competition {
+  load(id: string): Competition {
     const row = this.store.db.prepare('SELECT state FROM leagues WHERE id=?').get(id);
     requireThat(row, 'League not found');
     return JSON.parse(String(row.state)) as Competition;
   }
 
-  private save(league: Competition) {
+  save(league: Competition) {
     this.store.db
       .prepare('UPDATE leagues SET state=? WHERE id=?')
       .run(JSON.stringify(league), league.id);
@@ -115,44 +131,48 @@ export class Competitions {
 
   create(actor: string, input: CompetitionCreate) {
     const owner = this.resource(input.resource).club;
-    return this.identity.authorized(actor, `club:${owner}`, 'manage', () => {
-      const resource = this.resource(input.resource);
-      this.identity.requireMembership(resource.host, resource.club);
-      this.identity.requireMembership(resource.scorer, resource.club);
-      requireThat(
-        !this.store.db.prepare('SELECT 1 FROM leagues WHERE id=?').get(input.id),
-        'League already exists',
-      );
-      const league: Competition = {
-        id: input.id,
-        club: resource.club,
-        title: input.title,
-        resource: resource.id,
-        organizer: actor,
-        host: resource.host,
-        scorer: resource.scorer,
-        rules: resource.rules,
-        phase: 'registration',
-        teams: {},
-        online: [],
-        seats: {},
-        played: [],
-        playerScores: {},
-        teamScores: {},
-        health: {},
-        admitted: null,
-        schedule: null,
-        manualPause: false,
-        infrastructureDown: false,
-        pausedSince: null,
-        epoch: 0,
-      };
-      this.store.db
-        .prepare('INSERT INTO leagues(id,club,resource,state) VALUES(?,?,?,?)')
-        .run(league.id, league.club, league.resource, JSON.stringify(league));
-      appendAudit(this.store, actor, `league:${league.id}`, 'create', league.id, input);
-      return league;
-    });
+    return this.identity.authorized(actor, `club:${owner}`, 'manage', () =>
+      this.createState(actor, input),
+    );
+  }
+
+  createState(actor: string, input: CompetitionCreate) {
+    const resource = this.resource(input.resource);
+    this.identity.requireMembership(resource.host, resource.club);
+    this.identity.requireMembership(resource.scorer, resource.club);
+    requireThat(
+      !this.store.db.prepare('SELECT 1 FROM leagues WHERE id=?').get(input.id),
+      'League already exists',
+    );
+    const league: Competition = {
+      id: input.id,
+      club: resource.club,
+      title: input.title,
+      resource: resource.id,
+      organizer: actor,
+      host: resource.host,
+      scorer: resource.scorer,
+      rules: resource.rules,
+      phase: 'registration',
+      teams: {},
+      online: [],
+      seats: {},
+      played: [],
+      playerScores: {},
+      teamScores: {},
+      health: {},
+      admitted: null,
+      schedule: null,
+      manualPause: false,
+      infrastructureDown: false,
+      pausedSince: null,
+      epoch: 0,
+    };
+    this.store.db
+      .prepare('INSERT INTO leagues(id,club,resource,state) VALUES(?,?,?,?)')
+      .run(league.id, league.club, league.resource, JSON.stringify(league));
+    appendAudit(this.store, actor, `league:${league.id}`, 'create', league.id, input);
+    return league;
   }
 
   list(actor: string) {
@@ -189,6 +209,14 @@ export class Competitions {
 
   private participant(league: Competition, member: string) {
     this.active(member);
+    const binding = eventGame(this.store, league.id);
+    if (binding) {
+      const club = eventEnrollment(this.store, binding.event, member);
+      requireThat(
+        club && this.identity.isActiveMember(member, club),
+        'Active event check-in required',
+      );
+    }
     requireThat(
       league.admitted === null || league.admitted.includes(member),
       'Participant is not admitted',
@@ -272,12 +300,73 @@ export class Competitions {
     }
   }
 
+  private participantClub(league: Competition, account: string) {
+    const binding = eventGame(this.store, league.id);
+    if (!binding) return this.identity.affiliation(account);
+    const club = eventEnrollment(this.store, binding.event, account);
+    requireThat(club, 'Event check-in required');
+    this.identity.requireMembership(account, club);
+    return club;
+  }
+
+  admit(league: Competition, members: string[], automatic: boolean) {
+    requireThat(members.length <= MAX_PARTICIPANTS, 'League capacity reached');
+    for (const member of members) this.active(member);
+    if (automatic) {
+      requireThat(!Object.keys(league.teams).length, 'Automatic teams require an empty league');
+      const groups = new Map<string, string[]>();
+      for (const member of [...members].sort()) {
+        const affiliation = this.participantClub(league, member);
+        const club = league.rules.crossClub ? league.club : affiliation;
+        const group = groups.get(club) ?? [];
+        group.push(member);
+        groups.set(club, group);
+      }
+      for (const [club, groupMembers] of groups) {
+        for (let offset = 0; offset < groupMembers.length; offset += league.rules.seats) {
+          const group = groupMembers.slice(offset, offset + league.rules.seats);
+          const team = `auto-${group[0]}`;
+          this.claimTeam(league.id, team, group[0]);
+          league.teams[team] = {
+            club,
+            captain: group[0],
+            members: group,
+            invited: [],
+            registered: true,
+          };
+        }
+      }
+    }
+    league.admitted = members;
+  }
+
   execute(actor: string, id: string, command: CompetitionCommand) {
     const manage = ['attendance', 'start', 'pause'].includes(command.action);
     const apply = () => {
       this.active(actor);
       const league = this.load(id);
       const time = Date.now();
+      const binding = eventGame(this.store, id);
+      if (binding) {
+        if (
+          command.action !== 'finish' &&
+          !(command.action === 'score' && league.phase === 'finished')
+        )
+          requireEventGameCurrent(this.store, this.identity, id);
+        requireThat(command.action !== 'attendance', 'Event check-ins determine attendance');
+        const automatic = this.resource(league.resource).automaticTeams;
+        requireThat(
+          !automatic || !['create_team', 'invite', 'accept', 'register'].includes(command.action),
+          'Event game uses automatic teams',
+        );
+        if (league.phase === 'registration') {
+          const members = currentGameMembers(this.store, this.identity, binding.event).map(
+            (entry) => entry.account,
+          );
+          if (command.action === 'start' && automatic) league.teams = {};
+          this.admit(league, members, command.action === 'start' && automatic);
+        }
+      }
       switch (command.action) {
         case 'create_team': {
           this.registration(league, time);
@@ -293,7 +382,7 @@ export class Competitions {
           this.claimTeam(id, command.team, actor);
           Object.defineProperty(league.teams, command.team, {
             value: {
-              club: this.identity.affiliation(actor),
+              club: this.participantClub(league, actor),
               captain: actor,
               members: [actor],
               invited: [],
@@ -350,35 +439,7 @@ export class Competitions {
         }
         case 'attendance': {
           this.registration(league, time, false);
-          for (const member of command.members) this.active(member);
-          if (command.automatic) {
-            requireThat(
-              !Object.keys(league.teams).length,
-              'Automatic teams require an empty league',
-            );
-            const groups = new Map<string, string[]>();
-            for (const member of [...command.members].sort()) {
-              const club = league.rules.crossClub ? league.club : this.identity.affiliation(member);
-              const group = groups.get(club) ?? [];
-              group.push(member);
-              groups.set(club, group);
-            }
-            for (const [club, members] of groups) {
-              for (let offset = 0; offset < members.length; offset += league.rules.seats) {
-                const group = members.slice(offset, offset + league.rules.seats);
-                const team = `auto-${group[0]}`;
-                this.claimTeam(id, team, group[0]);
-                league.teams[team] = {
-                  club,
-                  captain: group[0],
-                  members: group,
-                  invited: [],
-                  registered: true,
-                };
-              }
-            }
-          }
-          league.admitted = command.members;
+          this.admit(league, command.members, command.automatic);
           break;
         }
         case 'start': {
@@ -388,10 +449,22 @@ export class Competitions {
             'League start is scheduled later',
           );
           const endpoint = gameEndpoint(this.resource(league.resource).address);
+          const reservation = binding
+            ? this.store.db
+                .prepare('SELECT ends_ms FROM event_reservations WHERE event=? AND resource=?')
+                .get(binding.event, league.resource)
+            : undefined;
           requireThat(
             !this.store.db
-              .prepare('SELECT 1 FROM event_reservations WHERE endpoint=? AND ends_ms>?')
-              .get(endpoint, time),
+              .prepare(
+                'SELECT 1 FROM event_reservations WHERE endpoint=? AND ends_ms>? AND event!=? AND opens_ms<?',
+              )
+              .get(
+                endpoint,
+                time,
+                binding?.event ?? '',
+                reservation ? Number(reservation.ends_ms) : Number.MAX_SAFE_INTEGER,
+              ),
             'Game endpoint is reserved for an event',
           );
           requireThat(
@@ -510,8 +583,14 @@ export class Competitions {
       appendAudit(this.store, actor, `league:${id}`, command.action, id, command);
       return league;
     };
+    const binding = eventGame(this.store, id);
     return manage
-      ? this.identity.authorized(actor, `league:${id}`, 'manage', apply)
+      ? this.identity.authorized(
+          actor,
+          binding ? `event:${binding.event}` : `league:${id}`,
+          'manage',
+          apply,
+        )
       : this.store.transaction(apply);
   }
 
@@ -524,6 +603,7 @@ export class Competitions {
       this.participant(league, member);
       if (league.phase !== 'playing' || league.pausedSince !== null)
         return { destination: 'unavailable' };
+      requireEventGameCurrent(this.store, this.identity, id);
       const team = this.teamOf(league, member);
       if (team && !this.eligible(league, team, member)) return { destination: 'unavailable' };
       for (const [team, seats] of Object.entries(league.seats)) {
@@ -561,6 +641,7 @@ export class Competitions {
 
   schedule(actor: string, id: string, booking: CompetitionBooking) {
     return this.identity.authorized(actor, `league:${id}`, 'manage', () => {
+      requireThat(!eventGame(this.store, id), 'Event window determines the game schedule');
       const league = this.load(id);
       this.registration(league, Date.now(), false);
       const season = this.store.db
@@ -640,6 +721,7 @@ export class Competitions {
   dispute(actor: string, id: string, reason: string) {
     return this.store.transaction(() => {
       this.active(actor);
+      requireUnsettledGame(this.store, id);
       const league = this.load(id);
       const team = this.teamOf(league, actor);
       requireThat(
@@ -690,6 +772,7 @@ export class Competitions {
     const dispute = this.store.db.prepare('SELECT league FROM league_disputes WHERE id=?').get(id);
     requireThat(dispute, 'Dispute not found');
     return this.identity.authorized(actor, `league:${String(dispute.league)}`, 'manage', () => {
+      requireUnsettledGame(this.store, String(dispute.league));
       const current = this.store.db.prepare('SELECT * FROM league_disputes WHERE id=?').get(id)!;
       requireThat(current.resolution === null, 'Dispute already resolved');
       const league = this.load(String(current.league));

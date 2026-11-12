@@ -38,6 +38,7 @@ import {
   type ApprovalCommand,
 } from '../shared/contracts/generated.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
+import { cancelEventGames, requireEventGamesFinished } from './event-game-state.js';
 import {
   loadPlan,
   planDocumentsReadable,
@@ -83,7 +84,7 @@ export class Office {
     return [event.club, ...event.coOrganizers];
   }
 
-  private visible(actor: string, event: ActivityRecord) {
+  visible(actor: string, event: ActivityRecord) {
     return (
       event.phase === 'open' ||
       event.phase === 'done' ||
@@ -281,6 +282,10 @@ export class Office {
     return this.identity.authorized(actor, `event:${id}`, 'manage', () => {
       const current = this.load(id);
       this.mutable(current);
+      requireThat(
+        !this.store.db.prepare('SELECT 1 FROM event_games WHERE event=?').get(id),
+        'Prepared game prevents event revision',
+      );
       requireThat(draft.id === id && draft.club === current.club, 'Event identity is immutable');
       this.validateDraft(actor, draft);
       const event: ActivityRecord = {
@@ -347,12 +352,14 @@ export class Office {
             event.phase === 'open' && time >= event.window.startsMs,
             'Started event required',
           );
+          requireEventGamesFinished(this.store, event);
           event.phase = 'done';
           releasePlanResources(this.store, id);
           break;
         case 'cancel':
           event.phase = 'cancelled';
           this.cancelWorkflows(id);
+          cancelEventGames(this.store, id);
           releasePlanResources(this.store, id);
           break;
         case 'signup': {

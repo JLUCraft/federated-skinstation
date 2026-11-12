@@ -207,6 +207,16 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
     `);
     },
   },
+  {
+    version: 10,
+    apply(db) {
+      db.exec(`
+      CREATE TABLE event_games(event TEXT NOT NULL REFERENCES activities(id),plan TEXT NOT NULL,resource TEXT NOT NULL REFERENCES game_resources(id),league TEXT UNIQUE NOT NULL REFERENCES leagues(id),PRIMARY KEY(event,resource));
+      CREATE TABLE event_settlements(event TEXT PRIMARY KEY REFERENCES activities(id),plan TEXT NOT NULL,settled_at INTEGER NOT NULL);
+      CREATE TABLE event_awards(event TEXT NOT NULL REFERENCES event_settlements(event),account TEXT NOT NULL REFERENCES accounts(id),club TEXT NOT NULL REFERENCES clubs(id),rank INTEGER NOT NULL CHECK(rank>=1),points TEXT NOT NULL,material TEXT,delivered_by TEXT REFERENCES accounts(id),received_at INTEGER,PRIMARY KEY(event,account));
+    `);
+    },
+  },
 ];
 export class Store {
   readonly db: DatabaseSync;

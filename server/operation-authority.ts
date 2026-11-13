@@ -6,6 +6,7 @@ import type {
 import {
   operationNeedsApproval,
   operationPermission,
+  operationRequiresGlobal,
   OPERATIONS_APPROVAL_SECONDS,
 } from '../shared/operations.js';
 import { MCP_PATH, MCP_WRITE_SCOPE } from '../shared/oauth.js';
@@ -77,7 +78,12 @@ export class OperationAuthority {
       );
     }
     this.identity.authenticate(intent.actor.account);
-    this.store.withCaller(intent.actor.client, intent.actor.request, () =>
+    this.store.withCaller(intent.actor.client, intent.actor.request, () => {
+      if (operationRequiresGlobal(intent.command.operation))
+        requireThat(
+          this.identity.decide(intent.actor.account, 'global', 'manage'),
+          'Global management required',
+        );
       requireThat(
         this.identity.decide(
           intent.actor.account,
@@ -85,9 +91,24 @@ export class OperationAuthority {
           operationPermission(intent.command.operation),
         ),
         'Local authority required',
-      ),
-    );
+      );
+    });
+    this.preparation(intent, saved.host);
     return saved;
+  }
+  private preparation(intent: OperationsIntent, host: string) {
+    const operation = intent.command.operation;
+    if (operation.action !== 'deploy') return undefined;
+    const saved = this.recorded(operation.preparation);
+    requireThat(
+      saved.host === host &&
+        saved.instance === intent.command.instance &&
+        saved.intent.scope === intent.scope &&
+        saved.intent.command.operation.action === 'deploy_prepare',
+      'Deployment preparation differs from this target',
+      409,
+    );
+    return saved.intent;
   }
   active(id: string) {
     return this.store.transaction(() => this.inspect(id));
@@ -122,6 +143,7 @@ export class OperationAuthority {
           .prepare('SELECT name FROM oauth_clients WHERE id=?')
           .get(saved.intent.actor.client) as { name: string } | undefined)
       : undefined;
+    const preparation = this.preparation(saved.intent, saved.host);
     return {
       id,
       host: saved.host,
@@ -130,6 +152,7 @@ export class OperationAuthority {
       expiresAt: row.expires,
       reviewUrl: new URL('/portal/?operation_request=' + encodeURIComponent(id), this.origin).href,
       clientName: client?.name ?? null,
+      ...(preparation ? { preparation } : {}),
     };
   }
   decide(id: string, browserToken: string, approve: boolean) {

@@ -105,7 +105,13 @@ export function OperationApprovalPanel({
             <dd>{review.clientName ?? t('皮肤站')}</dd>
           </dl>
           <pre className="operation-payload">
-            {JSON.stringify(review.intent.command.operation, null, 2)}
+            {JSON.stringify(
+              review.preparation
+                ? [review.intent.command.operation, review.preparation.command.operation]
+                : review.intent.command.operation,
+              null,
+              2,
+            )}
           </pre>
           {review.status === 'pending' ? (
             <form

@@ -22,6 +22,8 @@ import {
   operationsSnapshotSchema,
   operationsSubmissionSchema,
   operationsTargetSchema,
+  operationsReservationSchema,
+  type OperationsReservation,
   type OperationsIntent,
   type OperationsJob,
   type OperationsSettings,
@@ -41,6 +43,7 @@ import {
   OPERATIONS_PATH,
   operationPermission,
   operationNeedsApproval,
+  operationRequiresGlobal,
   OPERATIONS_APPROVAL_SECONDS,
   OPERATIONS_CLAIM_PATH,
   OPERATIONS_CLAIM_HEADER,
@@ -244,6 +247,46 @@ export function registerOperations(
       return reply.code(204).send();
     },
   );
+  app.post<{ Params: { host: string }; Body: OperationsReservation }>(
+    OPERATIONS_PATH + '/hosts/:host/instances',
+    { schema: { body: operationsReservationSchema } },
+    (request): OperationsTarget => {
+      const account = owner(request);
+      const host = request.params.host;
+      requireThat(hosts.has(host), 'Operations host is not configured');
+      return store.transaction(() => {
+        requireThat(identity.decide(account.id, 'global', 'manage'), 'Local authority required');
+        const scope = parseScope(request.body.scope);
+        requireThat(
+          scope?.kind === 'global' ||
+            (scope?.kind === 'club' &&
+              store.db.prepare('SELECT 1 FROM clubs WHERE id=?').get(scope.id!)),
+          'Operations scope must be global or an existing club',
+        );
+        const key = request.body.key;
+        const client = store.currentCaller()?.client ?? '';
+        const prior = store.db
+          .prepare(
+            'SELECT instance,scope FROM operation_reservations WHERE account=? AND host=? AND request_key=? AND client=?',
+          )
+          .get(account.id, host, key, client) as { instance: string; scope: string } | undefined;
+        if (prior) {
+          const value: OperationsTarget = { host, ...prior };
+          requireThat(value.scope === request.body.scope, 'Reservation key already used', 409);
+          return value;
+        }
+        const value: OperationsTarget = { host, instance: randomUUID(), scope: request.body.scope };
+        store.db
+          .prepare('INSERT INTO operation_targets VALUES(?,?,?)')
+          .run(host, value.instance, value.scope);
+        store.db
+          .prepare('INSERT INTO operation_reservations VALUES(?,?,?,?,?,?)')
+          .run(account.id, host, client, key, value.instance, value.scope);
+        appendAudit(store, account.id, value.scope, 'operations.instance.reserve', key, value);
+        return value;
+      });
+    },
+  );
   app.get<{ Params: { host: string; instance: string } }>(
     OPERATIONS_PATH + '/hosts/:host/instances/:instance',
     async (request) => {
@@ -260,6 +303,11 @@ export function registerOperations(
       const account = owner(request);
       const binding = target(request.params.host, request.params.instance);
       const intent = store.transaction((): OperationsIntent => {
+        if (operationRequiresGlobal(request.body.operation))
+          requireThat(
+            identity.decide(account.id, 'global', 'manage'),
+            'Global management required',
+          );
         requireThat(
           identity.decide(account.id, binding.scope, operationPermission(request.body.operation)),
           'Local authority required',

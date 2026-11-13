@@ -340,6 +340,18 @@
         },
         {
           "$ref": "#/definitions/OperationsRestorePrepare"
+        },
+        {
+          "$ref": "#/definitions/OperationsProvision"
+        },
+        {
+          "$ref": "#/definitions/OperationsDeployPrepare"
+        },
+        {
+          "$ref": "#/definitions/OperationsDeploy"
+        },
+        {
+          "$ref": "#/definitions/OperationsInstanceDelete"
         }
       ]
     },
@@ -512,7 +524,7 @@
     },
     "OperationsSensitiveAction": {
       "type": "string",
-      "enum": ["kill", "restore", "backup_delete"]
+      "enum": ["kill", "restore", "backup_delete", "deploy", "instance_delete", "provision"]
     },
     "OperationsKill": {
       "type": "object",
@@ -572,6 +584,9 @@
         },
         "clientName": {
           "type": ["string", "null"]
+        },
+        "preparation": {
+          "$ref": "#/definitions/OperationsIntent"
         }
       }
     },
@@ -745,6 +760,157 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 128
+    },
+    "OperationsFilePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_./ -]*$"
+    },
+    "OperationsFileChange": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "text"],
+          "properties": {
+            "path": {
+              "$ref": "#/definitions/OperationsFilePath"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "executable": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "url"],
+          "properties": {
+            "path": {
+              "$ref": "#/definitions/OperationsFilePath"
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "executable": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "remove"],
+          "properties": {
+            "path": {
+              "$ref": "#/definitions/OperationsFilePath"
+            },
+            "remove": {
+              "enum": [true]
+            }
+          }
+        }
+      ]
+    },
+    "OperationsChanges": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/definitions/OperationsFileChange"
+      }
+    },
+    "OperationsProvision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "profile", "autoStart", "changes"],
+      "properties": {
+        "action": {
+          "enum": ["provision"]
+        },
+        "profile": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "autoStart": {
+          "type": "boolean"
+        },
+        "changes": {
+          "$ref": "#/definitions/OperationsChanges"
+        }
+      }
+    },
+    "OperationsDeployPrepare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "changes"],
+      "properties": {
+        "action": {
+          "enum": ["deploy_prepare"]
+        },
+        "changes": {
+          "$ref": "#/definitions/OperationsChanges"
+        }
+      }
+    },
+    "OperationsDeploy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "preparation"],
+      "properties": {
+        "action": {
+          "enum": ["deploy"]
+        },
+        "preparation": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        }
+      }
+    },
+    "OperationsInstanceDelete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "enum": ["instance_delete"]
+        }
+      }
+    },
+    "OperationsReservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "key"],
+      "properties": {
+        "scope": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        }
+      }
+    },
+    "OperationsDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "autoStart"],
+      "properties": {
+        "profile": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "autoStart": {
+          "type": "boolean"
+        }
+      }
+    },
+    "OperationsGlobalAction": {
+      "type": "string",
+      "enum": ["provision", "deploy_prepare", "deploy"]
     }
   }
 }

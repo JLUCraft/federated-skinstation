@@ -11,6 +11,7 @@ import type {
   OperationsLogPage,
   OperationsJob,
   OperationsSnapshot,
+  OperationsTarget,
 } from '../shared/contracts/generated.js';
 import { streamText } from '../server/streams.js';
 import { OPERATIONS_SCOPE_HEADER, OPERATIONS_CLAIM_HEADER } from '../shared/operations.js';
@@ -157,6 +158,37 @@ await test(
       const binding = { host: 'campus', instance: 'survival', scope: 'club:jlu' };
       await service.requestJson(admin, 'POST', '/api/operations/targets', binding, 204);
       await service.requestJson(member, 'POST', '/api/operations/targets', binding, 403);
+      const reservation = { scope: 'club:jlu', key: 'new-world' };
+      await service.requestJson(
+        member,
+        'POST',
+        '/api/operations/hosts/campus/instances',
+        reservation,
+        403,
+      );
+      const reserved = await service.requestJson<OperationsTarget>(
+        admin,
+        'POST',
+        '/api/operations/hosts/campus/instances',
+        reservation,
+      );
+      assert.match(reserved.instance, /^[a-f0-9-]{36}$/);
+      assert.deepEqual(
+        await service.requestJson(
+          admin,
+          'POST',
+          '/api/operations/hosts/campus/instances',
+          reservation,
+        ),
+        reserved,
+      );
+      await service.requestJson(
+        admin,
+        'POST',
+        '/api/operations/hosts/campus/instances',
+        { ...reservation, scope: 'global' },
+        409,
+      );
       await service.requestJson(
         member,
         'POST',
@@ -343,11 +375,77 @@ await test(
         assert.equal(jobs.has(review.id), false);
         return review;
       }
+      const changes = [{ path: 'server.properties', text: 'max-players=30' }];
+      for (const operation of [
+        { action: 'provision', profile: 'paper', autoStart: true, changes },
+        { action: 'deploy_prepare', changes },
+        { action: 'deploy', preparation: 'denied-stage' },
+      ]) {
+        await service.requestJson(
+          member,
+          'POST',
+          '/api/operations/hosts/campus/instances/survival/jobs',
+          { key: 'no-global-' + operation.action, operation },
+          403,
+        );
+      }
+      const infrastructureGrant = await service.requestJson<{ id: string }>(
+        admin,
+        'POST',
+        '/api/identity/grants',
+        {
+          account: member.user.id,
+          scope: 'global',
+          permission: 'manage',
+        },
+      );
+      const preparedResponse = await call(
+        'post_operations_hosts_by_host_instances_by_instance_jobs',
+        {
+          path: arguments_.path,
+          body: { key: 'prepare-deployment', operation: { action: 'deploy_prepare', changes } },
+        },
+      );
+      const staged = preparedResponse.json<{ result: { structuredContent: OperationsJob } }>()
+        .result.structuredContent;
+      assert.equal(staged.intent.actor.client, agent.clientId);
+      const deployment = await propose('deployment-confirmation', {
+        action: 'deploy',
+        preparation: staged.intent.id,
+      });
+      assert.deepEqual(deployment.preparation, staged.intent);
+      const deploymentConfirmation = await service.app.inject({
+        method: 'POST',
+        url: '/api/operations/approvals/' + deployment.id + '/confirm',
+        headers: {
+          origin: 'https://skin.example.test',
+          authorization: 'Bearer ' + member.accessToken,
+        },
+        payload: { password: 'password-for-contract-testing' },
+      });
+      assert.equal(deploymentConfirmation.statusCode, 200, deploymentConfirmation.body);
+      const deploymentClaim = () =>
+        service.app.inject({
+          method: 'POST',
+          url: '/internal/operations/campus/claim',
+          headers: { [OPERATIONS_CLAIM_HEADER]: credential },
+          payload: { id: deployment.id },
+        });
+      assert.equal((await deploymentClaim()).statusCode, 200);
+      await service.requestJson(
+        admin,
+        'DELETE',
+        '/api/identity/grants/' + infrastructureGrant.id,
+        undefined,
+        204,
+      );
+      assert.equal((await deploymentClaim()).statusCode, 403);
       const proposed = await propose('human-password', {
         action: 'restore',
         archive: 'archive-jlu',
         preparation: 'restore-stage',
       });
+      await propose('instance-deletion-confirmation', { action: 'instance_delete' });
       const confirm = '/api/operations/approvals/' + proposed.id + '/confirm';
       const headers = {
         origin: 'https://skin.example.test',

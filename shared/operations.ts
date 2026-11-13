@@ -1,6 +1,7 @@
 import {
   operationsProtocolSchema,
   operationsSensitiveActionSchema,
+  operationsGlobalActionSchema,
   type OperationsOperation,
 } from './contracts/generated.js';
 const protocol = operationsProtocolSchema.properties;
@@ -21,8 +22,11 @@ export const OPERATIONS_APPROVAL_PATH = OPERATIONS_PATH + '/approvals';
 export function operationNeedsApproval(operation: OperationsOperation) {
   return operationsSensitiveActionSchema.enum.some((action) => action === operation.action);
 }
+export function operationRequiresGlobal(operation: OperationsOperation) {
+  return operationsGlobalActionSchema.enum.some((action) => action === operation.action);
+}
 export function operationPermission(operation: OperationsOperation): 'write' | 'manage' {
-  return operationNeedsApproval(operation) ? 'manage' : 'write';
+  return operationNeedsApproval(operation) || operation.action === 'provision' ? 'manage' : 'write';
 }
 
 export const OPERATIONS_CLAIM_HEADER = protocol.claimHeader.const;

@@ -287,6 +287,14 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
   `);
     },
   },
+  {
+    version: 16,
+    apply(db) {
+      db.exec(
+        'CREATE TABLE operation_reservations(account TEXT NOT NULL REFERENCES accounts(id),host TEXT NOT NULL,client TEXT NOT NULL,request_key TEXT NOT NULL,instance TEXT NOT NULL,scope TEXT NOT NULL,PRIMARY KEY(account,host,client,request_key));',
+      );
+    },
+  },
 ];
 export class Store {
   readonly db: DatabaseSync;

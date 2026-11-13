@@ -576,6 +576,10 @@ images, or an embedded PDF resource. Business denials return tool results with
 `isError`; invalid RPC methods and arguments return JSON-RPC errors.
 Membership and grant changes apply to the next call, including after restart.
 
-Restore and backup deletion reuse the browser-only human confirmation flow.
+Provisioning, restore, deployment activation, instance deletion, and backup deletion reuse the browser-only human confirmation flow.
 Backup listing requires scoped write permission. See the host README for archive
-job parameters, storage configuration, and recovery steps.
+and deployment job parameters, storage configuration, and recovery steps. Global
+administrators reserve new instance IDs through `/api/operations/hosts/:host/instances`;
+provisioning then requires management permission in the assigned scope. Provisioning,
+deployment preparation, and activation also require global management, rechecked
+when execution is claimed. Deployment confirmation displays the recorded changes.

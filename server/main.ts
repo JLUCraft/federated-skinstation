@@ -5,5 +5,6 @@ const path = process.env.SKIN_CONFIG;
 if (!path) throw new Error('Set SKIN_CONFIG to a configuration file');
 const config = JSON.parse(await readFile(path, 'utf8')) as Config;
 const app = await build(config);
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => void app.close());
+for (const signal of ['SIGINT', 'SIGTERM'])
+  process.on(signal, () => app.close().catch((error: unknown) => console.error(error)));
 await app.listen({ host: config.listen, port: config.port });

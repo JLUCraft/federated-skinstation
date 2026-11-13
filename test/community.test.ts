@@ -9,7 +9,7 @@ import { authority } from './helpers/identity.js';
 import type { GetResponse, TextureList, PublicAuthor } from '../shared/http.js';
 import type { TextureItem } from '../shared/wardrobe.js';
 
-test('community publication, moderation, privacy, counters and ownership form one workflow', async () => {
+await test('community publication, moderation, privacy, counters and ownership form one workflow', async () => {
   const db = new Store(':memory:'),
     app = Fastify();
   for (const [id, school] of [
@@ -301,7 +301,7 @@ function communityFixture(admins: string[]) {
   return { db, app, headers, insert };
 }
 
-test('published entries without a review are pending until an administrator decides', async () => {
+await test('published entries without a review are pending until an administrator decides', async () => {
   const { db, app, headers, insert } = communityFixture(['admin']);
   insert('unreviewed', true);
   db.db
@@ -352,7 +352,7 @@ test('published entries without a review are pending until an administrator deci
   }
 });
 
-test('an empty administrator list rejects publication without hiding approved entries', async () => {
+await test('an empty administrator list rejects publication without hiding approved entries', async () => {
   const { db, app, headers, insert } = communityFixture([]);
   insert('approved', true);
   insert('draft', false);
@@ -389,7 +389,7 @@ test('an empty administrator list rejects publication without hiding approved en
   }
 });
 
-test('deleting a collected copy updates author counts and preserves event notices and likes', async () => {
+await test('deleting a collected copy updates author counts and preserves event notices and likes', async () => {
   const { db, app, headers, insert } = communityFixture(['admin']);
   insert('original', true);
   db.db
@@ -440,7 +440,7 @@ test('deleting a collected copy updates author counts and preserves event notice
   }
 });
 
-test('community routes initialize their schema without wardrobe route registration', async () => {
+await test('community routes initialize their schema without wardrobe route registration', async () => {
   const db = new Store(':memory:');
   const app = Fastify();
   registerCommunity(app, db, new LocalIdentity(db));
@@ -455,7 +455,7 @@ test('community routes initialize their schema without wardrobe route registrati
   }
 });
 
-test('texture detail rejects a row removed after its initial lookup', async () => {
+await test('texture detail rejects a row removed after its initial lookup', async () => {
   const { db, app, headers, insert } = communityFixture(['admin']);
   const prepare = db.db.prepare.bind(db.db);
   Object.defineProperty(db.db, 'prepare', {

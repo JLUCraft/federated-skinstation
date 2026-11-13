@@ -34,7 +34,7 @@ export function MuaAccountCard({
     setLink(r.link ?? null);
   }
   useEffect(() => {
-    void load().catch(() => setFailed(true));
+    load().catch(() => setFailed(true));
   }, [token]);
 
   return (
@@ -68,10 +68,11 @@ export function MuaAccountCard({
             disabled={busy}
             onClick={() => {
               setBusy(true);
-              void apiRequest<{ url: string }>('/api/mua/link', { method: 'POST', token })
+              apiRequest<{ url: string }>('/api/mua/link', { method: 'POST', token })
                 .then((r) => window.location.assign(r.url))
                 .catch(() => notify(t('暂时无法关联 MUA'), 'error'))
-                .finally(() => setBusy(false));
+                .finally(() => setBusy(false))
+                .catch((error: unknown) => console.error(error));
             }}
           >
             {t('关联 MUA 账号')}
@@ -83,13 +84,14 @@ export function MuaAccountCard({
             disabled={busy}
             onClick={() => {
               setBusy(true);
-              void apiRequest('/api/mua/link', { method: 'DELETE', token })
+              apiRequest('/api/mua/link', { method: 'DELETE', token })
                 .then(() => {
                   setLink(null);
                   notify(t('已解除 MUA 关联'), 'success');
                 })
                 .catch(() => notify(t('解除关联失败'), 'error'))
-                .finally(() => setBusy(false));
+                .finally(() => setBusy(false))
+                .catch((error: unknown) => console.error(error));
             }}
           >
             {t('解除关联')}
@@ -148,7 +150,7 @@ export function MuaPanel({
   }
   useEffect(() => {
     let live = true;
-    void api<MemberAccount>('/api/me')
+    api<MemberAccount>('/api/me')
       .then((a) => {
         if (live) {
           setAdmin(a.muaAdmin === true);
@@ -159,14 +161,15 @@ export function MuaPanel({
       .catch((e) => notify(errorText(e), 'error'))
       .finally(() => {
         if (live) setLoading(false);
-      });
+      })
+      .catch((error: unknown) => console.error(error));
     return () => {
       live = false;
     };
   }, [token]);
   useEffect(() => {
     let live = true;
-    void api<{ link: AccountLink }>('/api/mua/link')
+    api<{ link: AccountLink }>('/api/mua/link')
       .then((r) => {
         if (live) setAccountLink(r.link ?? null);
       })
@@ -205,13 +208,13 @@ export function MuaPanel({
               className="btn btn--primary"
               disabled={busy}
               onClick={() =>
-                void action(async () => {
+                action(async () => {
                   const r = await api<{ url: string }>('/api/mua/authorize', 'POST', {
                     ticket,
                     consent: true,
                   });
                   location.assign(r.url);
-                })
+                }).catch((error: unknown) => console.error(error))
               }
             >
               {t('同意并继续')}
@@ -307,10 +310,10 @@ export function MuaPanel({
                 className="btn btn--secondary"
                 disabled={busy}
                 onClick={() =>
-                  void action(async () => {
+                  action(async () => {
                     await api('/api/mua/admin/synchronize', 'POST', {});
                     notify(t('角色同步已安排'), 'success');
-                  })
+                  }).catch((error: unknown) => console.error(error))
                 }
               >
                 {t('重新同步角色')}
@@ -321,13 +324,13 @@ export function MuaPanel({
                 className="btn btn--primary"
                 disabled={busy}
                 onClick={() =>
-                  void action(async () => {
+                  action(async () => {
                     const r = await api<{ token?: string }>('/api/mua/profiles/bind', 'POST', {
                       uuid,
                     });
                     setGenerated(String(r.token ?? ''));
                     setRoleBinding('pending');
-                  })
+                  }).catch((error: unknown) => console.error(error))
                 }
               >
                 {t('生成绑定码')}
@@ -336,12 +339,12 @@ export function MuaPanel({
                 className="btn btn--secondary"
                 disabled={busy || (roleBinding === 'unknown' && !admin)}
                 onClick={() =>
-                  void action(async () => {
+                  action(async () => {
                     await api('/api/mua/profiles/unbind', 'POST', { uuid });
                     setRoleBinding('unknown');
                     setGenerated('');
                     notify(t('角色绑定已解除'), 'success');
-                  })
+                  }).catch((error: unknown) => console.error(error))
                 }
               >
                 {t('解除角色绑定')}
@@ -358,7 +361,7 @@ export function MuaPanel({
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void action(async () => {
+                  action(async () => {
                     await api('/api/mua/profiles/bindto', 'POST', {
                       token: binding,
                       uuid,
@@ -366,7 +369,7 @@ export function MuaPanel({
                     setBinding('');
                     setRoleBinding('bound');
                     notify(t('角色绑定已更新'), 'success');
-                  });
+                  }).catch((error: unknown) => console.error(error));
                 }}
               >
                 <label className="field-label">
@@ -396,13 +399,13 @@ export function MuaPanel({
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void action(async () => {
+                  action(async () => {
                     await api('/api/mua/profiles/remapuuid', 'POST', {
                       target,
                       uuid,
                     });
                     notify(t('角色编号变更已提交，请重新登录'), 'success');
-                  });
+                  }).catch((error: unknown) => console.error(error));
                 }}
               >
                 <label className="field-label">
@@ -439,7 +442,7 @@ export function MuaPanel({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              void action(load);
+              action(load).catch((error: unknown) => console.error(error));
             }}
           >
             <div className="field-grid">
@@ -494,7 +497,7 @@ export function MuaPanel({
                     disabled={busy}
                     key={op}
                     onClick={() =>
-                      void action(async () => {
+                      action(async () => {
                         if (
                           !confirm(
                             op === 'delete' ? t('确认删除这条记录？') : t('确认使这条记录失效？'),
@@ -503,7 +506,7 @@ export function MuaPanel({
                           return;
                         await api(`/api/mua/admin/blacklist/${entry.id}/${op}`, 'POST', {});
                         await load();
-                      })
+                      }).catch((error: unknown) => console.error(error))
                     }
                   >
                     {op === 'delete' ? t('删除') : t('设为失效')}
@@ -517,7 +520,7 @@ export function MuaPanel({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                void action(async () => {
+                action(async () => {
                   await api('/api/mua/admin/blacklist', 'POST', {
                     email,
                     reason,
@@ -525,7 +528,7 @@ export function MuaPanel({
                   setReason('');
                   await load();
                   notify(t('记录已提交'), 'success');
-                });
+                }).catch((error: unknown) => console.error(error));
               }}
             >
               <div className="field-grid">

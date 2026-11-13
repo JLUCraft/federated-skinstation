@@ -1,4 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { InlineNote } from './InlineNote';
+import { useClipboard } from './clipboard';
 import { SkinPreview } from './SkinPreview';
 import type { TextureItem } from '../shared/wardrobe';
 import { Author, TextureProvenance } from './TextureIdentity';
@@ -7,8 +9,6 @@ import { t } from './i18n';
 export const textureSrc = (item: TextureItem) => `/textures/${item.hash}`;
 export const textureTitle = (item: TextureItem) =>
   item.title || (item.kind === 'skin' ? t('皮肤') : t('披风'));
-
-const COPY_NOTICE_MS = 2000;
 
 /** Modal detail view: 3D preview, provenance and the actions the card also offers. */
 export function TextureDialog({
@@ -21,15 +21,10 @@ export function TextureDialog({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy, note } = useClipboard();
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), COPY_NOTICE_MS);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
   const absolute = new URL(textureSrc(item), window.location.origin).href;
   return (
     <dialog
@@ -91,18 +86,17 @@ export function TextureDialog({
             type="button"
             className="btn btn--secondary"
             onClick={() =>
-              void navigator.clipboard
-                ?.writeText(
-                  item.public
-                    ? new URL(`/portal/library/${item.id}`, window.location.origin).href
-                    : absolute,
-                )
-                .then(() => setCopied(true))
+              copy(
+                item.public
+                  ? new URL(`/portal/library/${item.id}`, window.location.origin).href
+                  : absolute,
+              )
             }
           >
             {copied ? t('已复制') : t('复制材质链接')}
           </button>
         </div>
+        <InlineNote note={note} />
       </div>
     </dialog>
   );

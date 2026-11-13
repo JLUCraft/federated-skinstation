@@ -53,7 +53,7 @@ export function Announcements() {
   useEffect(() => {
     let active = true;
     const refresh = () => {
-      void apiRequest<AnnouncementList>('/api/announcements')
+      apiRequest<AnnouncementList>('/api/announcements')
         .then((r) => {
           if (active) {
             setItems(r.announcements);
@@ -105,7 +105,7 @@ export function Notifications({ token, onRead }: { token: string; onRead: () => 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    void apiRequest<NotificationList>(`/api/notifications?offset=${offset}`, { token })
+    apiRequest<NotificationList>(`/api/notifications?offset=${offset}`, { token })
       .then((r) => {
         if (active) {
           setItems(r.items);
@@ -118,7 +118,8 @@ export function Notifications({ token, onRead }: { token: string; onRead: () => 
       })
       .finally(() => {
         if (active) setLoading(false);
-      });
+      })
+      .catch((error: unknown) => console.error(error));
     return () => {
       active = false;
     };
@@ -133,14 +134,15 @@ export function Notifications({ token, onRead }: { token: string; onRead: () => 
             disabled={busy}
             onClick={() => {
               setBusy(true);
-              void apiRequest('/api/notifications/read-all', {
+              apiRequest('/api/notifications/read-all', {
                 method: 'POST',
                 token,
               })
                 .then(load)
                 .then(onRead)
                 .catch((e) => setError(errorText(e)))
-                .finally(() => setBusy(false));
+                .finally(() => setBusy(false))
+                .catch((error: unknown) => console.error(error));
             }}
           >
             {t('全部标为已读')}
@@ -195,7 +197,7 @@ export function Notifications({ token, onRead }: { token: string; onRead: () => 
                 <button
                   className="btn btn--secondary notice-action"
                   onClick={() => {
-                    void apiRequest('/api/notifications/read', {
+                    apiRequest('/api/notifications/read', {
                       method: 'POST',
                       token,
                       body: { id: n.id },
@@ -253,7 +255,7 @@ export function PublicPage({ path, token }: { path: string; token?: string }) {
       : apiRequest<TextureItem>(url, { token }).then((value) => {
           if (active) setItem(value);
         });
-    void request.catch((e) => {
+    request.catch((e) => {
       if (active) setError(errorText(e));
     });
     return () => {
@@ -351,7 +353,7 @@ export function PublicPage({ path, token }: { path: string; token?: string }) {
                   <button
                     className="btn btn--secondary"
                     disabled={busy || item.owned}
-                    onClick={() => void act('save', {})}
+                    onClick={() => act('save', {}).catch((error: unknown) => console.error(error))}
                   >
                     {item.owned ? t('已在衣柜') : t('收藏到衣柜')}
                   </button>
@@ -359,7 +361,11 @@ export function PublicPage({ path, token }: { path: string; token?: string }) {
                     className="btn btn--secondary"
                     disabled={busy}
                     aria-pressed={item.liked === true}
-                    onClick={() => void act('like', { liked: !item.liked })}
+                    onClick={() =>
+                      act('like', { liked: !item.liked }).catch((error: unknown) =>
+                        console.error(error),
+                      )
+                    }
                   >
                     {t('点赞')}
                   </button>
@@ -401,7 +407,7 @@ export function ReportButton({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            void onReport(reason)
+            onReport(reason)
               .then((ok) => {
                 if (ok === false) {
                   setError(t('操作失败，请重试'));
@@ -466,9 +472,10 @@ export function AdminPanel({ token }: { token: string }) {
   };
   useEffect(() => {
     setLoading(true);
-    void load()
+    load()
       .catch((e) => setError(errorText(e)))
-      .finally(() => setLoading(false));
+      .finally(() => setLoading(false))
+      .catch((error: unknown) => console.error(error));
   }, [token, state, offset, announcementOffset]);
   const action = async (path: string, body?: unknown, method = 'POST') => {
     setBusy(true);
@@ -533,11 +540,11 @@ export function AdminPanel({ token }: { token: string }) {
               onSubmit={(e) => {
                 e.preventDefault();
                 const f = new FormData(e.currentTarget);
-                void action(`/api/admin/reviews/${i.id}`, {
+                action(`/api/admin/reviews/${i.id}`, {
                   submission: i.submission,
                   state: f.get('state'),
                   reason: f.get('reason'),
-                });
+                }).catch((error: unknown) => console.error(error));
               }}
             >
               <label className="field-label">
@@ -604,7 +611,9 @@ export function AdminPanel({ token }: { token: string }) {
                 disabled={busy}
                 onClick={() => {
                   if (window.confirm(t('删除此公告？')))
-                    void action(`/api/admin/announcements/${a.id}`, undefined, 'DELETE');
+                    action(`/api/admin/announcements/${a.id}`, undefined, 'DELETE').catch(
+                      (error: unknown) => console.error(error),
+                    );
                 }}
               >
                 {t('删除公告')}
@@ -637,19 +646,21 @@ export function AdminPanel({ token }: { token: string }) {
           e.preventDefault();
           const form = e.currentTarget,
             f = new FormData(form);
-          void action('/api/admin/announcements', {
+          action('/api/admin/announcements', {
             ...(edit ? { id: edit.id } : {}),
             title: f.get('title'),
             content: f.get('content'),
             severity: f.get('severity'),
             priority: Number(f.get('priority')),
             expand: f.get('expand') === 'on',
-          }).then((ok) => {
-            if (ok) {
-              form.reset();
-              setEdit(null);
-            }
-          });
+          })
+            .then((ok) => {
+              if (ok) {
+                form.reset();
+                setEdit(null);
+              }
+            })
+            .catch((error: unknown) => console.error(error));
         }}
       >
         <h3 className="subsection-title" id="announcement-form-title">

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Store, encodePassword, verifyPassword } from '../server/store.js';
-test('password recovery is single use, scoped, expiring and revokes game sessions', async () => {
+await test('password recovery is single use, scoped, expiring and revokes game sessions', async () => {
   const db = new Store(':memory:');
   try {
     const password = await encodePassword('old-password-for-testing');

@@ -5,7 +5,7 @@ import { resolveOrganization } from '../server/organization.js';
 import { Rejected } from '../server/store.js';
 import { site } from './helpers/site.js';
 
-test('organization defaults and validation use configuration rejection errors', () => {
+await test('organization defaults and validation use configuration rejection errors', () => {
   assert.equal(resolveOrganization(undefined), 'jlucraft');
   assert.equal(resolveOrganization('acme-123'), 'acme-123');
   assert.equal(resolveOrganization('a'.repeat(64)), 'a'.repeat(64));
@@ -15,7 +15,7 @@ test('organization defaults and validation use configuration rejection errors', 
 });
 
 for (const organization of [undefined, 'acme']) {
-  test(`organization ${organization ?? 'default'} scopes protocol metadata and passkey cookies`, async () => {
+  await test(`organization ${organization ?? 'default'} scopes protocol metadata and passkey cookies`, async () => {
     const host = generateKeyPairSync('rsa', { modulusLength: 2048 });
     const s = await site(
       {

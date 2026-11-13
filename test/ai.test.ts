@@ -137,7 +137,7 @@ async function aiSite(
   }
 }
 
-test('AI escrow uses snapshotted pricing and measured usage while keeping private task material private', async () => {
+await test('AI escrow uses snapshotted pricing and measured usage while keeping private task material private', async () => {
   const requests: { url: string; headers: Headers; body: unknown }[] = [];
   const fetcher: typeof fetch = async (url, init) => {
     assert.ok(typeof init?.body === 'string');
@@ -231,7 +231,7 @@ test('AI escrow uses snapshotted pricing and measured usage while keeping privat
   }
 });
 
-test('AI cancellation fences late output, preserves revoked budgets, and explicit timeouts refund held points', async (context) => {
+await test('AI cancellation fences late output, preserves revoked budgets, and explicit timeouts refund held points', async (context) => {
   let begin!: () => void;
   let respond!: (response: Response) => void;
   const started = new Promise<void>((resolve) => {

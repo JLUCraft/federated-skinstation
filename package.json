@@ -48,5 +48,8 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
+  },
+  "patchedDependencies": {
+    "thread-stream@4.2.0": "patches/thread-stream@4.2.0.patch"
   }
 }

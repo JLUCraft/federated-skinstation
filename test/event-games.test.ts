@@ -189,7 +189,7 @@ async function organization() {
   }
 }
 
-test('event-owned games use real check-ins and league scores for exact tied rewards across clubs', async (context) => {
+await test('event-owned games use real check-ins and league scores for exact tied rewards across clubs', async (context) => {
   const fixture = await organization();
   const { service, store, chair, coChair, alice, bob, carol, call } = fixture;
   try {
@@ -450,7 +450,7 @@ test('event-owned games use real check-ins and league scores for exact tied rewa
   }
 });
 
-test('meeting rewards roll back together on overflow and retain private club-owned delivery receipts', async (context) => {
+await test('meeting rewards roll back together on overflow and retain private club-owned delivery receipts', async (context) => {
   const fixture = await organization();
   const { service, store, chair, coChair, alice, bob, carol, call } = fixture;
   try {

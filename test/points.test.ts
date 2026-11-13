@@ -16,7 +16,7 @@ import type {
 } from '../shared/contracts/generated.js';
 import type { Authentication } from '../shared/http.js';
 
-test('activity receipts enforce source and member caps across sources and preserve account-owned budgets through revocation', async (context) => {
+await test('activity receipts enforce source and member caps across sources and preserve account-owned budgets through revocation', async (context) => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {
@@ -160,7 +160,7 @@ test('activity receipts enforce source and member caps across sources and preser
   }
 });
 
-test('point credits remain exact beyond JavaScript numbers and roll back the whole receipt when a later day overflows', async (context) => {
+await test('point credits remain exact beyond JavaScript numbers and roll back the whole receipt when a later day overflows', async (context) => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {
@@ -300,7 +300,7 @@ test('point credits remain exact beyond JavaScript numbers and roll back the who
   }
 });
 
-test('activity delivery archives private profile evidence and credits atomically across retries and restart', async (context) => {
+await test('activity delivery archives private profile evidence and credits atomically across retries and restart', async (context) => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {

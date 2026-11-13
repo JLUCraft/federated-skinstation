@@ -14,7 +14,7 @@ import type {
   GameHostAdmission,
 } from '../shared/contracts/generated.js';
 
-test('central league journey keeps team identity, replacement epochs, scores and dispute corrections in SQLite', async (context) => {
+await test('central league journey keeps team identity, replacement epochs, scores and dispute corrections in SQLite', async (context) => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {
@@ -255,7 +255,7 @@ test('central league journey keeps team identity, replacement epochs, scores and
   }
 });
 
-test('league authority remains club scoped while cross-club participants use their own accounts', async () => {
+await test('league authority remains club scoped while cross-club participants use their own accounts', async () => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {

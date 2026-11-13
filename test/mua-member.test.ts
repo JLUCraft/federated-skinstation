@@ -13,7 +13,7 @@ import type { MuaConfig } from '../server/mua.js';
 import { join } from 'node:path';
 import { Store } from '../server/store.js';
 
-test('MUA member metadata uses its canonical root and string initialization markers', async () => {
+await test('MUA member metadata uses its canonical root and string initialization markers', async () => {
   const host = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const s = await site({
     apiRoot: 'https://mua.example.test/api/union',
@@ -31,7 +31,7 @@ test('MUA member metadata uses its canonical root and string initialization mark
   }
 });
 
-test('member signed email lookup, cross-site binding ownership and administrator blacklist isolation', async () => {
+await test('member signed email lookup, cross-site binding ownership and administrator blacklist isolation', async () => {
   const host = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const cfg: MuaConfig = {
     apiRoot: 'https://mua.example.test/api/union',
@@ -183,7 +183,7 @@ test('member signed email lookup, cross-site binding ownership and administrator
     delete process.env.JLU_TEST_MEMBER;
   }
 });
-test('MUA provider requires explicit consent, authenticates encrypted envelope and consumes request once', async () => {
+await test('MUA provider requires explicit consent, authenticates encrypted envelope and consumes request once', async () => {
   const host = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const cfg: MuaConfig = {
     apiRoot: 'https://mua.example.test/api/union',

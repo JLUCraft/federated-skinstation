@@ -99,13 +99,13 @@ export function WardrobePanel({
     setFailed(false);
   }
   useEffect(() => {
-    void apiRequest<Capabilities>('/api/capabilities')
+    apiRequest<Capabilities>('/api/capabilities')
       .then((r) => setSchools(r.schools.map((s: { id: string }) => s.id)))
       .catch(() => {});
   }, []);
   useEffect(() => {
     if (!library && token)
-      void apiRequest<{ profiles: GameProfile[] }>('/api/players', { token })
+      apiRequest<{ profiles: GameProfile[] }>('/api/players', { token })
         .then((data) => {
           setProfiles(data.profiles);
         })
@@ -126,16 +126,17 @@ export function WardrobePanel({
   }, [search, kind, school, sort, tag, offset, onStateChange]);
   useEffect(() => {
     if (library)
-      void apiRequest<{ tags: { tag: string; count: number }[] }>('/api/library/tags')
+      apiRequest<{ tags: { tag: string; count: number }[] }>('/api/library/tags')
         .then((data) => setPopularTags(data.tags))
         .catch(() => setPopularTags([]));
   }, [library]);
   const serverFilters = library ? [query, kind, tag, sort, school] : [];
   useEffect(() => {
     setLoading(true);
-    void refresh()
+    refresh()
       .catch(() => setFailed(true))
-      .finally(() => setLoading(false));
+      .finally(() => setLoading(false))
+      .catch((error: unknown) => console.error(error));
   }, [token, library, offset, profileId, ...serverFilters]);
   async function action(operation: () => Promise<unknown>) {
     setBusy(true);
@@ -190,7 +191,7 @@ export function WardrobePanel({
         className="btn btn--primary"
         disabled={busy}
         onClick={() =>
-          void action(() =>
+          action(() =>
             apiRequest(
               library ? `/api/library/${item.id}/save` : `/api/wardrobe/${item.id}/apply`,
               {
@@ -199,7 +200,7 @@ export function WardrobePanel({
                 body: library ? {} : { profileId: profileId || profiles[0]?.id },
               },
             ),
-          )
+          ).catch((error: unknown) => console.error(error))
         }
       >
         {library ? t('收藏到衣柜') : t('穿戴到当前角色')}
@@ -218,13 +219,13 @@ export function WardrobePanel({
         aria-pressed={item.liked === true}
         disabled={busy}
         onClick={() =>
-          void action(() =>
+          action(() =>
             apiRequest(`/api/library/${item.id}/like`, {
               method: 'POST',
               token,
               body: { liked: !item.liked },
             }),
-          )
+          ).catch((error: unknown) => console.error(error))
         }
       >
         {item.liked ? t('已点赞') : t('点赞')} · {item.likes ?? 0}
@@ -466,33 +467,33 @@ export function WardrobePanel({
           busy={busy}
           onClose={() => setEditing(null)}
           onSave={(input) =>
-            void action(async () => {
+            action(async () => {
               await apiRequest(`/api/wardrobe/${editing.id}`, {
                 method: 'PATCH',
                 token,
                 body: input,
               });
               setEditing(null);
-            })
+            }).catch((error: unknown) => console.error(error))
           }
           onSetAvatar={() =>
-            void action(async () => {
+            action(async () => {
               await apiRequest('/api/me/avatar', {
                 method: 'PUT',
                 token,
                 body: { item: editing.id },
               });
               window.dispatchEvent(new Event('avatar-changed'));
-            })
+            }).catch((error: unknown) => console.error(error))
           }
           onRemove={() =>
-            void action(async () => {
+            action(async () => {
               await apiRequest(`/api/wardrobe/${editing.id}`, {
                 method: 'DELETE',
                 token,
               });
               setEditing(null);
-            })
+            }).catch((error: unknown) => console.error(error))
           }
         />
       )}

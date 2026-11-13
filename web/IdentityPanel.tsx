@@ -109,7 +109,7 @@ export function IdentityPanel({ token }: { token: string }) {
   useEffect(() => {
     let current = true;
     setLoading(true);
-    void Promise.all([
+    Promise.all([
       apiRequest<IdentitySnapshot>('/api/identity', { token }),
       apiRequest<ClubDirectory>('/api/clubs', { token }),
     ])
@@ -129,7 +129,8 @@ export function IdentityPanel({ token }: { token: string }) {
       })
       .finally(() => {
         if (current) setLoading(false);
-      });
+      })
+      .catch((error: unknown) => console.error(error));
     return () => {
       current = false;
     };
@@ -156,7 +157,7 @@ export function IdentityPanel({ token }: { token: string }) {
         current = false;
       };
     setMembersLoading(true);
-    void apiRequest<ClubMembers>(`${clubPath}/members`, { token })
+    apiRequest<ClubMembers>(`${clubPath}/members`, { token })
       .then((response) => {
         if (current) setMembers(response.members);
       })
@@ -165,7 +166,8 @@ export function IdentityPanel({ token }: { token: string }) {
       })
       .finally(() => {
         if (current) setMembersLoading(false);
-      });
+      })
+      .catch((error: unknown) => console.error(error));
     return () => {
       current = false;
     };
@@ -180,7 +182,7 @@ export function IdentityPanel({ token }: { token: string }) {
         current = false;
       };
     setGrantsLoading(true);
-    void apiRequest<GrantList>(`/api/identity/grants?scope=${encodeURIComponent(scope)}`, { token })
+    apiRequest<GrantList>(`/api/identity/grants?scope=${encodeURIComponent(scope)}`, { token })
       .then((response: GrantList) => {
         if (current) setGrants(response);
       })
@@ -189,7 +191,8 @@ export function IdentityPanel({ token }: { token: string }) {
       })
       .finally(() => {
         if (current) setGrantsLoading(false);
-      });
+      })
+      .catch((error: unknown) => console.error(error));
     return () => {
       current = false;
     };
@@ -253,9 +256,9 @@ export function IdentityPanel({ token }: { token: string }) {
                     className="btn btn--primary"
                     disabled={busy}
                     onClick={() =>
-                      void act(
+                      act(
                         `/api/identity/successions/${encodeURIComponent(nomination.id)}/accept`,
-                      )
+                      ).catch((error: unknown) => console.error(error))
                     }
                   >
                     {t('接受提名')}
@@ -321,9 +324,9 @@ export function IdentityPanel({ token }: { token: string }) {
                               disabled={busy}
                               onClick={() => {
                                 if (window.confirm(t('撤销此成员资格？')))
-                                  void act(
+                                  act(
                                     `${clubPath}/members/${encodeURIComponent(member.account)}/revoke`,
-                                  );
+                                  ).catch((error: unknown) => console.error(error));
                               }}
                             >
                               {t('撤销成员资格')}
@@ -335,9 +338,9 @@ export function IdentityPanel({ token }: { token: string }) {
                               disabled={busy}
                               onClick={() => {
                                 if (window.confirm(t('停用此账号并退出所有设备？')))
-                                  void act(
+                                  act(
                                     `/api/admin/accounts/${encodeURIComponent(member.account)}/disable`,
-                                  );
+                                  ).catch((error: unknown) => console.error(error));
                               }}
                             >
                               {t('停用账号')}
@@ -354,7 +357,9 @@ export function IdentityPanel({ token }: { token: string }) {
                   className="panel--inset"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void act(`${clubPath}/successions`, { nominee });
+                    act(`${clubPath}/successions`, { nominee }).catch((error: unknown) =>
+                      console.error(error),
+                    );
                   }}
                 >
                   <h3 className="subsection-title">{t('会长交接')}</h3>
@@ -375,12 +380,12 @@ export function IdentityPanel({ token }: { token: string }) {
                   onSubmit={(event) => {
                     event.preventDefault();
                     if (window.confirm(t('向新邮箱发送账号恢复验证码？')))
-                      void act(
+                      act(
                         `${clubPath}/recoveries`,
                         { account: recoveryAccount, email },
                         'POST',
                         t('恢复验证码已发送'),
-                      );
+                      ).catch((error: unknown) => console.error(error));
                   }}
                 >
                   <h3 className="subsection-title">{t('账号恢复')}</h3>
@@ -445,11 +450,11 @@ export function IdentityPanel({ token }: { token: string }) {
                             disabled={busy}
                             onClick={() => {
                               if (window.confirm(t('撤销此授权？')))
-                                void act(
+                                act(
                                   `/api/identity/grants/${encodeURIComponent(grant.id)}`,
                                   undefined,
                                   'DELETE',
-                                );
+                                ).catch((error: unknown) => console.error(error));
                             }}
                           >
                             {t('撤销授权')}
@@ -461,11 +466,11 @@ export function IdentityPanel({ token }: { token: string }) {
                       <form
                         onSubmit={(event) => {
                           event.preventDefault();
-                          void act('/api/identity/grants', {
+                          act('/api/identity/grants', {
                             account,
                             scope,
                             permission: selectedPermission,
-                          });
+                          }).catch((error: unknown) => console.error(error));
                         }}
                       >
                         <AccountField
@@ -522,13 +527,14 @@ export function RecoveryPanel({ onDone, onCancel }: { onDone: () => void; onCanc
           event.preventDefault();
           setBusy(true);
           setError('');
-          void apiRequest('/api/recovery/confirm', {
+          apiRequest('/api/recovery/confirm', {
             method: 'POST',
             body: { confirmation: confirmation.trim(), password },
           })
             .then(onDone)
             .catch((reason) => setError(errorText(reason)))
-            .finally(() => setBusy(false));
+            .finally(() => setBusy(false))
+            .catch((error: unknown) => console.error(error));
         }}
       >
         <label className="field-label">

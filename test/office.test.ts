@@ -15,7 +15,7 @@ import type {
   ApprovalList,
 } from '../shared/contracts/generated.js';
 
-test('club workflow snapshots, delegated review and chair consent lead to real event attendance and tasks', async (context) => {
+await test('club workflow snapshots, delegated review and chair consent lead to real event attendance and tasks', async (context) => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {
@@ -178,7 +178,7 @@ test('club workflow snapshots, delegated review and chair consent lead to real e
   }
 });
 
-test('explicit workflow deadlines and current chair authority survive revisions without accepting stale approval', async (context) => {
+await test('explicit workflow deadlines and current chair authority survive revisions without accepting stale approval', async (context) => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {

@@ -8,7 +8,7 @@ import { Store } from '../server/store.js';
 import { SecretState } from '../server/secret-state.js';
 import { site } from './helpers/site.js';
 
-test('MUA encrypted secrets survive restart; corruption and wrong keys fail closed', async () => {
+await test('MUA encrypted secrets survive restart; corruption and wrong keys fail closed', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'jlu-secret-state-'));
   const name = 'JLU_TEST_SECRET_STORAGE';
   process.env[name] = randomBytes(32).toString('hex');
@@ -64,7 +64,7 @@ test('MUA encrypted secrets survive restart; corruption and wrong keys fail clos
   }
 });
 
-test('OAuth provider refuses startup without an independently pinned backend encryption key', async () => {
+await test('OAuth provider refuses startup without an independently pinned backend encryption key', async () => {
   const host = generateKeyPairSync('rsa', { modulusLength: 2048 });
   await assert.rejects(
     site({

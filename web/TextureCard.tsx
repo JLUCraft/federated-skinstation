@@ -1,4 +1,6 @@
 import React from 'react';
+import { InlineNote } from './InlineNote';
+import { useClipboard } from './clipboard';
 import type { TextureItem } from '../shared/wardrobe';
 import { Avatar, Author, TextureProvenance, TextureCounts, STATE_LABELS } from './TextureIdentity';
 import { TextureThumb } from './TextureThumb';
@@ -23,7 +25,7 @@ export function TextureCard({
   onOpen?: () => void;
   children?: React.ReactNode;
 }) {
-  const [shared, setShared] = React.useState(false);
+  const { copied: shared, copy, note } = useClipboard();
   const label = tf('查看详情：{title}', { title: textureTitle(item) });
   const href = detailHref(item);
   const body = (
@@ -56,11 +58,7 @@ export function TextureCard({
             type="button"
             className="texture-share"
             aria-label={t('分享材质')}
-            onClick={() =>
-              void navigator.clipboard
-                ?.writeText(new URL(href, window.location.origin).href)
-                .then(() => setShared(true))
-            }
+            onClick={() => copy(new URL(href, window.location.origin).href)}
           >
             <span aria-hidden="true">↗</span>
           </button>
@@ -71,6 +69,7 @@ export function TextureCard({
           {t('材质链接已复制')}
         </p>
       )}
+      <InlineNote note={note} />
       {library ? <Author item={item} /> : item.kind === 'skin' && <Avatar hash={item.hash} />}
       <div className="badge-row">
         <span className="status-pill">{item.kind === 'skin' ? t('皮肤') : t('披风')}</span>

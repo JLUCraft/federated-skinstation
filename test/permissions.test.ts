@@ -47,7 +47,7 @@ function fixture(t: { after(fn: () => void): void }) {
   return { store, identity, account, grant, member, service };
 }
 
-test('global admin, disabled accounts and global-only permissions precede scoped authority', (t) => {
+await test('global admin, disabled accounts and global-only permissions precede scoped authority', (t) => {
   const { store, identity, account, grant } = fixture(t);
   account('alice');
   assert.equal(identity.authorize('root', 'club:b', 'chairs.manage'), true);
@@ -65,7 +65,7 @@ test('global admin, disabled accounts and global-only permissions precede scoped
   assert.equal(identity.authorize('root', 'club:a', 'read'), false);
 });
 
-test('active membership gates service and parent grants; roles and manage inherit within their club', (t) => {
+await test('active membership gates service and parent grants; roles and manage inherit within their club', (t) => {
   const { store, identity, account, grant, member, service } = fixture(t);
   account('alice');
   service('a-service');
@@ -94,7 +94,7 @@ test('active membership gates service and parent grants; roles and manage inheri
   assert.equal(identity.authorize('alice', 'club:a', 'chairs.manage'), false);
 });
 
-test('chair authority transfers by club appointment and nominee acceptance without outside votes', (t) => {
+await test('chair authority transfers by club appointment and nominee acceptance without outside votes', (t) => {
   const { store, identity, account } = fixture(t);
   account('alice');
   account('bob');
@@ -126,7 +126,7 @@ test('chair authority transfers by club appointment and nominee acceptance witho
   assert.equal(identity.authorize('bob', 'club:a', 'president'), false);
 });
 
-test('revocation keeps other-club tokens and grants, then removes all token families at the last club', async () => {
+await test('revocation keeps other-club tokens and grants, then removes all token families at the last club', async () => {
   const s = await site();
   const store = new Store(join(s.dir, 'db'));
   const identity = new LocalIdentity(store);
@@ -192,7 +192,7 @@ test('revocation keeps other-club tokens and grants, then removes all token fami
   }
 });
 
-test('email confirmation enrolls atomically and never restores a revoked membership', (t) => {
+await test('email confirmation enrolls atomically and never restores a revoked membership', (t) => {
   const { store, identity, account } = fixture(t);
   const alice = account('alice');
   const row = () =>
@@ -227,7 +227,7 @@ test('email confirmation enrolls atomically and never restores a revoked members
   assert.ok(store.db.prepare('SELECT 1 FROM challenges WHERE email=?').get(bad.email));
 });
 
-test('admin configuration seeds once, scopes MUA authority, and never revives revoked grants', (t) => {
+await test('admin configuration seeds once, scopes MUA authority, and never revives revoked grants', (t) => {
   const store = new Store(':memory:');
   t.after(() => store.close());
   const identity = new LocalIdentity(store);
@@ -251,7 +251,7 @@ test('admin configuration seeds once, scopes MUA authority, and never revives re
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM grants').get()!.n, 2);
 });
 
-test('each authorization appends one linked audit entry and existing entries cannot be replaced', (t) => {
+await test('each authorization appends one linked audit entry and existing entries cannot be replaced', (t) => {
   const { store, identity } = fixture(t);
   const before = Number(store.db.prepare('SELECT count(*) AS n FROM audit').get()!.n);
   for (const [scope, permission] of [
@@ -292,7 +292,7 @@ test('each authorization appends one linked audit entry and existing entries can
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM audit').get()!.n, rows.length);
 });
 
-test('scope parsing and recursive ownership stop at missing owners or cycles', () => {
+await test('scope parsing and recursive ownership stop at missing owners or cycles', () => {
   for (const scope of ['global', 'club:a', 'service:a', 'league:a', 'event:a', 'workflow:a'])
     assert.ok(parseScope(scope));
   for (const scope of ['', 'club:', 'global:a', 'club:a:b', 'club:a b', 'unknown:a'])

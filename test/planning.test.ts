@@ -15,7 +15,7 @@ import type {
   PlanDraft,
 } from '../shared/contracts/generated.js';
 
-test('cross-club meeting planning requires current official and individual consent while keeping evidence private', async (context) => {
+await test('cross-club meeting planning requires current official and individual consent while keeping evidence private', async (context) => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {
@@ -243,7 +243,7 @@ test('cross-club meeting planning requires current official and individual conse
   }
 });
 
-test('online plans reserve physical endpoints atomically and release them on revision or cancellation', async (context) => {
+await test('online plans reserve physical endpoints atomically and release them on revision or cancellation', async (context) => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {

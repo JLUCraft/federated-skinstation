@@ -22,7 +22,7 @@ export function DevicePanel({
   const profileLabel = profiles.find((profile) => profile.id === profileId)?.name ?? '';
   useEffect(() => {
     let active = true;
-    void Promise.all([
+    Promise.all([
       apiRequest(`/api/oauth/device?user_code=${encodeURIComponent(userCode)}`, {
         token,
       }),
@@ -126,14 +126,14 @@ export function DevicePanel({
             <button
               className="btn btn--primary"
               disabled={busy || !profileId}
-              onClick={() => void decide(true)}
+              onClick={() => decide(true).catch((error: unknown) => console.error(error))}
             >
               {t('授权登录')}
             </button>
             <button
               className="btn btn--secondary"
               disabled={busy}
-              onClick={() => void decide(false)}
+              onClick={() => decide(false).catch((error: unknown) => console.error(error))}
             >
               {t('拒绝')}
             </button>

@@ -635,7 +635,9 @@ async function main() {
     await shot('skin-07-mobile', '移动端查看已上传材质');
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
     await page.setViewportSize({ width: 1440, height: 1000 });
-    page.once('dialog', (dialog) => void dialog.accept());
+    page.once('dialog', (dialog) =>
+      dialog.accept().catch((error: unknown) => console.error(error)),
+    );
     await page.getByRole('button', { name: '移除', exact: true }).first().click();
     await page.getByAltText('当前皮肤材质').waitFor({ state: 'detached' });
     await shot('skin-08-remove', '移除皮肤，确认回到空态且披风保留');

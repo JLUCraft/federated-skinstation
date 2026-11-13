@@ -23,7 +23,7 @@ function declared(css: string): Set<string> {
   return new Set([...css.matchAll(/^\s*--([a-z0-9-]+)\s*:/gm)].map((m) => m[1]));
 }
 
-test('tokens.css 是静态品牌令牌，且包含两套模式与完整语义令牌', () => {
+await test('tokens.css 是静态品牌令牌，且包含两套模式与完整语义令牌', () => {
   assert.match(TOKENS, /^\/\* 静态品牌令牌/);
   assert.ok(TOKENS.includes('@media (prefers-color-scheme: dark)'));
   for (const token of [
@@ -41,21 +41,21 @@ test('tokens.css 是静态品牌令牌，且包含两套模式与完整语义令
   }
 });
 
-test('style.css 不再手写主题色：只允许 overlay 类的黑透明值', () => {
+await test('style.css 不再手写主题色：只允许 overlay 类的黑透明值', () => {
   const literals = [...STYLE.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g)].map((m) => m[0]);
   const allowed = new Set(['rgb(0 0 0 / 0.18)', 'rgb(0 0 0 / 0.5)']);
   const offenders = literals.filter((value) => !allowed.has(value));
   assert.deepEqual(offenders, [], `style.css 里出现了硬编码颜色：${offenders.join(', ')}`);
 });
 
-test('style.css 不再重复声明生成令牌（单一事实源）', () => {
+await test('style.css 不再重复声明生成令牌（单一事实源）', () => {
   const generated = declared(TOKENS);
   const local = declared(STYLE);
   const duplicated = [...local].filter((name) => generated.has(name));
   assert.deepEqual(duplicated, [], `这些令牌应由 tokens.css 提供：${duplicated.join(', ')}`);
 });
 
-test('站内不再保留两套尺度：--sp-* 与 --workspace-max 已并入生成令牌', () => {
+await test('站内不再保留两套尺度：--sp-* 与 --workspace-max 已并入生成令牌', () => {
   assert.equal([...STYLE.matchAll(/--sp-[0-9]+\s*:/g)].length, 0, 'style.css 里还有 --sp-* 声明');
   assert.equal([...STYLE.matchAll(/var\(--sp-[0-9]+\)/g)].length, 0, '还有 var(--sp-*) 用法');
   assert.equal([...STYLE.matchAll(/var\(--workspace-max\)/g)].length, 0);
@@ -63,14 +63,14 @@ test('站内不再保留两套尺度：--sp-* 与 --workspace-max 已并入生�
   assert.equal([...STYLE.matchAll(/var\(--radius-panel\)/g)].length, 0);
 });
 
-test('样式里引用的每个自定义属性都有定义（不存在断链的 var）', () => {
+await test('样式里引用的每个自定义属性都有定义（不存在断链的 var）', () => {
   const defined = new Set([...declared(TOKENS), ...declared(STYLE)]);
   const used = new Set([...STYLE.matchAll(/var\(--([a-z0-9-]+)\)/g)].map((m) => m[1]));
   const missing = [...used].filter((name) => !defined.has(name));
   assert.deepEqual(missing, [], `未定义的自定义属性：${missing.join(', ')}`);
 });
 
-test('站内既有色名全部映射到品牌令牌，没有遗留字面色值', () => {
+await test('站内既有色名全部映射到品牌令牌，没有遗留字面色值', () => {
   for (const legacy of [
     'green-900',
     'green-700',
@@ -86,7 +86,7 @@ test('站内既有色名全部映射到品牌令牌，没有遗留字面色值',
   }
 });
 
-test('每个页面入口都引入了 tokens.css，且顺序在 style.css 之前', () => {
+await test('每个页面入口都引入了 tokens.css，且顺序在 style.css 之前', () => {
   const entries = readdirSync(WEB).filter((name) => name.endsWith('.tsx'));
   const main = read('main.tsx');
   assert.ok(main.includes("import './tokens.css'"));
@@ -94,7 +94,7 @@ test('每个页面入口都引入了 tokens.css，且顺序在 style.css 之前'
   assert.ok(entries.length > 0);
 });
 
-test('public listing cards hide moderation details and owner state', () => {
+await test('public listing cards hide moderation details and owner state', () => {
   const item: TextureItem = {
     id: 'public-item',
     title: 'Campus face',
@@ -130,7 +130,7 @@ test('public listing cards hide moderation details and owner state', () => {
   assert.match(ownerCard, /正在使用/);
 });
 
-test('texture metadata omits an empty license and shares count separators', () => {
+await test('texture metadata omits an empty license and shares count separators', () => {
   const item: TextureItem = {
     id: 'item',
     title: 'Face',
@@ -147,7 +147,7 @@ test('texture metadata omits an empty license and shares count separators', () =
   assert.equal(counts, '<p class="texture-counts">下载量 · 0 · 收藏数 · 0 · 点赞 · 0</p>');
 });
 
-test('publication without a site administrator has a localized error', async () => {
+await test('publication without a site administrator has a localized error', async () => {
   const originalFetch = globalThis.fetch;
   try {
     globalThis.fetch = async () =>

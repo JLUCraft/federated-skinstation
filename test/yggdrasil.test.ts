@@ -14,7 +14,7 @@ interface TexturesPayload {
   };
 }
 
-test('Yggdrasil optional client token, refresh failure atomicity, requestUser and idempotent invalidation', async () => {
+await test('Yggdrasil optional client token, refresh failure atomicity, requestUser and idempotent invalidation', async () => {
   const s = await site();
   try {
     const a = await s.enroll('Contract');
@@ -65,7 +65,7 @@ test('Yggdrasil optional client token, refresh failure atomicity, requestUser an
   }
 });
 
-test('Yggdrasil join IP binding, lookup aliases and signed textures', async () => {
+await test('Yggdrasil join IP binding, lookup aliases and signed textures', async () => {
   const s = await site();
   try {
     const a = await s.enroll('Network');
@@ -113,7 +113,7 @@ test('Yggdrasil join IP binding, lookup aliases and signed textures', async () =
     await s.close();
   }
 });
-test('standard multipart textures enforce owner, dimensions, model, cape padding and deletion', async () => {
+await test('standard multipart textures enforce owner, dimensions, model, cape padding and deletion', async () => {
   const s = await site();
   try {
     const a = await s.enroll('Textures'),

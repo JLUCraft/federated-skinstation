@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Store, migrations } from '../server/store.js';
 import { LocalIdentity } from '../server/permissions.js';
 
-test('migrations initialize once and preserve existing data on reopen', () => {
+await test('migrations initialize once and preserve existing data on reopen', () => {
   const dir = mkdtempSync(join(tmpdir(), 'skin-schema-'));
   try {
     const path = join(dir, 'store.sqlite');
@@ -26,7 +26,7 @@ test('migrations initialize once and preserve existing data on reopen', () => {
   }
 });
 
-test('schema one migration retains accounts, profile data, sessions and legacy member identifiers', () => {
+await test('schema one migration retains accounts, profile data, sessions and legacy member identifiers', () => {
   const dir = mkdtempSync(join(tmpdir(), 'skin-migrate-'));
   try {
     const path = join(dir, 'store.sqlite');
@@ -63,7 +63,7 @@ test('schema one migration retains accounts, profile data, sessions and legacy m
   }
 });
 
-test('splitting configuration seed markers retains completed imports including revoked grants', () => {
+await test('splitting configuration seed markers retains completed imports including revoked grants', () => {
   const dir = mkdtempSync(join(tmpdir(), 'skin-admin-seeds-'));
   try {
     const path = join(dir, 'store.sqlite');

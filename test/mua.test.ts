@@ -21,7 +21,7 @@ const headers = (body: Buffer, timestamp: string, nonce: string) => ({
     keys.privateKey,
   ).toString('base64'),
 });
-test('MUA selectors and subjects preserve provider boundaries', () => {
+await test('MUA selectors and subjects preserve provider boundaries', () => {
   assert.equal(
     yggdrasilRoot('https://skin.mualliance.ltd/api/union', 'only', ['SJMC', 'FDC', 'SJMC']),
     'https://skin.mualliance.ltd/api/union/yggdrasil/only/FDC_SJMC',
@@ -36,7 +36,7 @@ test('MUA selectors and subjects preserve provider boundaries', () => {
   );
   assert.throws(() => muaSubject({ sub: '123' }));
 });
-test('host signature uses exact bytes, nonce replay protection and asymmetric clock window', () => {
+await test('host signature uses exact bytes, nonce replay protection and asymmetric clock window', () => {
   const db = new Store(':memory:');
   db.db.exec('CREATE TABLE mua_nonces(nonce TEXT PRIMARY KEY,expires INTEGER NOT NULL)');
   try {
@@ -60,7 +60,7 @@ test('host signature uses exact bytes, nonce replay protection and asymmetric cl
     db.close();
   }
 });
-test('mail enrollment, Yggdrasil invalidation and signed MUA diagnosis HTTP flow', async () => {
+await test('mail enrollment, Yggdrasil invalidation and signed MUA diagnosis HTTP flow', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'skin-test-'));
   await writeFile(join(dir, 'rsa.pem'), keys.privateKey.export({ type: 'pkcs8', format: 'pem' }), {
     mode: 0o600,
@@ -229,7 +229,7 @@ test('mail enrollment, Yggdrasil invalidation and signed MUA diagnosis HTTP flow
     await rm(dir, { recursive: true, force: true });
   }
 });
-test('signed MUA member control rotates scoped keys, syncs profiles and remaps UUID atomically', async () => {
+await test('signed MUA member control rotates scoped keys, syncs profiles and remaps UUID atomically', async () => {
   process.env.TEST_MUA_STORAGE = randomBytes(32).toString('hex');
   const dir = await mkdtemp(join(tmpdir(), 'mua-member-test-'));
   await writeFile(join(dir, 'rsa.pem'), keys.privateKey.export({ type: 'pkcs8', format: 'pem' }), {

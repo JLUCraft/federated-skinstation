@@ -1,17 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { InlineNote } from './InlineNote';
+import { useClipboard } from './clipboard';
 import { t } from './i18n';
-
-const COPY_NOTICE_MS = 2000;
 
 /** The Yggdrasil API root launchers need; it is simply this site's own origin. */
 export function ConnectPanel() {
   const root = window.location.origin;
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), COPY_NOTICE_MS);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
+  const { copied, copy, note } = useClipboard();
   return (
     <section className="panel" aria-labelledby="connect-title">
       <div className="section-head">
@@ -32,14 +27,11 @@ export function ConnectPanel() {
             onFocus={(e) => e.currentTarget.select()}
           />
         </label>
-        <button
-          type="button"
-          className="btn btn--secondary"
-          onClick={() => void navigator.clipboard?.writeText(root).then(() => setCopied(true))}
-        >
+        <button type="button" className="btn btn--secondary" onClick={() => copy(root)}>
           {copied ? t('已复制') : t('复制地址')}
         </button>
       </div>
+      <InlineNote note={note} />
     </section>
   );
 }

@@ -14,7 +14,7 @@ function bootstrap(store: Store, account: string) {
     .run(account, now());
 }
 
-test('central identity manages scoped grants and chair succession without escalating authority', async () => {
+await test('central identity manages scoped grants and chair succession without escalating authority', async () => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {
@@ -158,7 +158,7 @@ test('central identity manages scoped grants and chair succession without escala
   }
 });
 
-test('HTTP membership revocation and account disablement invalidate every session family', async () => {
+await test('HTTP membership revocation and account disablement invalidate every session family', async () => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {
@@ -267,7 +267,7 @@ test('HTTP membership revocation and account disablement invalidate every sessio
   }
 });
 
-test('existing accounts reverify email into local membership while retaining their legacy identifier as data', async () => {
+await test('existing accounts reverify email into local membership while retaining their legacy identifier as data', async () => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {

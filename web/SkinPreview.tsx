@@ -62,7 +62,7 @@ export function SkinPreview({
     setLoading(true);
     setFailed(false);
     setRotating(false);
-    void import('skinview3d')
+    import('skinview3d')
       .then(async ({ SkinViewer }) => {
         if (cancelled || !canvas.current || !container.current) return;
         active = new SkinViewer({
@@ -105,7 +105,8 @@ export function SkinPreview({
   }, [skin?.hash, skin?.model, cape?.hash]);
   useEffect(() => {
     motionRef.current = motion;
-    if (viewer.current) void applyMotion(viewer.current, motion);
+    if (viewer.current)
+      applyMotion(viewer.current, motion).catch((error: unknown) => console.error(error));
   }, [motion]);
   if (!skin && !cape) return <div className="skin-preview-empty">{emptyText}</div>;
   return (

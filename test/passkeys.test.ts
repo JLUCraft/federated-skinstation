@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { site } from './helpers/site.js';
 const origin = 'https://skin.example.test';
-test('passkey challenges require same origin, account password, browser cookie and live session', async () => {
+await test('passkey challenges require same origin, account password, browser cookie and live session', async () => {
   const s = await site();
   try {
     const a = await s.enroll('Passkey');

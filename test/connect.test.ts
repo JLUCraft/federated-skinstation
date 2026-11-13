@@ -18,7 +18,7 @@ const form = (values: Record<string, string>) => ({
   payload: new URLSearchParams(values).toString(),
 });
 
-test('device flow issues verifiable id tokens, rotating refresh tokens and working access tokens', async () => {
+await test('device flow issues verifiable id tokens, rotating refresh tokens and working access tokens', async () => {
   const s = await site();
   const raw = new DatabaseSync(join(s.dir, 'db'));
   try {

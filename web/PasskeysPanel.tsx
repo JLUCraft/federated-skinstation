@@ -40,9 +40,10 @@ export function PasskeysPanel({
     setFailed(false);
   }
   useEffect(() => {
-    void refresh()
+    refresh()
       .catch(() => setFailed(true))
-      .finally(() => setLoading(false));
+      .finally(() => setLoading(false))
+      .catch((error: unknown) => console.error(error));
   }, [token]);
   async function action(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -87,13 +88,13 @@ export function PasskeysPanel({
                       className="btn btn--danger"
                       disabled={busy || !password}
                       onClick={() =>
-                        void action(() =>
+                        action(() =>
                           apiRequest(`/api/passkeys/${encodeURIComponent(item.id)}`, {
                             method: 'DELETE',
                             token,
                             body: { password },
                           }),
-                        )
+                        ).catch((error: unknown) => console.error(error))
                       }
                     >
                       {t('移除')}
@@ -122,7 +123,7 @@ export function PasskeysPanel({
               key={`form-${resetKey}`}
               onSubmit={(e) => {
                 e.preventDefault();
-                void action(async () => {
+                action(async () => {
                   const options = await apiRequest<
                     Parameters<typeof startRegistration>[0]['optionsJSON']
                   >('/api/passkeys/register/options', {
@@ -138,7 +139,7 @@ export function PasskeysPanel({
                     token,
                     body: { response, name },
                   });
-                });
+                }).catch((error: unknown) => console.error(error));
               }}
             >
               <label className="field-label">

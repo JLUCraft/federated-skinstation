@@ -38,12 +38,13 @@ export function TexturesPanel({
     setModel(selected.textures?.find((t: Texture) => t.kind === 'skin')?.model ?? 'default');
   }
   useEffect(() => {
-    void refresh()
+    refresh()
       .catch((e) => {
         setFailed(true);
         notify(errorText(e), 'error');
       })
-      .finally(() => setLoading(false));
+      .finally(() => setLoading(false))
+      .catch((error: unknown) => console.error(error));
   }, [token]);
 
   async function change(kind: TextureKind, file?: File) {
@@ -156,7 +157,7 @@ export function TexturesPanel({
               className="profile-editor"
               onSubmit={(e) => {
                 e.preventDefault();
-                void manage('POST');
+                manage('POST').catch((error: unknown) => console.error(error));
               }}
             >
               <label className="field-label">
@@ -214,7 +215,11 @@ export function TexturesPanel({
                         type="button"
                         className="btn btn--secondary"
                         disabled={busy || !renameName}
-                        onClick={() => void manage('PATCH', renameName)}
+                        onClick={() =>
+                          manage('PATCH', renameName).catch((error: unknown) =>
+                            console.error(error),
+                          )
+                        }
                       >
                         {t('重命名')}
                       </button>
@@ -223,7 +228,8 @@ export function TexturesPanel({
                         className="btn btn--danger"
                         disabled={busy}
                         onClick={() => {
-                          if (window.confirm(t('删除此角色及其外观设置？'))) void manage('DELETE');
+                          if (window.confirm(t('删除此角色及其外观设置？')))
+                            manage('DELETE').catch((error: unknown) => console.error(error));
                         }}
                       >
                         {t('删除角色')}
@@ -262,7 +268,7 @@ export function TexturesPanel({
                                   kind === 'skin' ? t('移除当前皮肤？') : t('移除当前披风？'),
                                 )
                               )
-                                void change(kind);
+                                change(kind).catch((error: unknown) => console.error(error));
                             }}
                           >
                             {t('移除')}
@@ -312,7 +318,10 @@ export function TexturesPanel({
                               disabled={busy || !profile}
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
-                                if (file) void change(kind, file);
+                                if (file)
+                                  change(kind, file).catch((error: unknown) =>
+                                    console.error(error),
+                                  );
                                 e.target.value = '';
                               }}
                             />

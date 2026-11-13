@@ -6,7 +6,7 @@ import { site } from './helpers/site.js';
 import type { Login } from './helpers/site.js';
 import { authority } from './helpers/identity.js';
 
-test('club recovery proves the new mailbox and replaces credentials without replacing the account', async () => {
+await test('club recovery proves the new mailbox and replaces credentials without replacing the account', async () => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {
@@ -97,7 +97,7 @@ test('club recovery proves the new mailbox and replaces credentials without repl
   }
 });
 
-test('pending recovery rechecks the home club, global authority, expiry and current delegation', async () => {
+await test('pending recovery rechecks the home club, global authority, expiry and current delegation', async () => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {

@@ -78,7 +78,7 @@ function App() {
   const [muaEnabled, setMuaEnabled] = useState(false);
   const [muaMember, setMuaMember] = useState(false);
   useEffect(() => {
-    void apiRequest<Capabilities>('/api/capabilities')
+    apiRequest<Capabilities>('/api/capabilities')
       .then((c) => {
         setMuaEnabled(c.muaOAuth === true);
         setMuaMember(c.muaMember === true);
@@ -89,7 +89,8 @@ function App() {
         );
       })
       .catch(() => notify(t('无法加载站点信息，请稍后刷新重试'), 'error'))
-      .finally(() => setCapsLoading(false));
+      .finally(() => setCapsLoading(false))
+      .catch((error: unknown) => console.error(error));
   }, []);
 
   const [email, setEmail] = useState('');
@@ -121,7 +122,7 @@ function App() {
   }, [message, msgKind]);
   const refreshNotices = () => {
     if (token)
-      void apiRequest<NotificationList>('/api/notifications', { token })
+      apiRequest<NotificationList>('/api/notifications', { token })
         .then((r) => setUnread(r.unread))
         .catch(() => {});
   };
@@ -134,7 +135,7 @@ function App() {
     }
     let active = true;
     const refresh = () => {
-      void apiRequest<MemberAccount>('/api/me', { token })
+      apiRequest<MemberAccount>('/api/me', { token })
         .then((r) => {
           if (active) {
             setAvatar(r.avatar);
@@ -502,7 +503,7 @@ function App() {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          void action(login);
+                          action(login).catch((error: unknown) => console.error(error));
                         }}
                       >
                         <div className="field-grid field-grid--stack">
@@ -541,7 +542,7 @@ function App() {
                               className="btn btn--secondary"
                               disabled={busy}
                               onClick={() =>
-                                void action(async () => {
+                                action(async () => {
                                   const data = await loginWithPasskey();
                                   setToken(data.accessToken);
                                   setDisplayName(
@@ -550,7 +551,7 @@ function App() {
                                   setPassword('');
                                   setLoginNote(null);
                                   notify(t('登录成功'), 'success');
-                                })
+                                }).catch((error: unknown) => console.error(error))
                               }
                             >
                               {t('使用通行密钥登录')}
@@ -587,7 +588,7 @@ function App() {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          void action(async () => {
+                          action(async () => {
                             if (!resetSent) {
                               await request('/api/password/start', { email });
                               setResetSent(true);
@@ -607,7 +608,7 @@ function App() {
                                 text: t('密码已更新，请重新登录'),
                               });
                             }
-                          });
+                          }).catch((error: unknown) => console.error(error));
                         }}
                       >
                         <div className="field-grid field-grid--stack">
@@ -662,7 +663,7 @@ function App() {
                               className="btn btn--secondary"
                               disabled={busy}
                               onClick={() =>
-                                void action(async () => {
+                                action(async () => {
                                   await request('/api/password/start', {
                                     email,
                                   });
@@ -673,7 +674,7 @@ function App() {
                                       email: address,
                                     }),
                                   });
-                                })
+                                }).catch((error: unknown) => console.error(error))
                               }
                             >
                               {t('重新发送验证码')}
@@ -702,7 +703,7 @@ function App() {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          void action(sendVerifyEmail);
+                          action(sendVerifyEmail).catch((error: unknown) => console.error(error));
                         }}
                       >
                         <div className="field-grid">
@@ -802,7 +803,7 @@ function App() {
                           className="verify-step"
                           onSubmit={(e) => {
                             e.preventDefault();
-                            void action(confirmEmail);
+                            action(confirmEmail).catch((error: unknown) => console.error(error));
                           }}
                         >
                           {codeStale ? (
@@ -859,13 +860,13 @@ function App() {
                     className="btn btn--danger"
                     disabled={busy}
                     onClick={() =>
-                      void action(async () => {
+                      action(async () => {
                         await request('/authserver/invalidate', {
                           accessToken: token,
                         });
                         setToken('');
                         notify(t('已退出'), 'success');
-                      })
+                      }).catch((error: unknown) => console.error(error))
                     }
                   >
                     {t('退出登录')}

@@ -230,7 +230,7 @@ async function officeSite(fetcher: typeof fetch) {
   }
 }
 
-test('event documents share point escrow and private source evidence from polishing through AI and chair approval to a published summary', async (context) => {
+await test('event documents share point escrow and private source evidence from polishing through AI and chair approval to a published summary', async (context) => {
   let completion = 'Generated public meeting brief.';
   const requests: string[] = [];
   const fixture = await officeSite(async (_url, init) => {
@@ -427,7 +427,7 @@ test('event documents share point escrow and private source evidence from polish
   }
 });
 
-test('in-flight documents and AI review replacement preserve privacy, current authority, and requested changes', async (context) => {
+await test('in-flight documents and AI review replacement preserve privacy, current authority, and requested changes', async (context) => {
   const started = deferred<void>();
   const pending = deferred<Response>();
   let fetchResponse = async () => {

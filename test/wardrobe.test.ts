@@ -7,7 +7,7 @@ import { registerWardrobe } from '../server/wardrobe.js';
 import { authority } from './helpers/identity.js';
 import type { GetResponse, TextureList } from '../shared/http.js';
 
-test('wardrobe publication, collection, ownership and applying survive source removal', async () => {
+await test('wardrobe publication, collection, ownership and applying survive source removal', async () => {
   const db = new Store(':memory:'),
     app = Fastify(),
     now = Math.floor(Date.now() / 1000);
@@ -152,7 +152,7 @@ test('wardrobe publication, collection, ownership and applying survive source re
   }
 });
 
-test('library search, tags, likes and sorting are enforced by the server', async () => {
+await test('library search, tags, likes and sorting are enforced by the server', async () => {
   const db = new Store(':memory:'),
     app = Fastify(),
     now = Math.floor(Date.now() / 1000);

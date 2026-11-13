@@ -12,7 +12,7 @@ import type {
   ReportView,
 } from '../shared/contracts/generated.js';
 
-test('MCP derives its tools from central contracts and completes delegated club reporting through the existing authority', async () => {
+await test('MCP derives its tools from central contracts and completes delegated club reporting through the existing authority', async () => {
   const service = await site();
   const store = new Store(join(service.dir, 'db'));
   try {
@@ -165,7 +165,7 @@ test('MCP derives its tools from central contracts and completes delegated club 
   }
 });
 
-test('MCP authenticates notifications and rejects malformed calls and foreign origins before business mutations', async () => {
+await test('MCP authenticates notifications and rejects malformed calls and foreign origins before business mutations', async () => {
   const service = await site();
   try {
     const member = await service.enroll('Member');

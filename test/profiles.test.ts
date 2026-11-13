@@ -5,7 +5,7 @@ import { PNG } from 'pngjs';
 import type { GameProfile } from '../shared/profiles.js';
 import type { Authentication, MemberAccount, TextureList } from '../shared/http.js';
 import type { SessionProfile } from '../shared/contracts/generated.js';
-test('multiple profiles isolate ownership, textures, launcher selection and join sessions', async () => {
+await test('multiple profiles isolate ownership, textures, launcher selection and join sessions', async () => {
   const s = await site();
   try {
     const a = await s.enroll('MainRole'),
@@ -194,7 +194,7 @@ test('multiple profiles isolate ownership, textures, launcher selection and join
   }
 });
 
-test('extra profile remapping preserves textures, rejects collisions and revokes sessions', async () => {
+await test('extra profile remapping preserves textures, rejects collisions and revokes sessions', async () => {
   const { Store } = await import('../server/store.js');
   const db = new Store(':memory:');
   const now = Math.floor(Date.now() / 1000);

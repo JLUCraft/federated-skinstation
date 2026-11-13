@@ -154,7 +154,7 @@ async function reportingSite(fetcher: typeof fetch) {
   }
 }
 
-test('annual reporting freezes public activity evidence and own-club outcomes, then generates, revises and publishes independent report versions', async (context) => {
+await test('annual reporting freezes public activity evidence and own-club outcomes, then generates, revises and publishes independent report versions', async (context) => {
   let completion = 'Public activity summary.';
   const requests: string[] = [];
   const fixture = await reportingSite(async (_url, init) => {
@@ -430,7 +430,7 @@ test('annual reporting freezes public activity evidence and own-club outcomes, t
   }
 });
 
-test('report revisions supersede running and queued jobs while current managers retain budget control and private evidence access', async (context) => {
+await test('report revisions supersede running and queued jobs while current managers retain budget control and private evidence access', async (context) => {
   const started = deferred<void>();
   const pending = deferred<Response>();
   const fixture = await reportingSite(async () => {

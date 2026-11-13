@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store, Rejected, type Account } from '../server/store.js';
 
-test('registration name conflicts are explicit and leave the existing account unchanged', async () => {
+await test('registration name conflicts are explicit and leave the existing account unchanged', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'skin-registration-'));
   const db = new Store(join(dir, 'accounts.sqlite'));
   try {
@@ -32,7 +32,7 @@ test('registration name conflicts are explicit and leave the existing account un
   }
 });
 
-test('a taken game name is reported when registration starts, before any email is sent', async () => {
+await test('a taken game name is reported when registration starts, before any email is sent', async () => {
   const { site } = await import('./helpers/site.js');
   const s = await site();
   try {

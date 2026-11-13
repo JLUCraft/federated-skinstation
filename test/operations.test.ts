@@ -1,16 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, generateKeyPairSync, createHash, sign } from 'node:crypto';
+import { isoCBOR, COSEALG } from '@simplewebauthn/server/helpers';
 import { join } from 'node:path';
 import type {
   OperationsDispatch,
+  OperationsApproval,
   OperationsCancellation,
   OperationsLogPage,
   OperationsJob,
   OperationsSnapshot,
 } from '../shared/contracts/generated.js';
 import { streamText } from '../server/streams.js';
-import { OPERATIONS_SCOPE_HEADER } from '../shared/operations.js';
+import { OPERATIONS_SCOPE_HEADER, OPERATIONS_CLAIM_HEADER } from '../shared/operations.js';
 import { Store, now } from '../server/store.js';
 import { site } from './helpers/site.js';
 import { authorizeAgent } from './helpers/oauth.js';
@@ -107,6 +109,7 @@ await test(
           createdAt: now(),
           updatedAt: now(),
           expiresAt: dispatch.expiresAt,
+          ...(dispatch.approval ? { approval: dispatch.approval } : {}),
         };
         jobs.set(intent.id, job);
         return Response.json(job, { status: 202 });
@@ -296,6 +299,163 @@ await test(
       });
       assert.match(await output, /Request cancelled/);
       await latestAbort;
+      await service.requestJson(admin, 'POST', '/api/identity/grants', {
+        account: member.user.id,
+        scope: 'club:jlu',
+        permission: 'manage',
+      });
+      async function propose(key: string) {
+        const response = await call('post_operations_hosts_by_host_instances_by_instance_jobs', {
+          path: arguments_.path,
+          body: { key, operation: { action: 'kill', pid: 42 } },
+        });
+        const review = response.json<{ result: { structuredContent: OperationsApproval } }>().result
+          .structuredContent;
+        assert.equal(review.status, 'pending', response.body);
+        assert.equal(jobs.has(review.id), false);
+        return review;
+      }
+      const proposed = await propose('human-password');
+      const confirm = '/api/operations/approvals/' + proposed.id + '/confirm';
+      const headers = {
+        origin: 'https://skin.example.test',
+        authorization: 'Bearer ' + member.accessToken,
+      };
+      assert.equal(
+        (
+          await service.app.inject({
+            method: 'POST',
+            url: confirm,
+            headers: { ...headers, authorization: 'Bearer ' + agent.access_token },
+            payload: { password: 'password-for-contract-testing' },
+          })
+        ).statusCode,
+        403,
+      );
+      assert.equal(
+        (
+          await service.app.inject({
+            method: 'POST',
+            url: confirm,
+            headers,
+            payload: { password: 'incorrect' },
+          })
+        ).statusCode,
+        403,
+      );
+      assert.equal(jobs.has(proposed.id), false);
+      const approved = await service.app.inject({
+        method: 'POST',
+        url: confirm,
+        headers,
+        payload: { password: 'password-for-contract-testing' },
+      });
+      assert.equal(approved.statusCode, 200, approved.body);
+      assert.deepEqual(approved.json<OperationsJob>().intent, proposed.intent);
+      assert.equal(approved.json<OperationsJob>().approval?.account, member.user.id);
+      const claim = () =>
+        service.app.inject({
+          method: 'POST',
+          url: '/internal/operations/campus/claim',
+          headers: { [OPERATIONS_CLAIM_HEADER]: credential },
+          payload: { id: proposed.id },
+        });
+      const claimed = await claim();
+      assert.equal(claimed.statusCode, 200, claimed.body);
+      const passkey = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+      const jwk = passkey.publicKey.export({ format: 'jwk' });
+      assert.ok(jwk.x && jwk.y);
+      const cose = new Map<number, number | Uint8Array<ArrayBuffer>>([
+        [1, 2],
+        [3, COSEALG.ES256],
+        [-1, 1],
+        [-2, new Uint8Array(Buffer.from(jwk.x, 'base64url'))],
+        [-3, new Uint8Array(Buffer.from(jwk.y, 'base64url'))],
+      ]);
+      const credentialId = randomBytes(32).toString('base64url');
+      store.db
+        .prepare('INSERT INTO passkeys VALUES(?,?,?,?,?,?)')
+        .run(credentialId, member.user.id, isoCBOR.encode(cose), 0, 'fixture', now());
+      const passkeyReview = await propose('human-passkey');
+      const otherReview = await propose('another-request');
+      const passkeyPath = '/api/passkeys/operations/' + passkeyReview.id;
+      const options = await service.app.inject({
+        method: 'POST',
+        url: passkeyPath + '/options',
+        headers,
+        payload: {},
+      });
+      assert.equal(options.statusCode, 200, options.body);
+      let cookie = String(options.headers['set-cookie']).split(';')[0];
+      assert.equal(
+        (
+          await service.app.inject({
+            method: 'POST',
+            url: '/api/passkeys/operations/' + otherReview.id + '/verify',
+            headers: { ...headers, cookie },
+            payload: { response: { id: credentialId } },
+          })
+        ).statusCode,
+        403,
+      );
+      const freshOptions = await service.app.inject({
+        method: 'POST',
+        url: passkeyPath + '/options',
+        headers,
+        payload: {},
+      });
+      assert.equal(freshOptions.statusCode, 200, freshOptions.body);
+      cookie = String(freshOptions.headers['set-cookie']).split(';')[0];
+      const clientData = Buffer.from(
+        JSON.stringify({
+          type: 'webauthn.get',
+          challenge: freshOptions.json<{ challenge: string }>().challenge,
+          origin: headers.origin,
+        }),
+      );
+      const counter = Buffer.alloc(4);
+      counter.writeUInt32BE(1);
+      const authenticatorData = Buffer.concat([
+        createHash('sha256').update('skin.example.test').digest(),
+        Buffer.from([0x05]),
+        counter,
+      ]);
+      const signature = sign(
+        'sha256',
+        Buffer.concat([authenticatorData, createHash('sha256').update(clientData).digest()]),
+        passkey.privateKey,
+      );
+      const assertion = {
+        id: credentialId,
+        rawId: credentialId,
+        type: 'public-key',
+        clientExtensionResults: {},
+        response: {
+          clientDataJSON: clientData.toString('base64url'),
+          authenticatorData: authenticatorData.toString('base64url'),
+          signature: signature.toString('base64url'),
+          userHandle: Buffer.from(member.user.id).toString('base64url'),
+        },
+      };
+      const verified = await service.app.inject({
+        method: 'POST',
+        url: passkeyPath + '/verify',
+        headers: { ...headers, cookie },
+        payload: { response: assertion },
+      });
+      assert.equal(verified.statusCode, 200, verified.body);
+      assert.deepEqual(verified.json<OperationsJob>().intent, passkeyReview.intent);
+      assert.equal(
+        (
+          await service.app.inject({
+            method: 'POST',
+            url: passkeyPath + '/verify',
+            headers: { ...headers, cookie },
+            payload: { response: assertion },
+          })
+        ).statusCode,
+        403,
+      );
       const revokedStreamId = ++id;
       const revoking = await service.app.inject({
         method: 'POST',
@@ -323,6 +483,7 @@ await test(
       );
       if (heldOpen) heldController?.enqueue(new TextEncoder().encode(': heartbeat\n\n'));
       assert.match(await revokedOutput, /"isError":true/);
+      assert.equal((await claim()).statusCode, 403);
       await latestAbort;
       assert.equal(
         (await call('get_operations_jobs_by_id', { path: { id: intent.id } })).statusCode,

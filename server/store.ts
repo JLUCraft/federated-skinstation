@@ -278,11 +278,20 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       `);
     },
   },
+  {
+    version: 15,
+    apply(db) {
+      db.exec(`
+    CREATE TABLE operation_origins(request TEXT PRIMARY KEY REFERENCES operation_requests(id) ON DELETE CASCADE,session TEXT REFERENCES oauth_sessions(id) ON DELETE CASCADE,token TEXT REFERENCES tokens(hash) ON DELETE CASCADE,CHECK((session IS NULL)!=(token IS NULL)));
+    CREATE TABLE operation_approvals(request TEXT PRIMARY KEY REFERENCES operation_requests(id) ON DELETE CASCADE,state TEXT NOT NULL CHECK(state IN ('pending','approved','denied')),expires INTEGER NOT NULL,approved_at INTEGER);
+  `);
+    },
+  },
 ];
 export class Store {
   readonly db: DatabaseSync;
-  private readonly caller = new AsyncLocalStorage<{ client: string; request: string }>();
-  withCaller<Result>(client: string, request: string, action: () => Result): Result {
+  private readonly caller = new AsyncLocalStorage<{ client: string | null; request: string }>();
+  withCaller<Result>(client: string | null, request: string, action: () => Result): Result {
     return this.caller.run({ client, request }, action);
   }
   currentCaller() {

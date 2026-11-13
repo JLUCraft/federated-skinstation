@@ -179,15 +179,18 @@ export function registerPasskeys(
     begin(req, reply, options.challenge, 'login');
     return options;
   });
-  app.post('/api/passkeys/login/verify', async (req, reply) => {
-    const challenge = consume(req, reply, 'login'),
-      response = record(record(req.body).response) as unknown as AuthenticationResponseJSON;
+  async function assertion<Result>(
+    response: AuthenticationResponseJSON,
+    challenge: string,
+    accept: (account: Account) => Result,
+    expectedAccount?: string,
+  ): Promise<Result> {
     const c = db.db.prepare('SELECT * FROM passkeys WHERE id=?').get(field(response.id, 2048)) as
       | Credential
       | undefined;
     requireThat(c, 'Passkey verification failed');
     const a = db.account('id', c.account);
-    requireThat(a);
+    requireThat(a && (!expectedAccount || a.id === expectedAccount), 'Passkey user mismatch');
     requireThat(
       response.response?.userHandle &&
         Buffer.from(response.response.userHandle, 'base64url').toString() === a.id,
@@ -212,17 +215,21 @@ export function registerPasskeys(
     }
     requireThat(result.verified);
     await authorize(a);
-    const accessToken = db.transaction(() => {
+    return db.transaction(() => {
       const updated = db.db
         .prepare('UPDATE passkeys SET counter=? WHERE id=? AND counter=?')
         .run(result.authenticationInfo.newCounter, c.id, c.counter);
       requireThat(updated.changes === 1, 'Passkey changed; retry');
-      return db.mint(a, secret(), now());
+      return accept(a);
     });
-    return {
-      accessToken,
+  }
+  app.post('/api/passkeys/login/verify', async (req, reply) => {
+    const challenge = consume(req, reply, 'login');
+    const response = record(record(req.body).response) as unknown as AuthenticationResponseJSON;
+    return assertion(response, challenge, (a) => ({
+      accessToken: db.mint(a, secret(), now()),
       selectedProfile: { id: db.profileId(a), name: a.name },
-    };
+    }));
   });
   app.delete('/api/passkeys/:id', async (req, reply) => {
     originCheck(req);
@@ -239,4 +246,48 @@ export function registerPasskeys(
       .run(field(record(req.params).id, 2048), a.id);
     return reply.code(204).send();
   });
+  return {
+    async beginOperation(
+      req: FastifyRequest,
+      reply: FastifyReply,
+      id: string,
+      session: string,
+      account: string,
+    ) {
+      originCheck(req);
+      const keys = db.db.prepare('SELECT id FROM passkeys WHERE account=?').all(account) as {
+        id: string;
+      }[];
+      requireThat(keys.length, 'Passkey not registered');
+      const options = await generateAuthenticationOptions({
+        rpID,
+        userVerification: 'required',
+        allowCredentials: keys,
+      });
+      requireThat(db.token(session, undefined, now()).id === account, 'Passkey user mismatch');
+      begin(req, reply, options.challenge, 'operation:' + id, session);
+      return options;
+    },
+    async verifyOperation<Result>(
+      req: FastifyRequest,
+      reply: FastifyReply,
+      id: string,
+      session: string,
+      account: string,
+      accept: (account: Account) => Result,
+    ) {
+      const challenge = consume(req, reply, 'operation:' + id, session);
+      const response = record(record(req.body).response) as unknown as AuthenticationResponseJSON;
+      const verified = await assertion(
+        response,
+        challenge,
+        (a) => {
+          requireThat(db.token(session, undefined, now()).id === account, 'Passkey user mismatch');
+          return a;
+        },
+        account,
+      );
+      return accept(verified);
+    },
+  };
 }

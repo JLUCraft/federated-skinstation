@@ -1,3 +1,4 @@
+import { OperationApprovalPanel } from './OperationApprovalPanel';
 import { Announcements, AdminPanel, Notifications, PublicPage } from './CommunityPanel';
 import { Avatar } from './TextureIdentity';
 import { InlineNote, type Note } from './InlineNote';
@@ -25,6 +26,7 @@ type Page =
   | 'login'
   | 'device'
   | 'oauth'
+  | 'operation'
   | 'textures'
   | 'wardrobe'
   | 'library'
@@ -76,6 +78,11 @@ function App() {
   const [deviceCode, setDeviceCode] = useState(
     () => new URLSearchParams(window.location.search).get('user_code') ?? '',
   );
+  const [operationRequest, setOperationRequest] = useState(() => {
+    const request = new URLSearchParams(window.location.search).get('operation_request');
+    if (request) sessionStorage.setItem('operation-approval-request', request);
+    return request ?? sessionStorage.getItem('operation-approval-request') ?? '';
+  });
   const [authorizationRequest, setAuthorizationRequest] = useState(() => {
     const request = new URLSearchParams(window.location.search).get('authorization_request');
     if (request) sessionStorage.setItem('oauth-authorization-request', request);
@@ -166,13 +173,15 @@ function App() {
   }, []);
   const publicView = /^\/(?:library|u)\/[^/]+$/.test(publicPath);
   const view: Page = token
-    ? authorizationRequest
-      ? 'oauth'
-      : deviceCode
-        ? 'device'
-        : page === 'login'
-          ? 'textures'
-          : page
+    ? operationRequest
+      ? 'operation'
+      : authorizationRequest
+        ? 'oauth'
+        : deviceCode
+          ? 'device'
+          : page === 'login'
+            ? 'textures'
+            : page
     : page === 'library'
       ? 'library'
       : 'login';
@@ -429,6 +438,18 @@ function App() {
               <h2 className="section-title">{t('授权 Agent 连接')}</h2>
               <p>{t('请先登录')}</p>
             </section>
+          )}
+          {token && view === 'operation' && (
+            <OperationApprovalPanel
+              key={operationRequest}
+              token={token}
+              request={operationRequest}
+              onDone={() => {
+                sessionStorage.removeItem('operation-approval-request');
+                setOperationRequest('');
+                window.history.replaceState(null, '', window.location.pathname);
+              }}
+            />
           )}
           {token && view === 'oauth' && (
             <OAuthConsentPanel

@@ -29,13 +29,18 @@ function typeExpression(value: unknown, path: string): string {
     !['minItems', 'maxItems', 'prefixItems', 'contains'].some((key) => key in schema)
   )
     return `(${typeExpression(schema.items, `(${path})["items"]`)})[]`;
-  if (
-    Array.isArray(schema.anyOf) &&
-    Object.keys(schema).every((key) => ['anyOf', 'description', 'title'].includes(key))
-  )
-    return schema.anyOf
-      .map((item: unknown, index: number) => typeExpression(item, `(${path})["anyOf"][${index}]`))
-      .join(' | ');
+  for (const union of ['anyOf', 'oneOf'] as const) {
+    const members = schema[union];
+    if (
+      Array.isArray(members) &&
+      Object.keys(schema).every((key) => [union, 'description', 'title'].includes(key))
+    )
+      return members
+        .map((item: unknown, index: number) =>
+          typeExpression(item, `(${path})[${JSON.stringify(union)}][${index}]`),
+        )
+        .join(' | ');
+  }
   if (
     schema.type === 'object' &&
     schema.additionalProperties === false &&

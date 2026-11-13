@@ -82,6 +82,9 @@
         "expiresAt": {
           "type": "integer",
           "minimum": 0
+        },
+        "approval": {
+          "$ref": "#/definitions/OperationsHumanApproval"
         }
       }
     },
@@ -113,6 +116,9 @@
         },
         "cancelledBy": {
           "$ref": "#/definitions/OperationsActor"
+        },
+        "approval": {
+          "$ref": "#/definitions/OperationsHumanApproval"
         }
       }
     },
@@ -207,7 +213,10 @@
         "instancesPath",
         "maxPageRows",
         "watchSeconds",
-        "scopeHeader"
+        "scopeHeader",
+        "approvalSeconds",
+        "claimPath",
+        "claimHeader"
       ],
       "properties": {
         "leaseSeconds": {
@@ -236,6 +245,15 @@
         },
         "scopeHeader": {
           "const": "x-jlucraft-scope"
+        },
+        "approvalSeconds": {
+          "const": 300
+        },
+        "claimPath": {
+          "const": "/internal/operations"
+        },
+        "claimHeader": {
+          "const": "x-jlucraft-executor"
         }
       }
     },
@@ -298,6 +316,9 @@
         },
         {
           "$ref": "#/definitions/OperationsConsole"
+        },
+        {
+          "$ref": "#/definitions/OperationsKill"
         }
       ]
     },
@@ -465,6 +486,91 @@
         "limit": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "OperationsSensitiveAction": {
+      "type": "string",
+      "enum": ["kill"]
+    },
+    "OperationsKill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "pid"],
+      "properties": {
+        "action": {
+          "const": "kill"
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "OperationsHumanApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "request", "approvedAt"],
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "approvedAt": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "OperationsApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "host", "intent", "status", "expiresAt", "reviewUrl", "clientName"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "host": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "intent": {
+          "$ref": "#/definitions/OperationsIntent"
+        },
+        "status": {
+          "enum": ["pending", "approved", "denied", "expired"]
+        },
+        "expiresAt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reviewUrl": {
+          "type": "string"
+        },
+        "clientName": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "OperationsSubmissionResult": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/OperationsJob"
+        },
+        {
+          "$ref": "#/definitions/OperationsApproval"
+        }
+      ]
+    },
+    "OperationsClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/OperationsIdentifier"
         }
       }
     }

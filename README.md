@@ -545,6 +545,17 @@ reports whether console input is enabled. Read execution state through
 `GET /api/operations/jobs/:id`, or list an instance's jobs through its `/jobs`
 route. `/jobs/:id/cancel` cancels queued work; running work returns a conflict.
 The executor stores job state and serializes operations on each instance.
+Forced termination uses `{"action":"kill","pid":123}` and requires scoped
+`manage`. It returns a pending request and a skin-station review URL. The
+administrator reviews that exact operation in the Portal and confirms with a
+fresh password or user-verified passkey. Confirmation lasts five minutes and
+belongs to that administrator, OAuth client, instance, and request. Changing a
+request requires a new retry key. Browser confirmation routes are excluded from
+MCP. The executor checks the recorded PID before terminating the owned process.
+Before each job executes, the host calls the skin station's private claim route.
+The central service checks the original session, current membership and grants,
+current target binding, and human approval when required. Revoked authorization
+therefore stops queued work before it acts.
 See the host README for supervisor setup.
 
 An instance's `/logs` route returns bounded persistent output, a resume cursor,

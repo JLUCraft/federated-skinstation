@@ -1,3 +1,5 @@
+import { OPERATIONS_CLAIM_HEADER } from '../shared/operations.js';
+import { registerOperationConfirmations } from './operation-confirmations.js';
 import Fastify from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import staticFiles from '@fastify/static';
@@ -102,7 +104,12 @@ export async function build(
     ajv: { customOptions: { removeAdditional: false } },
     trustProxy: config.trustProxy ?? false,
     logger: {
-      redact: ['req.headers.authorization', 'req.headers.cookie', 'req.body'],
+      redact: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.body',
+        `req.headers[${JSON.stringify(OPERATIONS_CLAIM_HEADER)}]`,
+      ],
       serializers: {
         req: (req) => ({
           method: req.method,
@@ -303,7 +310,7 @@ export async function build(
     authorize,
     organization,
   });
-  registerPasskeys(app, db, config.origin, authorize, organization);
+  const passkeys = registerPasskeys(app, db, config.origin, authorize, organization);
   const mcp = new Mcp(app, db, localIdentity, origin.origin, VERSION);
   registerIdentity(app, db, localIdentity, config.schools, (email, confirmation) =>
     mail(email, confirmation, '账号恢复'),
@@ -324,14 +331,17 @@ export async function build(
   );
   registerOfficeAi(app, db, localIdentity, office, ai);
   registerReports(app, db, localIdentity, office, ai);
-  registerOperations(
+  const operations = registerOperations(
     app,
     db,
     localIdentity,
     config.operations,
     dependencies.operationsFetch ?? fetch,
+    origin.origin,
   );
   mcp.register();
+  operations.registerClaims();
+  registerOperationConfirmations(app, db, operations, passkeys, origin.origin);
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);
   app.get('/api/capabilities', async (): Promise<Capabilities> => ({

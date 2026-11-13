@@ -1895,3 +1895,8 @@ a.notice-link:hover {
   flex: 0 1 var(--field-basis);
   margin: 0;
 }
+
+.operation-payload {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

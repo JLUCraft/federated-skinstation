@@ -1,3 +1,5 @@
+import { OperationAuthority } from './operation-authority.js';
+import { timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { SSE_ENVELOPE_BYTES, sseFrames } from './streams.js';
 import { randomUUID } from 'node:crypto';
@@ -5,6 +7,8 @@ import { isDeepStrictEqual } from 'node:util';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   operationsJobSchema,
+  operationsClaimSchema,
+  type OperationsClaim,
   operationsJobPageSchema,
   operationsLogPageSchema,
   operationsObservationSchema,
@@ -33,6 +37,11 @@ import {
   OPERATIONS_LEASE_SECONDS,
   OPERATIONS_MAX_REQUEST_BYTES,
   OPERATIONS_PATH,
+  operationPermission,
+  operationNeedsApproval,
+  OPERATIONS_APPROVAL_SECONDS,
+  OPERATIONS_CLAIM_PATH,
+  OPERATIONS_CLAIM_HEADER,
 } from '../shared/operations.js';
 import { parseScope } from '../shared/permissions.js';
 import { appendAudit, type LocalIdentity } from './permissions.js';
@@ -80,9 +89,11 @@ export function registerOperations(
   app: FastifyInstance,
   store: Store,
   identity: LocalIdentity,
-  settings?: OperationsSettings,
-  transport: typeof fetch = fetch,
+  settings: OperationsSettings | undefined,
+  transport: typeof fetch,
+  origin: string,
 ) {
+  const authority = new OperationAuthority(store, identity, origin);
   const hosts = new Map<string, Host>();
   for (const [id, host] of Object.entries(settings?.hosts ?? {})) {
     const endpoint = new URL(host.endpoint);
@@ -164,15 +175,23 @@ export function registerOperations(
     return found;
   }
   async function dispatch(request: FastifyRequest, host: string, intent: OperationsIntent) {
+    const approval = authority.proof(intent.id);
     const job = await remote<OperationsJob>(
       request,
       host,
       EXECUTOR_JOBS_PATH,
       operationsJobSchema,
-      { intent, expiresAt: now() + OPERATIONS_LEASE_SECONDS },
+      {
+        intent,
+        expiresAt: Math.min(
+          now() + OPERATIONS_LEASE_SECONDS,
+          (approval?.approvedAt ?? now()) + OPERATIONS_APPROVAL_SECONDS,
+        ),
+        ...(approval ? { approval } : {}),
+      },
     );
     requireThat(
-      isDeepStrictEqual(job.intent, intent),
+      isDeepStrictEqual(job.intent, intent) && isDeepStrictEqual(job.approval, approval),
       'Operations host returned a different job',
       502,
     );
@@ -240,7 +259,7 @@ export function registerOperations(
       const binding = target(request.params.host, request.params.instance);
       const intent = store.transaction((): OperationsIntent => {
         requireThat(
-          identity.decide(account.id, binding.scope, 'write'),
+          identity.decide(account.id, binding.scope, operationPermission(request.body.operation)),
           'Local authority required',
         );
         const caller = store.currentCaller();
@@ -286,12 +305,18 @@ export function registerOperations(
             request.body.key,
             JSON.stringify(value),
           );
+        authority.remember(value, bearer(request.headers.authorization));
         appendAudit(store, account.id, binding.scope, 'operations.job.submit', value.id, {
           action: value.command.operation.action,
           key: request.body.key,
         });
         return value;
       });
+      authority.active(intent.id);
+      if (operationNeedsApproval(intent.command.operation)) {
+        const review = authority.review(intent.id, account.id);
+        if (review.status !== 'approved') return review;
+      }
       return dispatch(request, binding.host, intent);
     },
   );
@@ -303,6 +328,10 @@ export function registerOperations(
     requireThat(row, 'Operation not found', 404);
     const intent = JSON.parse(row.intent) as OperationsIntent;
     permitted(account.id, intent.scope, 'write');
+    if (operationNeedsApproval(intent.command.operation)) {
+      const review = authority.review(intent.id, account.id);
+      if (review.status !== 'approved') return review;
+    }
     const job = await remote<OperationsJob>(
       request,
       row.host,
@@ -541,4 +570,40 @@ export function registerOperations(
         .send(Readable.from(output(), { objectMode: false, highWaterMark: 1 }));
     },
   );
+  return {
+    authority,
+    dispatch: (request: FastifyRequest, id: string) => {
+      const saved = authority.active(id);
+      return dispatch(request, saved.host, saved.intent);
+    },
+    registerClaims() {
+      app.post<{ Params: { host: string }; Body: OperationsClaim }>(
+        OPERATIONS_CLAIM_PATH + '/:host/claim',
+        { schema: { body: operationsClaimSchema } },
+        async (request) => {
+          const host = hosts.get(request.params.host),
+            credential = request.headers[OPERATIONS_CLAIM_HEADER];
+          requireThat(
+            host &&
+              typeof credential === 'string' &&
+              credential.length === host.credential.length &&
+              timingSafeEqual(Buffer.from(credential), Buffer.from(host.credential)),
+            'Executor authorization required',
+            401,
+          );
+          const saved = authority.active(request.body.id);
+          requireThat(saved.host === request.params.host, 'Operation belongs to another host');
+          const approval = authority.proof(saved.intent.id);
+          return {
+            intent: saved.intent,
+            expiresAt: Math.min(
+              now() + OPERATIONS_LEASE_SECONDS,
+              (approval?.approvedAt ?? now()) + OPERATIONS_APPROVAL_SECONDS,
+            ),
+            ...(approval ? { approval } : {}),
+          };
+        },
+      );
+    },
+  };
 }

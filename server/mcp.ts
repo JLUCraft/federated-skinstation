@@ -1,9 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import type { FromSchema } from 'json-schema-to-ts';
 import { contractSchemas } from '../shared/contracts/generated.js';
-import { bearer, record } from './validate.js';
+import { bearer, record, requestToken } from './validate.js';
 import { now, Rejected, requireThat, type Store } from './store.js';
 import type { LocalIdentity } from './permissions.js';
+import {
+  MCP_PATH,
+  MCP_METADATA_PATH,
+  MCP_READ_SCOPE,
+  MCP_WRITE_SCOPE,
+  mcpScopeAllows,
+} from '../shared/oauth.js';
 
 const PROTOCOL_VERSION = '2025-11-25';
 const MCP_BODY_LIMIT = 4 * 1024 * 1024;
@@ -124,9 +132,49 @@ export class Mcp {
         });
       }
     });
+    app.addHook('preHandler', async (request, reply) => {
+      const token = requestToken(request);
+      const session = token ? this.store.oauthSession(token) : undefined;
+      if (!session || request.routeOptions.url === MCP_PATH) return;
+      const caller = this.store.currentCaller();
+      const method = request.method === 'HEAD' ? 'GET' : request.method;
+      const endpoint = [...this.endpoints.values()].find(
+        (entry) => entry.url === request.routeOptions.url && entry.method === method,
+      );
+      requireThat(
+        caller?.client === session.client && endpoint,
+        'MCP access token requires the MCP endpoint',
+      );
+      this.scope(session, method !== 'GET', reply);
+    });
   }
 
-  private async call(request: FastifyRequest, params: Record<string, unknown>) {
+  private scope(
+    session: NonNullable<ReturnType<Store['oauthSession']>>,
+    write: boolean,
+    reply: FastifyReply,
+  ) {
+    if (session.resource !== this.origin + MCP_PATH)
+      throw new Rejected('MCP resource rejected', 401, 'Unauthorized');
+    if (!mcpScopeAllows(session.scope.split(' '), write)) {
+      reply.header(
+        'WWW-Authenticate',
+        'Bearer error="insufficient_scope", resource_metadata="' +
+          this.origin +
+          MCP_METADATA_PATH +
+          '", scope="' +
+          (write ? MCP_WRITE_SCOPE : MCP_READ_SCOPE) +
+          '"',
+      );
+      throw new Rejected('MCP scope required', 403, 'InsufficientScope');
+    }
+  }
+
+  private async call(
+    request: FastifyRequest,
+    params: Record<string, unknown>,
+    reply: FastifyReply,
+  ) {
     if (typeof params.name !== 'string' || !this.endpoints.has(params.name))
       throw new RpcError(-32602, 'Unknown tool');
     const endpoint = this.endpoints.get(params.name)!;
@@ -142,12 +190,18 @@ export class Mcp {
     const search = new URLSearchParams(
       Object.entries(query).map(([key, value]) => [key, String(value)]),
     );
-    const response = await this.app.inject({
-      method: endpoint.method,
-      url: search.size ? `${url}?${search}` : url,
-      headers: { authorization: request.headers.authorization! },
-      remoteAddress: request.ip,
-      ...(input.body ? { payload: record(input.body) } : {}),
+    const session = this.store.oauthSession(bearer(request.headers.authorization));
+    requireThat(session);
+    this.scope(session, endpoint.method !== 'GET', reply);
+    const response = await this.store.withCaller(session.client, randomUUID(), async () => {
+      const result = await this.app.inject({
+        method: endpoint.method,
+        url: search.size ? `${url}?${search}` : url,
+        headers: { authorization: request.headers.authorization! },
+        remoteAddress: request.ip,
+        ...(input.body ? { payload: record(input.body) } : {}),
+      });
+      return result;
     });
     if (response.statusCode >= 400)
       return { isError: true, content: [{ type: 'text', text: response.body }] };
@@ -191,16 +245,33 @@ export class Mcp {
         'MCP origin rejected',
       );
       try {
+        const session = this.store.oauthSession(bearer(request.headers.authorization));
+        requireThat(session, 'OAuth authorization required');
         this.identity.authenticate(
           this.store.token(bearer(request.headers.authorization), undefined, now()).id,
         );
+        this.scope(session, false, reply);
       } catch {
-        reply.header('WWW-Authenticate', 'Bearer realm="jlucraft"');
+        reply.header(
+          'WWW-Authenticate',
+          'Bearer resource_metadata="' +
+            this.origin +
+            MCP_METADATA_PATH +
+            '", scope="' +
+            MCP_READ_SCOPE +
+            '"',
+        );
         throw new Rejected('MCP session required', 401, 'Unauthorized');
       }
     };
+    this.app.get(MCP_METADATA_PATH, async () => ({
+      resource: this.origin + MCP_PATH,
+      authorization_servers: [this.origin],
+      scopes_supported: [MCP_READ_SCOPE, MCP_WRITE_SCOPE],
+      bearer_methods_supported: ['header'],
+    }));
     this.app.post<{ Body: Message }>(
-      '/mcp',
+      MCP_PATH,
       {
         bodyLimit: MCP_BODY_LIMIT,
         onRequest: authenticate,
@@ -248,7 +319,7 @@ export class Mcp {
             result = { tools: [...this.endpoints.values()].map((endpoint) => endpoint.tool) };
             break;
           case 'tools/call':
-            result = await this.call(request, params);
+            result = await this.call(request, params, reply);
             break;
           default:
             throw new RpcError(-32601, 'Method not found');
@@ -258,7 +329,7 @@ export class Mcp {
     );
     this.app.route({
       method: ['GET', 'DELETE'],
-      url: '/mcp',
+      url: MCP_PATH,
       onRequest: authenticate,
       handler: async (_request, reply) => {
         return reply.header('Allow', 'POST').code(405).send();

@@ -21,6 +21,7 @@ type ApiOptions = {
   token?: string;
   body?: unknown;
   errorMessage?: string;
+  signal?: AbortSignal;
 };
 
 /** A failed request; `status` lets callers explain specific cases instead of a generic refusal. */
@@ -35,7 +36,13 @@ export class ApiError extends Error {
 
 export async function apiRequest<Result = unknown>(
   path: string,
-  { method = 'GET', token, body, errorMessage = t('请求未完成，请稍后重试') }: ApiOptions = {},
+  {
+    method = 'GET',
+    token,
+    body,
+    errorMessage = t('请求未完成，请稍后重试'),
+    signal,
+  }: ApiOptions = {},
 ): Promise<Result> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -51,6 +58,7 @@ export async function apiRequest<Result = unknown>(
   const response = await fetch(path, {
     method,
     headers,
+    ...(signal ? { signal } : {}),
     ...(payload === undefined ? {} : { body: payload }),
   });
   if (!response.ok) {

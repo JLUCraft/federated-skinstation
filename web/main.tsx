@@ -12,6 +12,7 @@ import { WardrobePanel, type LibraryViewState } from './WardrobePanel';
 import { PasskeysPanel, loginWithPasskey } from './PasskeysPanel';
 import { ConnectPanel } from './ConnectPanel';
 import { DevicePanel } from './DevicePanel';
+import { OAuthConsentPanel, OAuthGrantsPanel } from './OAuthPanel';
 import { ApiError, apiRequest, errorText } from './api';
 import { IdentityPanel, RecoveryPanel } from './IdentityPanel';
 import { PASSWORD_RULES } from '../shared/identity';
@@ -23,6 +24,7 @@ type Page =
   | 'admin'
   | 'login'
   | 'device'
+  | 'oauth'
   | 'textures'
   | 'wardrobe'
   | 'library'
@@ -74,6 +76,11 @@ function App() {
   const [deviceCode, setDeviceCode] = useState(
     () => new URLSearchParams(window.location.search).get('user_code') ?? '',
   );
+  const [authorizationRequest, setAuthorizationRequest] = useState(() => {
+    const request = new URLSearchParams(window.location.search).get('authorization_request');
+    if (request) sessionStorage.setItem('oauth-authorization-request', request);
+    return request ?? sessionStorage.getItem('oauth-authorization-request') ?? '';
+  });
   const [displayName, setDisplayName] = useState('');
   const [muaEnabled, setMuaEnabled] = useState(false);
   const [muaMember, setMuaMember] = useState(false);
@@ -159,11 +166,13 @@ function App() {
   }, []);
   const publicView = /^\/(?:library|u)\/[^/]+$/.test(publicPath);
   const view: Page = token
-    ? deviceCode
-      ? 'device'
-      : page === 'login'
-        ? 'textures'
-        : page
+    ? authorizationRequest
+      ? 'oauth'
+      : deviceCode
+        ? 'device'
+        : page === 'login'
+          ? 'textures'
+          : page
     : page === 'library'
       ? 'library'
       : 'login';
@@ -399,7 +408,7 @@ function App() {
         <PublicPage key={publicPath} path={publicPath} token={token || undefined} />
       ) : (
         <div
-          className={`portal-body${view === 'login' && !deviceCode && !recovering ? ' auth-layout' : ''}`}
+          className={`portal-body${view === 'login' && !deviceCode && !authorizationRequest && !recovering ? ' auth-layout' : ''}`}
         >
           {view === 'login' && deviceCode && (
             <section
@@ -414,6 +423,24 @@ function App() {
               </p>
               <p className="device-code">{deviceCode}</p>
             </section>
+          )}
+          {view === 'login' && authorizationRequest && (
+            <section className="panel">
+              <h2 className="section-title">{t('授权 Agent 连接')}</h2>
+              <p>{t('请先登录')}</p>
+            </section>
+          )}
+          {token && view === 'oauth' && (
+            <OAuthConsentPanel
+              key={authorizationRequest}
+              token={token}
+              request={authorizationRequest}
+              onDone={() => {
+                sessionStorage.removeItem('oauth-authorization-request');
+                setAuthorizationRequest('');
+                window.history.replaceState(null, '', window.location.pathname);
+              }}
+            />
           )}
           {token && view === 'device' && (
             <DevicePanel
@@ -904,6 +931,7 @@ function App() {
             <>
               <PasskeysPanel token={token} notify={notify} />
               <ConnectPanel />
+              <OAuthGrantsPanel token={token} notify={notify} />
             </>
           )}
           {token && view === 'community' && muaMember && <MuaPanel token={token} notify={notify} />}

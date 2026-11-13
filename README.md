@@ -464,12 +464,27 @@ the AI actions to refund their reserved points.
 
 ## Agent management through MCP
 
-Connect an agent to `POST /mcp` with a Yggdrasil or MUA OAuth access token in
-`Authorization: Bearer <token>`. The endpoint uses JSON responses over Streamable
-HTTP with protocol `2025-11-25`, the protocol already used by the game host.
-It is stateless: clients send their session token on every request. Browser
-origins must match the configured site origin. Invalid or revoked sessions
-return HTTP 401; GET and DELETE return HTTP 405. Notifications return HTTP 202.
+Connect an administrator agent to `https://<skin-station>/mcp`. An unauthenticated
+request returns the protected-resource metadata address in `WWW-Authenticate`.
+The metadata identifies the existing skin-station OAuth authorization server.
+Clients register through `/api/oauth/register` and use authorization code with
+PKCE S256. HTTPS redirect URIs and numeric loopback HTTP redirect URIs are
+accepted; each authorization uses the exact registered URI. Users sign in to
+the portal and approve each client's requested access.
+
+Request the MCP URL as `resource` and `mcp.read` or `mcp.write` as scope.
+`mcp.write` includes reads; `openid` and `offline_access` are optional. The shared
+`/api/oauth/token` endpoint issues one-hour access tokens and rotates refresh
+tokens. Authorization-code or refresh-token replay revokes that grant. These
+tokens are restricted to MCP. Game sessions continue to use the
+existing device flow. Account settings list agent grants and allow immediate
+revocation; clients can also use `/api/oauth/revoke`.
+
+Send the issued token in `Authorization: Bearer <token>` on every MCP request.
+The endpoint uses JSON responses over Streamable HTTP with protocol `2025-11-25`.
+Browser origins must match the configured site origin. Invalid or revoked
+sessions return HTTP 401, and insufficient scope returns HTTP 403 with an OAuth
+challenge. GET and DELETE return HTTP 405. Notifications return HTTP 202.
 
 Use `initialize`, `tools/list`, `tools/call`, and `ping`. The catalog covers
 identity and club management, competitions, activities and approvals, points,
@@ -498,6 +513,7 @@ For example, publishing report version 2 uses:
 
 Calls invoke the existing local HTTP route with the caller's token and address.
 That route owns authorization, audit, transactions, spending, and validation.
+MCP audit entries retain the administrator account, OAuth client, and call ID.
 JSON responses provide structured content; document downloads provide text,
 images, or an embedded PDF resource. Business denials return tool results with
 `isError`; invalid RPC methods and arguments return JSON-RPC errors.

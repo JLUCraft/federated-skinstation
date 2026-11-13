@@ -19,7 +19,8 @@ import {
   accountId,
   type Account,
 } from './store.js';
-import { field, record, bearer } from './validate.js';
+import { MCP_PATH } from '../shared/oauth.js';
+import { field, record, bearer, requestToken } from './validate.js';
 import { createRequire } from 'node:module';
 import type { Authentication, Capabilities, MemberAccount } from '../shared/http.js';
 
@@ -129,16 +130,9 @@ export async function build(
     localIdentity.authenticate(account.id);
   };
   app.addHook('preHandler', async (req) => {
-    if (req.routeOptions.url === '/mcp') return;
+    if (req.routeOptions.url === MCP_PATH) return;
     if (req.url === '/authserver/invalidate' || req.url === '/authserver/signout') return;
-    const header = req.headers.authorization;
-    const body =
-      req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : undefined;
-    const token = header?.startsWith('Bearer ')
-      ? header.slice(7)
-      : typeof body?.accessToken === 'string'
-        ? body.accessToken
-        : undefined;
+    const token = requestToken(req);
     if (token) await authorize(db.token(token, undefined, now()));
   });
   app.get('/health/live', async () => ({ status: 'ok' }));

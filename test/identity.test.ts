@@ -179,7 +179,9 @@ await test('HTTP membership revocation and account disablement invalidate every 
       .prepare("INSERT INTO memberships VALUES(?,'other','active','import','[]',?,NULL)")
       .run(bob.user.id, now());
     store.db
-      .prepare("INSERT INTO oauth_refresh VALUES('refresh',?,?,'client','scope',?)")
+      .prepare(
+        "INSERT INTO oauth_refresh(hash,account,profile,client,scope,expires) VALUES('refresh',?,?,'client','scope',?)",
+      )
       .run(bob.user.id, bob.user.id, now() + 100);
     store.db
       .prepare("INSERT INTO oauth_devices VALUES('device','CODE','client','scope',?,?,NULL,0,0)")

@@ -161,7 +161,9 @@ await test('revocation keeps other-club tokens and grants, then removes all toke
       .prepare("INSERT INTO grants VALUES('root','user',?,'global','admin','test',?,NULL,NULL)")
       .run(root.id, now());
     store.db
-      .prepare("INSERT INTO oauth_refresh VALUES('refresh',?,?, 'client','scope',?)")
+      .prepare(
+        "INSERT INTO oauth_refresh(hash,account,profile,client,scope,expires) VALUES('refresh',?,?, 'client','scope',?)",
+      )
       .run(id, id, now() + 100);
     store.db
       .prepare("INSERT INTO oauth_devices VALUES('device','CODE','client','scope',?,?,NULL,0,0)")
@@ -279,6 +281,7 @@ await test('each authorization appends one linked audit entry and existing entri
           row.target,
           row.payload_digest,
           row.prev_hash,
+          row.actor_client === null ? null : { client: row.actor_client, request: row.request_id },
         ]),
       ),
     );

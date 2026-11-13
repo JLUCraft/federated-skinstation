@@ -4,6 +4,7 @@ import type { Texture } from '../shared/wardrobe.js';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 const derive = promisify(scrypt);
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -243,9 +244,51 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
     `);
     },
   },
+  {
+    version: 13,
+    apply(db) {
+      db.exec(`
+      CREATE TABLE IF NOT EXISTS oauth_devices(device TEXT PRIMARY KEY,user_code TEXT UNIQUE NOT NULL,client TEXT NOT NULL,scope TEXT NOT NULL,expires INTEGER NOT NULL,account TEXT REFERENCES accounts(id) ON DELETE CASCADE,profile TEXT,denied INTEGER NOT NULL DEFAULT 0,polled INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS oauth_refresh(hash TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,profile TEXT NOT NULL,client TEXT NOT NULL,scope TEXT NOT NULL,expires INTEGER NOT NULL);
+      CREATE TABLE oauth_clients(id TEXT PRIMARY KEY,name TEXT NOT NULL,redirects TEXT NOT NULL CHECK(json_valid(redirects)),created_at INTEGER NOT NULL);
+      CREATE TABLE oauth_sessions(id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,client TEXT NOT NULL REFERENCES oauth_clients(id),resource TEXT NOT NULL,scope TEXT NOT NULL,created_at INTEGER NOT NULL);
+      CREATE INDEX oauth_sessions_account ON oauth_sessions(account);
+      CREATE TABLE oauth_authorizations(request TEXT PRIMARY KEY,client TEXT NOT NULL REFERENCES oauth_clients(id),redirect TEXT NOT NULL,resource TEXT NOT NULL,scope TEXT NOT NULL,challenge TEXT NOT NULL,state TEXT,nonce TEXT,expires INTEGER NOT NULL,account TEXT REFERENCES accounts(id) ON DELETE CASCADE,decision TEXT,code TEXT UNIQUE,session TEXT REFERENCES oauth_sessions(id) ON DELETE CASCADE,used INTEGER NOT NULL DEFAULT 0);
+      ALTER TABLE tokens ADD COLUMN session TEXT REFERENCES oauth_sessions(id) ON DELETE CASCADE;
+      ALTER TABLE oauth_refresh RENAME TO oauth_refresh_previous;
+      CREATE TABLE oauth_refresh(hash TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,profile TEXT,client TEXT NOT NULL,scope TEXT NOT NULL,expires INTEGER NOT NULL,session TEXT REFERENCES oauth_sessions(id) ON DELETE CASCADE,CHECK((profile IS NULL)!=(session IS NULL)));
+      INSERT INTO oauth_refresh(hash,account,profile,client,scope,expires) SELECT hash,account,profile,client,scope,expires FROM oauth_refresh_previous;
+      DROP TABLE oauth_refresh_previous;
+      CREATE TABLE oauth_refresh_spent(hash TEXT PRIMARY KEY,session TEXT NOT NULL REFERENCES oauth_sessions(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
+      ALTER TABLE audit ADD COLUMN actor_client TEXT;
+      ALTER TABLE audit ADD COLUMN request_id TEXT;
+      `);
+    },
+  },
 ];
 export class Store {
   readonly db: DatabaseSync;
+  private readonly caller = new AsyncLocalStorage<{ client: string; request: string }>();
+  withCaller<Result>(client: string, request: string, action: () => Result): Result {
+    return this.caller.run({ client, request }, action);
+  }
+  currentCaller() {
+    return this.caller.getStore();
+  }
+  oauthSession(token: string) {
+    return this.db
+      .prepare('SELECT s.* FROM tokens t JOIN oauth_sessions s ON s.id=t.session WHERE t.hash=?')
+      .get(digest(token)) as
+      | {
+          id: string;
+          account: string;
+          client: string;
+          resource: string;
+          scope: string;
+          created_at: number;
+        }
+      | undefined;
+  }
   constructor(path: string) {
     this.db = new DatabaseSync(path);
     try {
@@ -546,7 +589,7 @@ export class Store {
       )
       .run(account.id);
     this.db
-      .prepare('INSERT INTO tokens VALUES(?,?,?,?)')
+      .prepare('INSERT INTO tokens(hash,client,account,expires) VALUES(?,?,?,?)')
       .run(digest(token), client, account.id, now + 86400);
     if (!selectProfile)
       this.db.prepare('INSERT INTO token_profiles VALUES(?,NULL)').run(digest(token));
@@ -557,10 +600,13 @@ export class Store {
       .prepare('UPDATE accounts SET credential_revision = credential_revision + 1 WHERE id=?')
       .run(account);
     this.db.prepare('DELETE FROM tokens WHERE account=?').run(account);
-    for (const table of ['oauth_refresh', 'oauth_devices']) {
-      if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))
-        this.db.prepare(`DELETE FROM ${table} WHERE account=?`).run(account);
-    }
+    for (const table of [
+      'oauth_refresh',
+      'oauth_devices',
+      'oauth_authorizations',
+      'oauth_sessions',
+    ])
+      this.db.prepare(`DELETE FROM ${table} WHERE account=?`).run(account);
   }
   token(token: string, client: string | undefined, now: number) {
     const row = this.db

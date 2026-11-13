@@ -1,4 +1,5 @@
 import { requireThat } from './store.js';
+import type { FastifyRequest } from 'fastify';
 
 /** Non-empty string field with a byte-length ceiling. */
 export function field(value: unknown, max = 256): string {
@@ -9,8 +10,22 @@ export function field(value: unknown, max = 256): string {
 /** Token from an `Authorization: Bearer <token>` header. */
 export function bearer(header: unknown): string {
   const value = field(header, 2048);
-  requireThat(value.startsWith('Bearer '));
-  return value.slice(7);
+  const match = /^Bearer +(\S+)$/i.exec(value);
+  requireThat(match);
+  return match[1];
+}
+export function requestToken(
+  request: Pick<FastifyRequest, 'headers' | 'body'>,
+): string | undefined {
+  const header = request.headers.authorization;
+  if (header && /^Bearer\s/i.test(header)) return bearer(header);
+  const body: unknown = request.body;
+  return body !== null &&
+    typeof body === 'object' &&
+    'accessToken' in body &&
+    typeof body.accessToken === 'string'
+    ? body.accessToken
+    : undefined;
 }
 
 /** Plain object (not null, not an array). */

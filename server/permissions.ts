@@ -49,11 +49,37 @@ export function appendAudit(
   const payloadDigest = digest(JSON.stringify(payload));
   const prevHash = String(previous?.hash ?? '');
   const hash = digest(
-    JSON.stringify([seq, at, actorKind, actor, scope, action, target, payloadDigest, prevHash]),
+    JSON.stringify([
+      seq,
+      at,
+      actorKind,
+      actor,
+      scope,
+      action,
+      target,
+      payloadDigest,
+      prevHash,
+      store.currentCaller() ?? null,
+    ]),
   );
   store.db
-    .prepare('INSERT INTO audit VALUES(?,?,?,?,?,?,?,?,?,?)')
-    .run(seq, at, actorKind, actor, scope, action, target, payloadDigest, prevHash, hash);
+    .prepare(
+      'INSERT INTO audit(seq,at,actor_kind,actor,scope,action,target,payload_digest,prev_hash,hash,actor_client,request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+    )
+    .run(
+      seq,
+      at,
+      actorKind,
+      actor,
+      scope,
+      action,
+      target,
+      payloadDigest,
+      prevHash,
+      hash,
+      store.currentCaller()?.client ?? null,
+      store.currentCaller()?.request ?? null,
+    );
 }
 
 export class LocalIdentity {

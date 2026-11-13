@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/oauth",
+  "title": "OAuthContracts",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "OAuthScope": {
+      "type": "string",
+      "enum": [
+        "openid",
+        "offline_access",
+        "Yggdrasil.PlayerProfiles.Select",
+        "Yggdrasil.Server.Join",
+        "mcp.read",
+        "mcp.write"
+      ]
+    },
+    "OAuthClientRegistration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "redirect_uris": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "grant_types": {
+          "type": "array",
+          "items": {
+            "enum": ["authorization_code", "refresh_token"]
+          }
+        },
+        "response_types": {
+          "type": "array",
+          "items": {
+            "const": "code"
+          }
+        },
+        "token_endpoint_auth_method": {
+          "const": "none"
+        }
+      },
+      "required": ["redirect_uris"]
+    },
+    "OAuthAuthorizationReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "clientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "redirectUri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OAuthScope"
+          }
+        },
+        "decisionToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["clientId", "clientName", "redirectUri", "resource", "scopes", "decisionToken"]
+    },
+    "OAuthAuthorizationDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approve": {
+          "type": "boolean"
+        },
+        "decisionToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["approve", "decisionToken"]
+    },
+    "OAuthGrantList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "clientName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "resource": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/OAuthScope"
+                }
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": ["id", "clientName", "resource", "scopes", "createdAt"]
+          }
+        }
+      },
+      "required": ["grants"]
+    }
+  }
+}

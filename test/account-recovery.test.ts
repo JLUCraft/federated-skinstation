@@ -31,7 +31,9 @@ await test('club recovery proves the new mailbox and replaces credentials withou
       .prepare('INSERT INTO passkeys VALUES(?,?,?,?,?,?)')
       .run('old-passkey', member.user.id, Buffer.from([1]), 0, 'Old device', now());
     store.db
-      .prepare("INSERT INTO oauth_refresh VALUES('old-refresh',?,?,'client','scope',?)")
+      .prepare(
+        "INSERT INTO oauth_refresh(hash,account,profile,client,scope,expires) VALUES('old-refresh',?,?,'client','scope',?)",
+      )
       .run(member.user.id, member.selectedProfile.id, now() + 100);
     store.db
       .prepare("INSERT INTO oauth_devices VALUES('device','CODE','client','scope',?,?,NULL,0,0)")

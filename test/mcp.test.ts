@@ -1,3 +1,4 @@
+import { authorizeAgent } from './helpers/oauth.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
@@ -23,13 +24,20 @@ await test('MCP derives its tools from central contracts and completes delegated
       .prepare("INSERT INTO grants VALUES('admin','user',?,'global','admin','fixture',?,NULL,NULL)")
       .run(root.user.id, now());
     let id = 0;
-    const rpc = (login: Login, method: string, params: object = {}) =>
-      service.app.inject({
+    const agentTokens = new Map<Login, string>();
+    const rpc = async (login: Login, method: string, params: object = {}) => {
+      let access = agentTokens.get(login);
+      if (!access) {
+        access = (await authorizeAgent(service.app, login.accessToken)).access_token;
+        agentTokens.set(login, access);
+      }
+      return service.app.inject({
         method: 'POST',
         url: '/mcp',
-        headers: { authorization: `Bearer ${login.accessToken}` },
+        headers: { authorization: `Bearer ${access}` },
         payload: { jsonrpc: '2.0', id: ++id, method, params },
       });
+    };
     const call = async <Result = unknown>(
       login: Login,
       name: string,
@@ -169,9 +177,10 @@ await test('MCP authenticates notifications and rejects malformed calls and fore
   const service = await site();
   try {
     const member = await service.enroll('Member');
+    const agent = await authorizeAgent(service.app, member.accessToken);
     const inject = (
       payload: unknown,
-      authorization = `Bearer ${member.accessToken}`,
+      authorization = `Bearer ${agent.access_token}`,
       origin?: string,
     ) =>
       service.app.inject({
@@ -238,7 +247,7 @@ await test('MCP authenticates notifications and rejects malformed calls and fore
         await service.app.inject({
           method: 'GET',
           url: '/mcp',
-          headers: { authorization: `Bearer ${member.accessToken}` },
+          headers: { authorization: `Bearer ${agent.access_token}` },
         })
       ).statusCode,
       405,

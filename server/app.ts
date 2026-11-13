@@ -672,9 +672,22 @@ export async function build(
         db,
         config.mua,
         config.origin,
-        authorize,
         organization,
         localIdentity,
+        {
+          schools: config.schools,
+          mail: (email, confirmation) => mail(email, confirmation, '学校邮箱验证'),
+          signIn: (account) => {
+            localIdentity.authenticate(account.id);
+            const client = accountId();
+            return loginReply(
+              account,
+              db.mint(account, client, now(), db.profiles(account).length === 1),
+              client,
+              true,
+            );
+          },
+        },
         dependencies.muaFetch,
         secrets,
       );

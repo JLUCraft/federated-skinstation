@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/mua",
+  "title": "MuaContracts",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "MuaIdentityState": { "enum": ["pending", "linked", "detached"] },
+    "MuaAdmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "subject", "nickname", "email"],
+      "properties": {
+        "status": { "enum": ["enrollment", "ready"] },
+        "subject": { "type": "string" },
+        "nickname": { "type": ["string", "null"] },
+        "email": { "type": ["string", "null"] }
+      }
+    },
+    "MuaEnrollment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["email", "school", "name"],
+      "properties": {
+        "email": { "type": "string", "minLength": 3, "maxLength": 254 },
+        "school": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 16, "pattern": "^[A-Za-z0-9_]+$" }
+      }
+    },
+    "MuaEnrollmentConfirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": { "code": { "type": "string", "minLength": 1, "maxLength": 128 } }
+    }
+  }
+}

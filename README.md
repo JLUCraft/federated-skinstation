@@ -6,6 +6,46 @@ JLUCraft account, Yggdrasil, MUA, skin library, wardrobe, and community services
 
 `server/` owns authentication and persistence, `shared/` owns shared contracts, and `web/` owns the portal. Install dependencies with `bun install --frozen-lockfile`. Set `SKIN_CONFIG` to an external JSON configuration matching `server/app.ts::Config`; use `bun run dev` for the service and `bun run dev:web` for the portal. `bun run start` runs the service; the frontend output is `dist/`.
 
+## MUA account sign-in
+
+[Union OAuth](https://docs.mualliance.cn/dev/union/oauth) authenticates the browser
+with an MUA account. The skin station then issues its own launcher and MCP grants
+under the same local account and permissions. Register
+`https://<skin-station>/api/mua/callback` with MUA and configure the confidential
+client outside the repository:
+
+```json
+{
+  "mua": {
+    "apiRoot": "https://skin.mualliance.ltd/api/union",
+    "oauth": {
+      "clientId": "<registered-client-id>",
+      "clientSecretEnv": "MUA_CLIENT_SECRET"
+    }
+  }
+}
+```
+
+Set the named environment variable through the service's private environment.
+Member protocol callbacks also require the pinned `hostPublicKey` and `member`
+credentials. Browser login uses the authorization, token, and user endpoints under
+the configured Union root. The upstream token stays on the server.
+
+Choose **Use MUA to sign in** in the portal. A first sign-in creates a pending
+identity; verify a configured school email and choose a game name to join its
+local club. The upstream nickname and email do not establish local membership.
+The stable Union `CODE:ID` identifies the account, including when two upstream
+accounts share an email. Existing local users sign in locally and link MUA from
+the community page. Pending MCP consent and launcher device authorization resume
+after browser sign-in.
+
+New MUA accounts have no local password. The verified email's password-reset flow
+can set one for local recovery, Passkey enrollment, and password confirmations.
+Unlinking requires another local credential and revokes current sessions and
+delegated grants. The detached identity remains associated with its former
+account; reconnect it from that account. Account disablement and membership
+revocation continue to apply to subsequent MUA sign-ins.
+
 ## Validation
 
 Select one validation channel for a batch and reuse successful results for unchanged inputs. Standard commands:

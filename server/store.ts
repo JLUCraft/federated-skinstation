@@ -32,7 +32,7 @@ export interface Account {
   name: string;
   email: string;
   school: string;
-  password: string;
+  password: string | null;
   verified_at: number;
   disabled?: number;
   credential_revision?: number;
@@ -47,8 +47,8 @@ export async function encodePassword(password: string) {
   const hash = (await derive(password, salt, 64)) as Buffer;
   return `scrypt$${salt}$${hash.toString('hex')}`;
 }
-export async function verifyPassword(password: string, encoded: string) {
-  if (Buffer.byteLength(password) > PASSWORD_RULES.maxLength) return false;
+export async function verifyPassword(password: string, encoded: string | null) {
+  if (encoded === null || Buffer.byteLength(password) > PASSWORD_RULES.maxLength) return false;
   const [kind, salt, value] = encoded.split('$');
   if (kind !== 'scrypt' || !salt || !value) return false;
   const expected = Buffer.from(value, 'hex');
@@ -293,6 +293,27 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       db.exec(
         'CREATE TABLE operation_reservations(account TEXT NOT NULL REFERENCES accounts(id),host TEXT NOT NULL,client TEXT NOT NULL,request_key TEXT NOT NULL,instance TEXT NOT NULL,scope TEXT NOT NULL,PRIMARY KEY(account,host,client,request_key));',
       );
+    },
+  },
+  {
+    version: 17,
+    apply(db) {
+      db.exec(`
+        ALTER TABLE accounts ADD COLUMN password_credential TEXT;
+        UPDATE accounts SET password_credential=password;
+        ALTER TABLE accounts DROP COLUMN password;
+        ALTER TABLE accounts RENAME COLUMN password_credential TO password;
+        CREATE TABLE IF NOT EXISTS mua_links(account TEXT PRIMARY KEY REFERENCES accounts(id),subject TEXT UNIQUE NOT NULL,verified_at INTEGER NOT NULL);
+        CREATE TABLE mua_identities(subject TEXT PRIMARY KEY,account TEXT REFERENCES accounts(id),state TEXT NOT NULL CHECK(state IN ('pending','linked','detached')),nickname TEXT,email TEXT,verified_at INTEGER NOT NULL,CHECK((state='pending' AND account IS NULL) OR (state!='pending' AND account IS NOT NULL)));
+        CREATE UNIQUE INDEX mua_active_account ON mua_identities(account) WHERE state='linked';
+        INSERT INTO mua_identities SELECT subject,account,'linked',NULL,NULL,verified_at FROM mua_links;
+        DROP TABLE mua_links;
+        DROP TABLE IF EXISTS mua_oauth;
+        CREATE TABLE mua_flows(state TEXT PRIMARY KEY,cookie TEXT NOT NULL,token TEXT REFERENCES tokens(hash) ON DELETE CASCADE,expires INTEGER NOT NULL);
+        CREATE TABLE mua_admissions(cookie TEXT PRIMARY KEY,subject TEXT NOT NULL REFERENCES mua_identities(subject),revision INTEGER,expires INTEGER NOT NULL);
+        CREATE INDEX mua_admissions_subject ON mua_admissions(subject);
+        CREATE TABLE mua_enrollments(cookie TEXT PRIMARY KEY REFERENCES mua_admissions(cookie) ON DELETE CASCADE,code TEXT NOT NULL,payload TEXT NOT NULL CHECK(json_valid(payload)),expires INTEGER NOT NULL);
+      `);
     },
   },
 ];

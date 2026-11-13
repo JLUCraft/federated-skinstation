@@ -21,9 +21,11 @@ type CommunityTab = 'personal' | 'blacklist';
 export function MuaAccountCard({
   token,
   notify,
+  onUnlinked,
 }: {
   token: string;
   notify: (text: string, kind: 'success' | 'error') => void;
+  onUnlinked: () => void;
 }) {
   const [link, setLink] = useState<AccountLink>(null);
   const [busy, setBusy] = useState(false);
@@ -88,8 +90,9 @@ export function MuaAccountCard({
                 .then(() => {
                   setLink(null);
                   notify(t('已解除 MUA 关联'), 'success');
+                  onUnlinked();
                 })
-                .catch(() => notify(t('解除关联失败'), 'error'))
+                .catch((error: unknown) => notify(errorText(error), 'error'))
                 .finally(() => setBusy(false))
                 .catch((error: unknown) => console.error(error));
             }}

@@ -161,7 +161,7 @@ await test('mail enrollment, Yggdrasil invalidation and signed MUA diagnosis HTT
     const link = await app.inject({
       method: 'POST',
       url: '/api/mua/link',
-      headers: { authorization: `Bearer ${login.accessToken}` },
+      headers: { authorization: `Bearer ${login.accessToken}`, origin: 'http://127.0.0.1' },
     });
     assert.equal(link.statusCode, 200);
     const state = new URL(link.json<{ url: string }>().url).searchParams.get('state');

@@ -1,5 +1,10 @@
 import { t } from './i18n';
 const ERROR_MESSAGES: Record<string, string> = {
+  'Set a local password or passkey before unlinking MUA': t('请先设置本地密码或通行密钥'),
+  'Sign in to your existing account to link MUA': t('请登录已有账号后关联MUA'),
+  'Reconnect MUA from your local account': t('请在本地账号中重新关联MUA'),
+  'MUA identity belongs to another account': t('MUA身份已关联其他账号'),
+  'MUA sign-in expired': t('MUA登录已过期'),
   'Publication requires a site administrator': t('站点尚未配置管理员，暂时无法公开材质'),
   'An active site administrator must remain': t('至少保留一位有效的站点管理员'),
   'Local authority required': t('没有执行此操作的权限'),

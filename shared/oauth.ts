@@ -1,5 +1,6 @@
 import { oAuthScopeSchema, type OAuthScope } from './contracts/generated.js';
 export const MCP_PATH = '/mcp';
+export const OAUTH_TOKEN_CLIENT_PREFIX = 'oauth:';
 export const MCP_METADATA_PATH = '/.well-known/oauth-protected-resource/mcp';
 export const OAUTH_PATHS = {
   authorize: '/api/oauth/authorize',

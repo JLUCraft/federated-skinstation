@@ -83,11 +83,6 @@ export function DevicePanel({
               ? t('已授权。现在可以关闭此页面，回到启动器继续。')
               : t('已拒绝授权。启动器不会登录你的账号。')}
           </p>
-          <div className="actions">
-            <button className="btn btn--secondary" onClick={onDone}>
-              {t('继续使用皮肤站')}
-            </button>
-          </div>
         </>
       )}
       {valid && !result && (
@@ -140,6 +135,11 @@ export function DevicePanel({
           </div>
         </>
       )}
+      <div className="actions">
+        <button className="btn btn--secondary" type="button" disabled={busy} onClick={onDone}>
+          {result ? t('继续使用皮肤站') : t('取消')}
+        </button>
+      </div>
     </section>
   );
 }

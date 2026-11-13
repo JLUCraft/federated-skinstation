@@ -1,16 +1,18 @@
+import { registerMuaLogin, type MuaLoginServices, type MuaOAuthConfig } from './mua-login.js';
+export { muaSubject } from './mua-login.js';
 import { createPrivateKey, createPublicKey, verify } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { isSecretName, type SecretState } from './secret-state.js';
 import { registerMemberFeatures } from './mua-member.js';
 import type { LocalIdentity } from './permissions.js';
-import { bearer, boundedValue, boundedJson, field, record } from './validate.js';
-import { Store, digest, now, requireThat, secret, type Account } from './store.js';
+import { boundedValue, boundedJson, field, record } from './validate.js';
+import { Store, digest, now, requireThat } from './store.js';
 
 export interface MuaConfig {
   apiRoot: string;
   /** Explicit administrator pin; never learn this key from an incoming request. */
-  hostPublicKey: string;
-  oauth?: { clientId: string; clientSecretEnv: string };
+  hostPublicKey?: string;
+  oauth?: MuaOAuthConfig;
   member?: {
     keyEnv: string;
     storageKeyEnv?: string;
@@ -18,13 +20,6 @@ export interface MuaConfig {
     oauthSigningKey?: string;
     oauthBackendPublicKey?: string;
   };
-}
-
-/** OAuth subjects are opaque CODE:ID values. Email and nickname are NOT identifiers. */
-export function muaSubject(user: Record<string, unknown>): string {
-  const subject = field(user.sub);
-  requireThat(/^[A-Z0-9]{1,16}:[^\s:]{1,128}$/.test(subject), 'Invalid MUA subject');
-  return subject;
 }
 
 export function yggdrasilRoot(
@@ -81,18 +76,18 @@ export async function registerMua(
   db: Store,
   config: MuaConfig,
   origin: string,
-  authorize: (account: Account) => Promise<void>,
   organization: string,
   identity: LocalIdentity,
+  login: MuaLoginServices,
   fetcher: typeof fetch = fetch,
   secrets?: SecretState,
 ) {
   yggdrasilRoot(config.apiRoot, 'all');
-  requireThat(createPublicKey(config.hostPublicKey).asymmetricKeyType === 'rsa');
+  const hostPublicKey = config.hostPublicKey;
+  if (config.member) requireThat(hostPublicKey, 'MUA member signing key required');
+  if (hostPublicKey) requireThat(createPublicKey(hostPublicKey).asymmetricKeyType === 'rsa');
   db.db.exec(`CREATE TABLE IF NOT EXISTS mua_state(name TEXT PRIMARY KEY,value TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS mua_nonces(nonce TEXT PRIMARY KEY,expires INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS mua_links(account TEXT PRIMARY KEY REFERENCES accounts(id),subject TEXT UNIQUE NOT NULL,verified_at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS mua_oauth(state TEXT PRIMARY KEY,cookie TEXT NOT NULL,token TEXT NOT NULL REFERENCES tokens(hash) ON DELETE CASCADE,expires INTEGER NOT NULL);`);
+    CREATE TABLE IF NOT EXISTS mua_nonces(nonce TEXT PRIMARY KEY,expires INTEGER NOT NULL);`);
   if (config.member) {
     requireThat(secrets, 'MUA storage key required');
     secrets.validate(db);
@@ -226,195 +221,93 @@ export async function registerMua(
   }
 
   // Encapsulation preserves exact bytes without changing normal JSON route parsers.
-  await app.register(async (scope) => {
-    scope.removeContentTypeParser('application/json');
-    scope.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) =>
-      done(null, body),
-    );
-    scope.addHook('preHandler', async (req) => {
-      const raw = req.method === 'GET' ? Buffer.alloc(0) : req.body;
-      requireThat(Buffer.isBuffer(raw));
-      verifyHost(db, config.hostPublicKey, raw, req.headers, now());
-    });
-    if (config.member) {
-      scope.get('/api/union/member/queryemail', async (req, reply) => {
-        const query = record(req.query);
-        const account = db.profileNamed(field(query.username, 16))?.account;
-        return account ? { email: account.email } : reply.code(204).send();
+  if (hostPublicKey)
+    await app.register(async (scope) => {
+      scope.removeContentTypeParser('application/json');
+      scope.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) =>
+        done(null, body),
+      );
+      scope.addHook('preHandler', async (req) => {
+        const raw = req.method === 'GET' ? Buffer.alloc(0) : req.body;
+        requireThat(Buffer.isBuffer(raw));
+        verifyHost(db, hostPublicKey, raw, req.headers, now());
       });
-      scope.post('/api/union/member/updatebackendkey', async (req, reply) => {
-        const body = record(JSON.parse((req.body as Buffer).toString('utf8')));
-        save('memberKey', field(body.key, 4096));
-        db.db.prepare('UPDATE mua_sync SET attempts=0,next=0 WHERE id=1').run();
-        return reply.code(204).send();
-      });
-      scope.post('/api/union/member/updatelist', async (_req, reply) => {
-        const response = record(await memberFetch('/serverlist'));
-        requireThat(response.servers !== null && typeof response.servers === 'object');
-        const servers = Object.values(response.servers as object);
-        requireThat(servers.length <= 1024);
-        for (const entry of servers) {
-          const server = record(entry);
-          const url = new URL(field(server.bs_root, 2048));
-          requireThat(url.protocol === 'https:' && !url.username && !url.password);
-        }
-        requireThat(typeof response.version === 'number' || typeof response.version === 'string');
-        db.transaction(() => {
-          save('servers', JSON.stringify(response.servers));
-          save('serverListVersion', String(response.version));
+      if (config.member) {
+        scope.get('/api/union/member/queryemail', async (req, reply) => {
+          const query = record(req.query);
+          const account = db.profileNamed(field(query.username, 16))?.account;
+          return account ? { email: account.email } : reply.code(204).send();
         });
-        return reply.code(204).send();
-      });
-      scope.post('/api/union/member/updateprivatekey', async (_req, reply) => {
-        const response = record(await memberFetch('/privatekey'));
-        const pem = field(response.privateKey, 16384);
-        const key = createPrivateKey(pem);
-        requireThat(
-          key.asymmetricKeyType === 'rsa' && (key.asymmetricKeyDetails?.modulusLength ?? 0) >= 2048,
-        );
-        requireThat(
-          typeof response.privateKeyVersion === 'number' ||
-            typeof response.privateKeyVersion === 'string',
-        );
-        db.transaction(() => {
-          save('textureKey', pem);
-          save('privateKeyVersion', String(response.privateKeyVersion));
+        scope.post('/api/union/member/updatebackendkey', async (req, reply) => {
+          const body = record(JSON.parse((req.body as Buffer).toString('utf8')));
+          save('memberKey', field(body.key, 4096));
+          db.db.prepare('UPDATE mua_sync SET attempts=0,next=0 WHERE id=1').run();
+          return reply.code(204).send();
         });
-        return reply.code(204).send();
-      });
-      scope.post('/api/union/member/sync', async (_req, reply) => {
-        await synchronize();
-        return reply.code(204).send();
-      });
-      scope.post('/api/union/member/remapuuid', async (req, reply) => {
+        scope.post('/api/union/member/updatelist', async (_req, reply) => {
+          const response = record(await memberFetch('/serverlist'));
+          requireThat(response.servers !== null && typeof response.servers === 'object');
+          const servers = Object.values(response.servers as object);
+          requireThat(servers.length <= 1024);
+          for (const entry of servers) {
+            const server = record(entry);
+            const url = new URL(field(server.bs_root, 2048));
+            requireThat(url.protocol === 'https:' && !url.username && !url.password);
+          }
+          requireThat(typeof response.version === 'number' || typeof response.version === 'string');
+          db.transaction(() => {
+            save('servers', JSON.stringify(response.servers));
+            save('serverListVersion', String(response.version));
+          });
+          return reply.code(204).send();
+        });
+        scope.post('/api/union/member/updateprivatekey', async (_req, reply) => {
+          const response = record(await memberFetch('/privatekey'));
+          const pem = field(response.privateKey, 16384);
+          const key = createPrivateKey(pem);
+          requireThat(
+            key.asymmetricKeyType === 'rsa' &&
+              (key.asymmetricKeyDetails?.modulusLength ?? 0) >= 2048,
+          );
+          requireThat(
+            typeof response.privateKeyVersion === 'number' ||
+              typeof response.privateKeyVersion === 'string',
+          );
+          db.transaction(() => {
+            save('textureKey', pem);
+            save('privateKeyVersion', String(response.privateKeyVersion));
+          });
+          return reply.code(204).send();
+        });
+        scope.post('/api/union/member/sync', async (_req, reply) => {
+          await synchronize();
+          return reply.code(204).send();
+        });
+        scope.post('/api/union/member/remapuuid', async (req, reply) => {
+          const body = record(JSON.parse((req.body as Buffer).toString('utf8')));
+          const mapped = record(body.remapped_uuid);
+          const entries = Object.entries(mapped);
+          requireThat(
+            entries.length <= 1024 &&
+              entries.every(
+                ([old, value]) =>
+                  /^[a-f0-9]{32}$/.test(old) &&
+                  typeof value === 'string' &&
+                  /^[a-f0-9]{32}$/.test(value),
+              ),
+          );
+          db.remapProfiles(mapped as Record<string, string>);
+          return reply.code(204).send();
+        });
+      }
+      scope.post('/api/union/member/diagnose', async (req) => {
         const body = record(JSON.parse((req.body as Buffer).toString('utf8')));
-        const mapped = record(body.remapped_uuid);
-        const entries = Object.entries(mapped);
-        requireThat(
-          entries.length <= 1024 &&
-            entries.every(
-              ([old, value]) =>
-                /^[a-f0-9]{32}$/.test(old) &&
-                typeof value === 'string' &&
-                /^[a-f0-9]{32}$/.test(value),
-            ),
-        );
-        db.remapProfiles(mapped as Record<string, string>);
-        return reply.code(204).send();
+        return { nonce: body.nonce, timestamp: Date.now() / 1000 };
       });
-    }
-    scope.post('/api/union/member/diagnose', async (req) => {
-      const body = record(JSON.parse((req.body as Buffer).toString('utf8')));
-      return { nonce: body.nonce, timestamp: Date.now() / 1000 };
     });
-  });
 
   if (config.member)
     await registerMemberFeatures(app, db, config, origin, memberFetch, memberKey, identity);
-  if (!config.oauth) return;
-  const oauth = config.oauth;
-  const callback = `${origin}/api/mua/callback`;
-  const cookieOptions = `HttpOnly; SameSite=Lax; Path=/api/mua; Max-Age=300${new URL(origin).protocol === 'https:' ? '; Secure' : ''}`;
-  app.post('/api/mua/link', async (req, reply) => {
-    const token = bearer(req.headers.authorization);
-    db.token(token, undefined, now());
-    const state = secret(),
-      cookie = secret();
-    db.transaction(() => {
-      db.db.prepare('DELETE FROM mua_oauth WHERE expires<=? OR token=?').run(now(), digest(token));
-      db.db
-        .prepare('INSERT INTO mua_oauth VALUES(?,?,?,?)')
-        .run(digest(state), digest(cookie), digest(token), now() + 300);
-    });
-    const url = new URL(`${root}/oauth2/authorize`);
-    url.search = new URLSearchParams({
-      response_type: 'code',
-      client_id: oauth.clientId,
-      redirect_uri: callback,
-      state,
-    }).toString();
-    reply
-      .header('Set-Cookie', `mua_state=${cookie}; ${cookieOptions}`)
-      .header('Cache-Control', 'no-store');
-    return { url: url.toString() };
-  });
-  app.get('/api/mua/callback', async (req, reply) => {
-    reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer');
-    const query = record(req.query),
-      state = field(query.state),
-      code = field(query.code, 4096);
-    const cookie = req.headers.cookie
-      ?.split(';')
-      .map((v) => v.trim())
-      .find((v) => v.startsWith('mua_state='))
-      ?.slice(10);
-    requireThat(cookie);
-    const token = db.transaction(() => {
-      const row = db.db
-        .prepare('SELECT token FROM mua_oauth WHERE state=? AND cookie=? AND expires>?')
-        .get(digest(state), digest(cookie), now()) as { token: string } | undefined;
-      requireThat(row, 'Invalid OAuth state');
-      db.db.prepare('DELETE FROM mua_oauth WHERE state=?').run(digest(state));
-      return row.token;
-    });
-    const clientSecret = process.env[oauth.clientSecretEnv];
-    requireThat(clientSecret, 'MUA client secret not configured');
-    const response = await fetchJson('/oauth2/token', {
-      method: 'POST',
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        client_id: oauth.clientId,
-        client_secret: clientSecret,
-        redirect_uri: callback,
-        code,
-      }),
-    });
-    const accessToken = field(response.access_token, 8192);
-    const user = await fetchJson('/oauth2/user', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const subject = muaSubject(user);
-    const current = db.db
-      .prepare('SELECT account FROM tokens WHERE hash=? AND expires>?')
-      .get(token, now()) as { account: string } | undefined;
-    requireThat(current);
-    const account = db.account('id', current.account);
-    requireThat(account);
-    await authorize(account);
-    db.transaction(() => {
-      // A logout/expiry during the upstream round trip cancels the operation.
-      const live = db.db
-        .prepare('SELECT account FROM tokens WHERE hash=? AND expires>?')
-        .get(token, now()) as { account: string } | undefined;
-      requireThat(live);
-      const existing = db.db
-        .prepare('SELECT subject FROM mua_links WHERE account=?')
-        .get(live.account) as { subject: string } | undefined;
-      requireThat(!existing || existing.subject === subject, 'Unlink before replacing an identity');
-      db.db
-        .prepare(
-          'INSERT INTO mua_links VALUES(?,?,?) ON CONFLICT(account) DO UPDATE SET verified_at=excluded.verified_at',
-        )
-        .run(live.account, subject, now());
-    });
-    reply.header('Set-Cookie', `mua_state=; ${cookieOptions.replace('Max-Age=300', 'Max-Age=0')}`);
-    return reply.redirect('/portal/');
-  });
-  app.get('/api/mua/link', async (req) => {
-    const account = db.token(bearer(req.headers.authorization), undefined, now());
-    const link = db.db
-      .prepare('SELECT subject,verified_at FROM mua_links WHERE account=?')
-      .get(account.id);
-    return { link: link ?? null, evidence: link ? 'mua_account_only' : null };
-  });
-  app.delete('/api/mua/link', async (req, reply) => {
-    const account = db.token(bearer(req.headers.authorization), undefined, now());
-    db.transaction(() => {
-      db.db
-        .prepare('DELETE FROM mua_oauth WHERE token IN (SELECT hash FROM tokens WHERE account=?)')
-        .run(account.id);
-      db.db.prepare('DELETE FROM mua_links WHERE account=?').run(account.id);
-    });
-    return reply.code(204).send();
-  });
+  if (config.oauth)
+    registerMuaLogin(app, db, config.oauth, root, origin, identity, fetchJson, login);
 }

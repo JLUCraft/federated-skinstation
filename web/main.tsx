@@ -1,4 +1,6 @@
 import { OperationApprovalPanel } from './OperationApprovalPanel';
+import { MuaEnrollmentPanel } from './MuaEnrollmentPanel';
+import type { MuaAdmission } from '../shared/contracts/generated';
 import { Announcements, AdminPanel, Notifications, PublicPage } from './CommunityPanel';
 import { Avatar } from './TextureIdentity';
 import { InlineNote, type Note } from './InlineNote';
@@ -75,9 +77,11 @@ function App() {
   const [recovering, setRecovering] = useState(
     () => new URLSearchParams(window.location.search).get('recover') === '1',
   );
-  const [deviceCode, setDeviceCode] = useState(
-    () => new URLSearchParams(window.location.search).get('user_code') ?? '',
-  );
+  const [deviceCode, setDeviceCode] = useState(() => {
+    const value = new URLSearchParams(window.location.search).get('user_code');
+    if (value) sessionStorage.setItem('oauth-device-code', value);
+    return value ?? sessionStorage.getItem('oauth-device-code') ?? '';
+  });
   const [operationRequest, setOperationRequest] = useState(() => {
     const request = new URLSearchParams(window.location.search).get('operation_request');
     if (request) sessionStorage.setItem('operation-approval-request', request);
@@ -113,6 +117,7 @@ function App() {
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [token, setToken] = useState('');
+  const [muaAdmission, setMuaAdmission] = useState<MuaAdmission>();
   const [message, setMessage] = useState('');
   const [msgKind, setMsgKind] = useState<MsgKind>('success');
   const [busy, setBusy] = useState(false);
@@ -129,6 +134,40 @@ function App() {
     setMessage(text);
     setMsgKind(kind);
   };
+  function authenticated(data: Authentication) {
+    setToken(data.accessToken);
+    setDisplayName((data.selectedProfile ?? data.availableProfiles[0]).name);
+    setPassword('');
+    setLoginNote(null);
+    setMuaAdmission(undefined);
+    notify(t('登录成功'), 'success');
+  }
+  async function finishMuaLogin() {
+    authenticated(
+      await apiRequest<Authentication>('/api/mua/session', { method: 'POST', body: {} }),
+    );
+  }
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const result = query.get('mua');
+    if (!result) return;
+    query.delete('mua');
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + (query.size ? '?' + query.toString() : ''),
+    );
+    if (result !== 'login') {
+      setLoginNote({ tone: 'error', text: t('MUA 登录未完成，请重试') });
+      return;
+    }
+    apiRequest<MuaAdmission>('/api/mua/session')
+      .then(async (admission) => {
+        if (admission.status === 'ready') await finishMuaLogin();
+        else setMuaAdmission(admission);
+      })
+      .catch((error: unknown) => setLoginNote({ tone: 'error', text: errorText(error) }));
+  }, []);
   useEffect(() => {
     if (!message || msgKind !== 'success') return;
     const timer = window.setTimeout(() => setMessage(''), SUCCESS_NOTICE_MS);
@@ -298,11 +337,7 @@ function App() {
       username: email,
       password,
     });
-    setToken(data.accessToken);
-    setDisplayName((data.selectedProfile ?? data.availableProfiles[0]).name);
-    setPassword('');
-    setLoginNote(null);
-    notify(t('登录成功'), 'success');
+    authenticated(data);
   }
 
   const selectedSchool = schools.find((s) => s.id === school);
@@ -470,6 +505,7 @@ function App() {
               notify={notify}
               onDone={() => {
                 window.history.replaceState(null, '', window.location.pathname);
+                sessionStorage.removeItem('oauth-device-code');
                 setDeviceCode('');
                 setPage('textures');
               }}
@@ -516,7 +552,15 @@ function App() {
                 </p>
               )}
 
-              {!token && !capsLoading && (
+              {!token && !capsLoading && muaAdmission && (
+                <MuaEnrollmentPanel
+                  admission={muaAdmission}
+                  schools={schools}
+                  onReady={finishMuaLogin}
+                  onCancel={() => setMuaAdmission(undefined)}
+                />
+              )}
+              {!token && !capsLoading && !muaAdmission && (
                 <>
                   <div
                     className="tabs"
@@ -581,6 +625,24 @@ function App() {
                         </div>
                         <InlineNote note={loginNote} />
                         <div className="actions">
+                          {muaEnabled && (
+                            <button
+                              className="btn btn--primary"
+                              disabled={busy}
+                              type="button"
+                              onClick={() =>
+                                action(async () => {
+                                  const result = await apiRequest<{ url: string }>(
+                                    '/api/mua/login',
+                                    { method: 'POST', body: {} },
+                                  );
+                                  window.location.assign(result.url);
+                                }).catch((error: unknown) => console.error(error))
+                              }
+                            >
+                              {t('使用 MUA 登录')}
+                            </button>
+                          )}
                           <button className="btn btn--primary" disabled={busy} type="submit">
                             {t('登录')}
                           </button>
@@ -592,13 +654,7 @@ function App() {
                               onClick={() =>
                                 action(async () => {
                                   const data = await loginWithPasskey();
-                                  setToken(data.accessToken);
-                                  setDisplayName(
-                                    (data.selectedProfile ?? data.availableProfiles[0]).name,
-                                  );
-                                  setPassword('');
-                                  setLoginNote(null);
-                                  notify(t('登录成功'), 'success');
+                                  authenticated(data);
                                 }).catch((error: unknown) => console.error(error))
                               }
                             >
@@ -945,7 +1001,7 @@ function App() {
           {token && view === 'textures' && <TexturesPanel token={token} notify={notify} />}
 
           {token && view === 'community' && muaEnabled && (
-            <MuaAccountCard token={token} notify={notify} />
+            <MuaAccountCard token={token} notify={notify} onUnlinked={() => setToken('')} />
           )}
 
           {token && view === 'account' && (

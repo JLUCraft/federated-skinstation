@@ -2,7 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import { createHash, createPublicKey, randomInt, sign, type KeyObject } from 'node:crypto';
 import { Rejected, Store, digest, now, requireThat, secret, type Account } from './store.js';
 import { bearer, field, record } from './validate.js';
-import { OAUTH_PATHS, OAUTH_SCOPES, gameScopes, parseOAuthScopes } from '../shared/oauth.js';
+import {
+  OAUTH_PATHS,
+  OAUTH_SCOPES,
+  OAUTH_TOKEN_CLIENT_PREFIX,
+  gameScopes,
+  parseOAuthScopes,
+} from '../shared/oauth.js';
 import { OAuthError, oauthRoute as oauth } from './oauth.js';
 import { AgentOAuth, AGENT_ACCESS_LIFETIME, type RefreshGrant } from './oauth-agent.js';
 
@@ -211,7 +217,7 @@ export function registerConnect(
   ) => {
     const scopes = scope.split(' ');
     const lifetime = session ? AGENT_ACCESS_LIFETIME : ACCESS_LIFETIME_SECONDS;
-    const access = db.mint(account, 'oauth:' + client, now(), false);
+    const access = db.mint(account, OAUTH_TOKEN_CLIENT_PREFIX + client, now(), false);
     db.db
       .prepare('UPDATE tokens SET expires=?,session=? WHERE hash=?')
       .run(now() + lifetime, session ?? null, digest(access));

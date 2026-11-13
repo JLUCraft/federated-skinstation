@@ -511,6 +511,38 @@ For example, publishing report version 2 uses:
 }
 ```
 
+Operations tools use the same MCP entry. Configure private executor connections
+in the skin-station configuration:
+
+```json
+{
+  "operations": {
+    "hosts": {
+      "campus": {
+        "endpoint": "https://ops.example.org",
+        "credentialEnv": "JLU_CAMPUS_OPS_KEY"
+      }
+    }
+  }
+}
+```
+
+Set that environment variable to the executor's 32-byte hexadecimal credential.
+HTTPS is required for remote executors; numeric loopback HTTP is accepted for
+local execution. The credential stays on the servers. Agent OAuth tokens are
+never sent to an executor.
+
+A site administrator registers each host/instance binding through
+`POST /api/operations/targets`, using `host`, `instance`, and an existing club
+scope or `global`. The target list,
+instance status, and job reads require `read`; start, stop, and restart require
+`write` in the bound scope. Submit through
+`POST /api/operations/hosts/:host/instances/:instance/jobs` with `action` and a
+`key` for retries. A repeated key returns the saved intent, while a different
+action under that key is rejected. Read execution state through
+`GET /api/operations/jobs/:id`. The executor stores job state and serializes
+operations on each instance. See the host README for supervisor setup.
+
 Calls invoke the existing local HTTP route with the caller's token and address.
 That route owns authorization, audit, transactions, spending, and validation.
 MCP audit entries retain the administrator account, OAuth client, and call ID.

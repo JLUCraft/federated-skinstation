@@ -1,0 +1,241 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skin.jlucraft.com/contracts/operations",
+  "title": "OperationsContracts",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "OperationsIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "OperationsAction": {
+      "type": "string",
+      "enum": ["start", "stop", "restart"]
+    },
+    "OperationsJobState": {
+      "type": "string",
+      "enum": ["queued", "running", "succeeded", "failed", "cancelled", "interrupted"]
+    },
+    "OperationsInstanceState": {
+      "type": "string",
+      "enum": ["stopped", "starting", "running", "stopping", "busy", "error"]
+    },
+    "OperationsActor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "client", "request"],
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "client": {
+          "type": ["string", "null"]
+        },
+        "request": {
+          "type": "string"
+        }
+      }
+    },
+    "OperationsCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instance", "action"],
+      "properties": {
+        "instance": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "action": {
+          "$ref": "#/definitions/OperationsAction"
+        }
+      }
+    },
+    "OperationsIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "actor", "command", "scope"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "actor": {
+          "$ref": "#/definitions/OperationsActor"
+        },
+        "command": {
+          "$ref": "#/definitions/OperationsCommand"
+        },
+        "scope": {
+          "type": "string"
+        }
+      }
+    },
+    "OperationsDispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "expiresAt"],
+      "properties": {
+        "intent": {
+          "$ref": "#/definitions/OperationsIntent"
+        },
+        "expiresAt": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "OperationsJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "state", "createdAt", "updatedAt", "expiresAt"],
+      "properties": {
+        "intent": {
+          "$ref": "#/definitions/OperationsIntent"
+        },
+        "state": {
+          "$ref": "#/definitions/OperationsJobState"
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "updatedAt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "OperationsInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "pid"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "state": {
+          "$ref": "#/definitions/OperationsInstanceState"
+        },
+        "pid": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "OperationsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instances"],
+      "properties": {
+        "instances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OperationsInstance"
+          }
+        }
+      }
+    },
+    "OperationsSubmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "action"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "action": {
+          "$ref": "#/definitions/OperationsAction"
+        }
+      }
+    },
+    "OperationsTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "instance", "scope"],
+      "properties": {
+        "host": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "instance": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "OperationsTargetList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targets"],
+      "properties": {
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OperationsTarget"
+          }
+        }
+      }
+    },
+    "OperationsProtocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["leaseSeconds", "maxRequestBytes", "snapshotPath", "jobsPath", "controlPath"],
+      "properties": {
+        "leaseSeconds": {
+          "const": 60
+        },
+        "maxRequestBytes": {
+          "const": 65536
+        },
+        "snapshotPath": {
+          "const": "/snapshot"
+        },
+        "jobsPath": {
+          "const": "/jobs"
+        },
+        "controlPath": {
+          "const": "/api/operations"
+        }
+      }
+    },
+    "OperationsHostSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "credentialEnv"],
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        },
+        "credentialEnv": {
+          "type": "string"
+        }
+      }
+    },
+    "OperationsSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hosts"],
+      "properties": {
+        "hosts": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/OperationsHostSettings"
+          }
+        }
+      }
+    }
+  }
+}

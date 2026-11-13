@@ -6,12 +6,14 @@ import assert from 'node:assert/strict';
 import { build, type Config } from '../../server/app.js';
 import type { MuaConfig } from '../../server/mua.js';
 import type { Authentication } from '../../shared/http.js';
+import type { OperationsSettings } from '../../shared/contracts/generated.js';
 export type Login = Authentication & Required<Pick<Authentication, 'selectedProfile' | 'user'>>;
 export async function site(
   mua?: MuaConfig,
   muaFetch?: typeof fetch,
   organization?: string,
   aiFetch?: typeof fetch,
+  operations?: { settings: OperationsSettings; transport: typeof fetch },
 ) {
   const dir = await mkdtemp(join(tmpdir(), 'jlu-contract-'));
   const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -35,6 +37,7 @@ export async function site(
     schools: { jlu: { emailDomains: ['school.test'] } },
     smtp: { host: 'unused', port: 465, from: 'test@example.test' },
     mua,
+    operations: operations?.settings,
   };
   const create = () =>
     build(config, {
@@ -43,6 +46,7 @@ export async function site(
       },
       muaFetch,
       aiFetch,
+      operationsFetch: operations?.transport,
     });
   let app = await create().catch(async (error) => {
     await rm(dir, { recursive: true, force: true });

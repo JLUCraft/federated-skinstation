@@ -20,8 +20,12 @@ export class Rejected extends Error {
 }
 /** Current Unix time in whole seconds; token and challenge expiry use this clock. */
 export const now = () => Math.floor(Date.now() / 1000);
-export function requireThat(value: unknown, message = 'Request rejected'): asserts value {
-  if (!value) throw new Rejected(message);
+export function requireThat(
+  value: unknown,
+  message = 'Request rejected',
+  statusCode = 403,
+): asserts value {
+  if (!value) throw new Rejected(message, statusCode);
 }
 export interface Account {
   id: string;
@@ -262,6 +266,15 @@ export const migrations: readonly { version: number; apply: (db: DatabaseSync) =
       CREATE TABLE oauth_refresh_spent(hash TEXT PRIMARY KEY,session TEXT NOT NULL REFERENCES oauth_sessions(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
       ALTER TABLE audit ADD COLUMN actor_client TEXT;
       ALTER TABLE audit ADD COLUMN request_id TEXT;
+      `);
+    },
+  },
+  {
+    version: 14,
+    apply(db) {
+      db.exec(`
+      CREATE TABLE operation_targets(host TEXT NOT NULL,instance TEXT NOT NULL,scope TEXT NOT NULL,PRIMARY KEY(host,instance));
+      CREATE TABLE operation_requests(id TEXT PRIMARY KEY,host TEXT NOT NULL,instance TEXT NOT NULL,account TEXT NOT NULL REFERENCES accounts(id),client TEXT NOT NULL,request_key TEXT NOT NULL,intent TEXT NOT NULL CHECK(json_valid(intent)),UNIQUE(host,instance,account,client,request_key));
       `);
     },
   },

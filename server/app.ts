@@ -39,6 +39,8 @@ import { registerAi } from './ai.js';
 import { registerOfficeAi } from './office-ai.js';
 import { registerReports } from './reports.js';
 import { Mcp } from './mcp.js';
+import { registerOperations } from './operations.js';
+import type { OperationsSettings } from '../shared/contracts/generated.js';
 import { contractSchemas, type AiGatewaySettings } from '../shared/contracts/generated.js';
 import { registerMua, type MuaConfig } from './mua.js';
 import { registerCommunity } from './community.js';
@@ -65,6 +67,7 @@ export interface Config {
   webRoot?: string;
   mua?: MuaConfig;
   ai?: AiGatewaySettings;
+  operations?: OperationsSettings;
 }
 const text = field;
 const obj = record;
@@ -74,6 +77,7 @@ export async function build(
     mail?: (email: string, code: string) => Promise<void>;
     muaFetch?: typeof fetch;
     aiFetch?: typeof fetch;
+    operationsFetch?: typeof fetch;
   } = {},
 ) {
   const organization = resolveOrganization(config.organization);
@@ -320,6 +324,13 @@ export async function build(
   );
   registerOfficeAi(app, db, localIdentity, office, ai);
   registerReports(app, db, localIdentity, office, ai);
+  registerOperations(
+    app,
+    db,
+    localIdentity,
+    config.operations,
+    dependencies.operationsFetch ?? fetch,
+  );
   mcp.register();
   registerWardrobe(app, db, localIdentity);
   registerCommunity(app, db, localIdentity);

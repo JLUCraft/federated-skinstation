@@ -5,6 +5,7 @@ import { isoCBOR, COSEALG } from '@simplewebauthn/server/helpers';
 import { join } from 'node:path';
 import type {
   OperationsDispatch,
+  OperationsOperation,
   OperationsApproval,
   OperationsCancellation,
   OperationsLogPage,
@@ -77,6 +78,22 @@ await test(
           }),
           { headers: { 'Content-Type': 'text/event-stream' } },
         );
+      }
+      if (url.pathname.endsWith('/backups')) {
+        assert.equal(new Headers(init?.headers).get(OPERATIONS_SCOPE_HEADER), 'club:jlu');
+        return Response.json({
+          backups: [
+            {
+              id: 'archive-jlu',
+              instance: 'survival',
+              label: 'consistent world',
+              createdAt: now(),
+              bytes: 100,
+              expandedBytes: 500,
+              files: 2,
+            },
+          ],
+        });
       }
       if (url.pathname.endsWith('/logs')) return Response.json(logPage);
       if (url.pathname.startsWith('/instances/') && url.pathname.endsWith('/jobs')) {
@@ -190,6 +207,14 @@ await test(
       assert.equal(intent.actor.client, agent.clientId);
       assert.equal(intent.scope, binding.scope);
       assert.equal(result.structuredContent.state, 'succeeded');
+      const backups = await call('get_operations_hosts_by_host_instances_by_instance_backups', {
+        path: arguments_.path,
+      });
+      assert.equal(
+        backups.json<{ result: { structuredContent: { backups: { id: string }[] } } }>().result
+          .structuredContent.backups[0]?.id,
+        'archive-jlu',
+      );
       const repeated = await call(
         'post_operations_hosts_by_host_instances_by_instance_jobs',
         arguments_,
@@ -304,10 +329,13 @@ await test(
         scope: 'club:jlu',
         permission: 'manage',
       });
-      async function propose(key: string) {
+      async function propose(
+        key: string,
+        operation: OperationsOperation = { action: 'kill', pid: 42 },
+      ) {
         const response = await call('post_operations_hosts_by_host_instances_by_instance_jobs', {
           path: arguments_.path,
-          body: { key, operation: { action: 'kill', pid: 42 } },
+          body: { key, operation },
         });
         const review = response.json<{ result: { structuredContent: OperationsApproval } }>().result
           .structuredContent;
@@ -315,7 +343,11 @@ await test(
         assert.equal(jobs.has(review.id), false);
         return review;
       }
-      const proposed = await propose('human-password');
+      const proposed = await propose('human-password', {
+        action: 'restore',
+        archive: 'archive-jlu',
+        preparation: 'restore-stage',
+      });
       const confirm = '/api/operations/approvals/' + proposed.id + '/confirm';
       const headers = {
         origin: 'https://skin.example.test',

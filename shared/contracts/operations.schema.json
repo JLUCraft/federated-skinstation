@@ -119,6 +119,9 @@
         },
         "approval": {
           "$ref": "#/definitions/OperationsHumanApproval"
+        },
+        "result": {
+          "$ref": "#/definitions/OperationsResult"
         }
       }
     },
@@ -299,7 +302,7 @@
       "required": ["action", "input"],
       "properties": {
         "action": {
-          "const": "console"
+          "enum": ["console"]
         },
         "input": {
           "type": "string",
@@ -319,6 +322,24 @@
         },
         {
           "$ref": "#/definitions/OperationsKill"
+        },
+        {
+          "$ref": "#/definitions/OperationsRestore"
+        },
+        {
+          "$ref": "#/definitions/OperationsBackupExport"
+        },
+        {
+          "$ref": "#/definitions/OperationsBackupImport"
+        },
+        {
+          "$ref": "#/definitions/OperationsBackupDelete"
+        },
+        {
+          "$ref": "#/definitions/OperationsBackupCreate"
+        },
+        {
+          "$ref": "#/definitions/OperationsRestorePrepare"
         }
       ]
     },
@@ -491,7 +512,7 @@
     },
     "OperationsSensitiveAction": {
       "type": "string",
-      "enum": ["kill"]
+      "enum": ["kill", "restore", "backup_delete"]
     },
     "OperationsKill": {
       "type": "object",
@@ -499,7 +520,7 @@
       "required": ["action", "pid"],
       "properties": {
         "action": {
-          "const": "kill"
+          "enum": ["kill"]
         },
         "pid": {
           "type": "integer",
@@ -573,6 +594,157 @@
           "$ref": "#/definitions/OperationsIdentifier"
         }
       }
+    },
+    "OperationsBackupCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "label"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["backup"]
+        },
+        "label": {
+          "$ref": "#/definitions/OperationsBackupLabel"
+        }
+      }
+    },
+    "OperationsRestore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "archive", "preparation"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["restore"]
+        },
+        "archive": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "preparation": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        }
+      }
+    },
+    "OperationsBackupExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "archive"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["backup_export"]
+        },
+        "archive": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        }
+      }
+    },
+    "OperationsBackupImport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "archive"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["backup_import"]
+        },
+        "archive": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        }
+      }
+    },
+    "OperationsBackupDelete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "archive"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["backup_delete"]
+        },
+        "archive": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        }
+      }
+    },
+    "OperationsBackup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "instance", "label", "createdAt", "bytes", "expandedBytes", "files"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "instance": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        },
+        "label": {
+          "$ref": "#/definitions/OperationsBackupLabel"
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expandedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "OperationsBackupPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backups"],
+      "properties": {
+        "backups": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/definitions/OperationsBackup"
+          }
+        }
+      }
+    },
+    "OperationsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "backup": {
+          "$ref": "#/definitions/OperationsBackup"
+        },
+        "safetyArchive": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        }
+      }
+    },
+    "OperationsRestorePrepare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "archive"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["restore_prepare"]
+        },
+        "archive": {
+          "$ref": "#/definitions/OperationsIdentifier"
+        }
+      }
+    },
+    "OperationsBackupLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
     }
   }
 }

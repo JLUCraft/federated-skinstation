@@ -7,6 +7,8 @@ import { isDeepStrictEqual } from 'node:util';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   operationsJobSchema,
+  operationsBackupPageSchema,
+  type OperationsBackupPage,
   operationsClaimSchema,
   type OperationsClaim,
   operationsJobPageSchema,
@@ -396,6 +398,28 @@ export function registerOperations(
     return job;
   });
   const instancePath = OPERATIONS_PATH + '/hosts/:host/instances/:instance';
+  app.get<{ Params: { host: string; instance: string } }>(
+    instancePath + '/backups',
+    async (request) => {
+      const account = owner(request);
+      const binding = target(request.params.host, request.params.instance);
+      permitted(account.id, binding.scope, 'write');
+      const page = await remote<OperationsBackupPage>(
+        request,
+        binding.host,
+        EXECUTOR_INSTANCES_PATH + '/' + encodeURIComponent(binding.instance) + '/backups',
+        operationsBackupPageSchema,
+        undefined,
+        { [OPERATIONS_SCOPE_HEADER]: binding.scope },
+      );
+      requireThat(
+        page.backups.every((backup) => backup.instance === binding.instance),
+        'Operations host returned another instance backup',
+        502,
+      );
+      return page;
+    },
+  );
   app.get<{ Params: { host: string; instance: string }; Querystring: OperationsPageQuery }>(
     instancePath + '/jobs',
     { schema: { querystring: operationsPageQuerySchema } },

@@ -1,3 +1,4 @@
+import { sseFrames, streamText, writeEvent } from './streams.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { FromSchema } from 'json-schema-to-ts';
@@ -13,7 +14,14 @@ import {
   mcpScopeAllows,
 } from '../shared/oauth.js';
 
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    mcpStream?: boolean;
+  }
+}
+
 const PROTOCOL_VERSION = '2025-11-25';
+const MAX_CONCURRENT_STREAMS = 64;
 const MCP_BODY_LIMIT = 4 * 1024 * 1024;
 const MESSAGE_SCHEMA = {
   type: 'object',
@@ -21,7 +29,7 @@ const MESSAGE_SCHEMA = {
   required: ['jsonrpc', 'method'],
   properties: {
     jsonrpc: { const: '2.0' },
-    id: { anyOf: [{ type: 'string' }, { type: 'integer' }] },
+    id: {},
     method: { type: 'string', minLength: 1 },
     params: { type: 'object', additionalProperties: true },
   },
@@ -38,6 +46,7 @@ interface Tool {
 interface Endpoint {
   method: HTTPMethods;
   url: string;
+  stream: boolean;
   tool: Tool;
 }
 class RpcError extends Error {
@@ -67,12 +76,17 @@ function expandSchema(value: unknown): unknown {
   );
 }
 
+function isRequestId(value: unknown): value is Exclude<RpcId, null> {
+  return typeof value === 'string' || (typeof value === 'number' && Number.isSafeInteger(value));
+}
+
 function rpcFailure(id: RpcId, code: number, message: string) {
   return { jsonrpc: '2.0', id, error: { code, message } };
 }
 
 export class Mcp {
   private collecting = true;
+  private readonly streams = new Map<string, AbortController>();
   private readonly endpoints = new Map<string, Endpoint>();
 
   constructor(
@@ -123,6 +137,7 @@ export class Mcp {
         this.endpoints.set(name, {
           method,
           url: route.url,
+          stream: route.config?.mcpStream === true && method === 'GET',
           tool: {
             name,
             description: `${method} ${route.url}`,
@@ -170,10 +185,148 @@ export class Mcp {
     }
   }
 
+  private async stream(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    endpoint: Endpoint,
+    url: string,
+    session: NonNullable<ReturnType<Store['oauthSession']>>,
+    id: string | number,
+    metadata: unknown,
+  ) {
+    const key = JSON.stringify([session.id, id]);
+    if (this.streams.has(key)) throw new RpcError(-32600, 'Request ID already active');
+    if (this.streams.size >= MAX_CONCURRENT_STREAMS)
+      throw new Rejected('Too many active streams', 429);
+    const meta = metadata === undefined ? {} : record(metadata);
+    const progress = meta.progressToken;
+    if (
+      progress !== undefined &&
+      typeof progress !== 'string' &&
+      (typeof progress !== 'number' || !Number.isFinite(progress))
+    )
+      throw new RpcError(-32602, 'Invalid progress token');
+    const abort = new AbortController();
+    const disconnected = () => abort.abort();
+    reply.raw.once('close', disconnected);
+    this.streams.set(key, abort);
+    const token = bearer(request.headers.authorization);
+    const guard = () => {
+      const current = this.store.oauthSession(token);
+      requireThat(current?.id === session.id, 'OAuth session revoked');
+      this.identity.authenticate(this.store.token(token, undefined, now()).id);
+      this.scope(current, false, reply);
+    };
+    try {
+      return await this.store.withCaller(session.client, randomUUID(), async () => {
+        const response = await this.app.inject({
+          method: endpoint.method,
+          url,
+          headers: { authorization: request.headers.authorization! },
+          remoteAddress: request.ip,
+          payloadAsStream: true,
+          signal: abort.signal,
+        });
+        const closeSource = () => response.raw.res.destroy();
+        if (abort.signal.aborted) closeSource();
+        else abort.signal.addEventListener('abort', closeSource, { once: true });
+        if (response.statusCode >= 400)
+          return {
+            isError: true,
+            content: [{ type: 'text', text: await streamText(response.stream(), MCP_BODY_LIMIT) }],
+          };
+        requireThat(
+          String(response.headers['content-type']).startsWith('text/event-stream'),
+          'Event stream required',
+          502,
+        );
+        reply.hijack();
+        reply.raw.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        });
+        let result: unknown;
+        try {
+          let complete = false;
+          let count = 0;
+          let last: unknown = {};
+          for await (const frame of sseFrames(response.stream(), MCP_BODY_LIMIT, guard)) {
+            if (abort.signal.aborted) break;
+            last = frame.data;
+            if (frame.event === 'done') {
+              complete = true;
+              break;
+            }
+            if (progress !== undefined)
+              await writeEvent(
+                reply.raw,
+                {
+                  jsonrpc: '2.0',
+                  method: 'notifications/progress',
+                  params: {
+                    progressToken: progress,
+                    progress: ++count,
+                    message: JSON.stringify(frame.data),
+                  },
+                },
+                abort.signal,
+              );
+          }
+          requireThat(complete && !abort.signal.aborted, 'Event stream interrupted', 502);
+          const structuredContent =
+            last !== null && typeof last === 'object' && !Array.isArray(last)
+              ? last
+              : { value: last };
+          result = {
+            content: [{ type: 'text', text: JSON.stringify(structuredContent) }],
+            structuredContent,
+          };
+        } catch (error) {
+          if (reply.raw.writableNeedDrain) reply.raw.destroy();
+          result = {
+            isError: true,
+            content: [
+              {
+                type: 'text',
+                text: abort.signal.aborted
+                  ? 'Request cancelled'
+                  : error instanceof Rejected && error.statusCode === 403
+                    ? 'Authorization revoked'
+                    : 'Event stream interrupted',
+              },
+            ],
+          };
+        }
+        if (!reply.raw.destroyed) {
+          try {
+            await writeEvent(
+              reply.raw,
+              { jsonrpc: '2.0', id, result },
+              new AbortController().signal,
+            );
+            reply.raw.end();
+          } catch {
+            reply.raw.destroy();
+          }
+        }
+        return reply;
+      });
+    } catch (error) {
+      if (abort.signal.aborted)
+        return { isError: true, content: [{ type: 'text', text: 'Request cancelled' }] };
+      throw error;
+    } finally {
+      this.streams.delete(key);
+      reply.raw.off('close', disconnected);
+      abort.abort();
+    }
+  }
+
   private async call(
     request: FastifyRequest,
     params: Record<string, unknown>,
     reply: FastifyReply,
+    id: string | number,
   ) {
     if (typeof params.name !== 'string' || !this.endpoints.has(params.name))
       throw new RpcError(-32602, 'Unknown tool');
@@ -193,6 +346,17 @@ export class Mcp {
     const session = this.store.oauthSession(bearer(request.headers.authorization));
     requireThat(session);
     this.scope(session, endpoint.method !== 'GET', reply);
+    if (endpoint.stream)
+      return this.stream(
+        request,
+        reply,
+        endpoint,
+        search.size ? `${url}?${search}` : url,
+        session,
+        id,
+        params._meta,
+      );
+
     const response = await this.store.withCaller(session.client, randomUUID(), async () => {
       const result = await this.app.inject({
         method: endpoint.method,
@@ -279,10 +443,7 @@ export class Mcp {
         errorHandler(error, request, reply) {
           const raw: unknown = request.body;
           const id =
-            raw !== null &&
-            typeof raw === 'object' &&
-            'id' in raw &&
-            (typeof raw.id === 'string' || typeof raw.id === 'number')
+            raw !== null && typeof raw === 'object' && 'id' in raw && isRequestId(raw.id)
               ? raw.id
               : null;
           if (error instanceof RpcError)
@@ -298,7 +459,19 @@ export class Mcp {
       },
       async (request, reply) => {
         const message = request.body;
-        if (message.id === undefined) return reply.code(202).send();
+        if (message.id !== undefined && !isRequestId(message.id))
+          throw new RpcError(-32600, 'Invalid request ID');
+        if (message.id === undefined) {
+          if (message.method === 'notifications/cancelled') {
+            const requestId = message.params?.requestId;
+            if (isRequestId(requestId)) {
+              const session = this.store.oauthSession(bearer(request.headers.authorization));
+              requireThat(session);
+              this.streams.get(JSON.stringify([session.id, requestId]))?.abort();
+            }
+          }
+          return reply.code(202).send();
+        }
         const params = message.params ?? {};
         let result: unknown;
         switch (message.method) {
@@ -319,7 +492,8 @@ export class Mcp {
             result = { tools: [...this.endpoints.values()].map((endpoint) => endpoint.tool) };
             break;
           case 'tools/call':
-            result = await this.call(request, params, reply);
+            result = await this.call(request, params, reply, message.id);
+            if (reply.sent) return reply;
             break;
           default:
             throw new RpcError(-32601, 'Method not found');

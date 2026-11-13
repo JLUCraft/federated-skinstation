@@ -42,13 +42,13 @@
     "OperationsCommand": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["instance", "action"],
+      "required": ["instance", "operation"],
       "properties": {
         "instance": {
           "$ref": "#/definitions/OperationsIdentifier"
         },
-        "action": {
-          "$ref": "#/definitions/OperationsAction"
+        "operation": {
+          "$ref": "#/definitions/OperationsOperation"
         }
       }
     },
@@ -110,13 +110,16 @@
         "expiresAt": {
           "type": "integer",
           "minimum": 0
+        },
+        "cancelledBy": {
+          "$ref": "#/definitions/OperationsActor"
         }
       }
     },
     "OperationsInstance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "state", "pid"],
+      "required": ["id", "state", "pid", "acceptsConsole"],
       "properties": {
         "id": {
           "$ref": "#/definitions/OperationsIdentifier"
@@ -127,6 +130,9 @@
         "pid": {
           "type": ["integer", "null"],
           "minimum": 0
+        },
+        "acceptsConsole": {
+          "type": "boolean"
         }
       }
     },
@@ -146,15 +152,15 @@
     "OperationsSubmission": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "action"],
+      "required": ["key", "operation"],
       "properties": {
         "key": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128
         },
-        "action": {
-          "$ref": "#/definitions/OperationsAction"
+        "operation": {
+          "$ref": "#/definitions/OperationsOperation"
         }
       }
     },
@@ -192,7 +198,17 @@
     "OperationsProtocol": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["leaseSeconds", "maxRequestBytes", "snapshotPath", "jobsPath", "controlPath"],
+      "required": [
+        "leaseSeconds",
+        "maxRequestBytes",
+        "snapshotPath",
+        "jobsPath",
+        "controlPath",
+        "instancesPath",
+        "maxPageRows",
+        "watchSeconds",
+        "scopeHeader"
+      ],
       "properties": {
         "leaseSeconds": {
           "const": 60
@@ -208,6 +224,18 @@
         },
         "controlPath": {
           "const": "/api/operations"
+        },
+        "instancesPath": {
+          "const": "/instances"
+        },
+        "maxPageRows": {
+          "const": 100
+        },
+        "watchSeconds": {
+          "const": 10
+        },
+        "scopeHeader": {
+          "const": "x-jlucraft-scope"
         }
       }
     },
@@ -234,6 +262,209 @@
           "additionalProperties": {
             "$ref": "#/definitions/OperationsHostSettings"
           }
+        }
+      }
+    },
+    "OperationsLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/OperationsAction"
+        }
+      }
+    },
+    "OperationsConsole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "input"],
+      "properties": {
+        "action": {
+          "const": "console"
+        },
+        "input": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^[^\\r\\n\\u0000]+$"
+        }
+      }
+    },
+    "OperationsOperation": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/OperationsLifecycle"
+        },
+        {
+          "$ref": "#/definitions/OperationsConsole"
+        }
+      ]
+    },
+    "OperationsCancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "expiresAt"],
+      "properties": {
+        "actor": {
+          "$ref": "#/definitions/OperationsActor"
+        },
+        "expiresAt": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "OperationsJobPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobs", "cursor"],
+      "properties": {
+        "jobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OperationsJob"
+          }
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/OperationsCursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "OperationsLogRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "at", "data", "clipped"],
+      "properties": {
+        "sequence": {
+          "$ref": "#/definitions/OperationsCursor"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "data": {
+          "type": "string"
+        },
+        "clipped": {
+          "type": "boolean"
+        }
+      }
+    },
+    "OperationsLogPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entries", "cursor", "truncated"],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OperationsLogRecord"
+          }
+        },
+        "cursor": {
+          "$ref": "#/definitions/OperationsCursor"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "OperationsAlert": {
+      "type": "string",
+      "enum": [
+        "process_stopped",
+        "process_error",
+        "log_storage_failed",
+        "disk_pressure",
+        "memory_pressure",
+        "log_capture_loss"
+      ]
+    },
+    "OperationsObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observedAt",
+        "uptimeSeconds",
+        "instance",
+        "cpuPercent",
+        "memoryBytes",
+        "diskTotalBytes",
+        "diskAvailableBytes",
+        "alerts"
+      ],
+      "properties": {
+        "observedAt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uptimeSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "instance": {
+          "$ref": "#/definitions/OperationsInstance"
+        },
+        "cpuPercent": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memoryBytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diskTotalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diskAvailableBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "alerts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OperationsAlert"
+          }
+        }
+      }
+    },
+    "OperationsCursor": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
+    "OperationsPageQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "$ref": "#/definitions/OperationsCursor"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

@@ -535,13 +535,27 @@ never sent to an executor.
 A site administrator registers each host/instance binding through
 `POST /api/operations/targets`, using `host`, `instance`, and an existing club
 scope or `global`. The target list,
-instance status, and job reads require `read`; start, stop, and restart require
-`write` in the bound scope. Submit through
-`POST /api/operations/hosts/:host/instances/:instance/jobs` with `action` and a
-`key` for retries. A repeated key returns the saved intent, while a different
-action under that key is rejected. Read execution state through
-`GET /api/operations/jobs/:id`. The executor stores job state and serializes
-operations on each instance. See the host README for supervisor setup.
+instance status, and observations require `read`. Jobs, console commands, and
+logs require `write` in the bound scope. Submit through
+`POST /api/operations/hosts/:host/instances/:instance/jobs` with a retry `key`
+and `operation`, such as `{"action":"start"}` or
+`{"action":"console","input":"list"}`. A repeated key returns the saved
+intent; changing the operation under that key is rejected. Instance status
+reports whether console input is enabled. Read execution state through
+`GET /api/operations/jobs/:id`, or list an instance's jobs through its `/jobs`
+route. `/jobs/:id/cancel` cancels queued work; running work returns a conflict.
+The executor stores job state and serializes operations on each instance.
+See the host README for supervisor setup.
+
+An instance's `/logs` route returns bounded persistent output, a resume cursor,
+and a flag for capture or retention gaps. `/logs/watch` streams
+output for ten seconds. MCP bridges it through SSE progress notifications when
+`_meta.progressToken` is present, followed by a tool result containing a bounded output tail. A canceled MCP
+request closes its log watch; durable jobs use the job cancellation route.
+Log watches check the current OAuth session, membership, and target scope while
+streaming. `/observe` reports process memory, sampled CPU usage, storage space,
+and process, storage, and memory alerts. CPU is null until a second sample is
+available. Observations are collected on request.
 
 Calls invoke the existing local HTTP route with the caller's token and address.
 That route owns authorization, audit, transactions, spending, and validation.

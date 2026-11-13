@@ -1,8 +1,18 @@
+import { Readable } from 'node:stream';
+import { SSE_ENVELOPE_BYTES, sseFrames } from './streams.js';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   operationsJobSchema,
+  operationsJobPageSchema,
+  operationsLogPageSchema,
+  operationsObservationSchema,
+  operationsPageQuerySchema,
+  type OperationsJobPage,
+  type OperationsLogPage,
+  type OperationsObservation,
+  type OperationsPageQuery,
   operationsSnapshotSchema,
   operationsSubmissionSchema,
   operationsTargetSchema,
@@ -16,6 +26,9 @@ import {
 } from '../shared/contracts/generated.js';
 import {
   EXECUTOR_JOBS_PATH,
+  EXECUTOR_INSTANCES_PATH,
+  OPERATIONS_SCOPE_HEADER,
+  OPERATIONS_MAX_PAGE_ROWS,
   EXECUTOR_SNAPSHOT_PATH,
   OPERATIONS_LEASE_SECONDS,
   OPERATIONS_MAX_REQUEST_BYTES,
@@ -38,6 +51,8 @@ interface SavedRequest {
 }
 
 async function responseJson(response: Response): Promise<unknown> {
+  if (response.status === 409)
+    throw new Rejected('Operation conflicts with the current job state', 409);
   requireThat(response.ok, 'Operations host rejected the request', 502);
   const reader = response.body?.getReader();
   requireThat(reader, 'Operations host response missing', 502);
@@ -109,6 +124,7 @@ export function registerOperations(
     path: string,
     schema: Record<string, unknown>,
     body?: unknown,
+    headers: Record<string, string> = {},
   ): Promise<T> {
     const host = hosts.get(id);
     requireThat(host, 'Operations host is not configured', 503);
@@ -116,6 +132,7 @@ export function registerOperations(
       const response = await transport(host.endpoint + path, {
         method: body === undefined ? 'GET' : 'POST',
         headers: {
+          ...headers,
           Authorization: 'Bearer ' + host.credential,
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
@@ -238,7 +255,8 @@ export function registerOperations(
         if (previous) {
           const saved = JSON.parse(previous.intent) as OperationsIntent;
           requireThat(
-            saved.command.action === request.body.action && saved.scope === binding.scope,
+            isDeepStrictEqual(saved.command.operation, request.body.operation) &&
+              saved.scope === binding.scope,
             'Operation key already used',
             409,
           );
@@ -255,7 +273,7 @@ export function registerOperations(
             request: caller?.request ?? randomUUID(),
           },
           scope: binding.scope,
-          command: { instance: binding.instance, action: request.body.action },
+          command: { instance: binding.instance, operation: request.body.operation },
         };
         store.db
           .prepare('INSERT INTO operation_requests VALUES(?,?,?,?,?,?,?)')
@@ -268,7 +286,10 @@ export function registerOperations(
             request.body.key,
             JSON.stringify(value),
           );
-        appendAudit(store, account.id, binding.scope, 'operations.job.submit', value.id, value);
+        appendAudit(store, account.id, binding.scope, 'operations.job.submit', value.id, {
+          action: value.command.operation.action,
+          key: request.body.key,
+        });
         return value;
       });
       return dispatch(request, binding.host, intent);
@@ -281,7 +302,7 @@ export function registerOperations(
       .get(request.params.id) as SavedRequest | undefined;
     requireThat(row, 'Operation not found', 404);
     const intent = JSON.parse(row.intent) as OperationsIntent;
-    permitted(account.id, intent.scope, 'read');
+    permitted(account.id, intent.scope, 'write');
     const job = await remote<OperationsJob>(
       request,
       row.host,
@@ -295,4 +316,229 @@ export function registerOperations(
     );
     return job;
   });
+  function recorded(id: string) {
+    const row = store.db
+      .prepare('SELECT host,instance,intent FROM operation_requests WHERE id=?')
+      .get(id) as SavedRequest | undefined;
+    requireThat(row, 'Operation not found', 404);
+    return { ...row, value: JSON.parse(row.intent) as OperationsIntent };
+  }
+  function pageSearch(query: OperationsPageQuery) {
+    const search = new URLSearchParams();
+    if (query.cursor !== undefined) search.set('cursor', query.cursor);
+    if (query.limit !== undefined) search.set('limit', String(query.limit));
+    return search.size ? '?' + search.toString() : '';
+  }
+  app.post<{ Params: { id: string } }>(OPERATIONS_PATH + '/jobs/:id/cancel', async (request) => {
+    const account = owner(request);
+    const row = recorded(request.params.id);
+    const actor = store.currentCaller();
+    const caller = {
+      account: account.id,
+      client: actor?.client ?? null,
+      request: actor?.request ?? randomUUID(),
+    };
+    store.transaction(() => {
+      requireThat(
+        identity.decide(account.id, row.value.scope, 'write'),
+        'Local authority required',
+      );
+      appendAudit(
+        store,
+        account.id,
+        row.value.scope,
+        'operations.job.cancel.submit',
+        row.value.id,
+        {},
+      );
+    });
+    const job = await remote<OperationsJob>(
+      request,
+      row.host,
+      EXECUTOR_JOBS_PATH + '/' + encodeURIComponent(row.value.id) + '/cancel',
+      operationsJobSchema,
+      { actor: caller, expiresAt: now() + OPERATIONS_LEASE_SECONDS },
+    );
+    requireThat(
+      isDeepStrictEqual(job.intent, row.value),
+      'Operations host returned a different job',
+      502,
+    );
+    return job;
+  });
+  const instancePath = OPERATIONS_PATH + '/hosts/:host/instances/:instance';
+  app.get<{ Params: { host: string; instance: string }; Querystring: OperationsPageQuery }>(
+    instancePath + '/jobs',
+    { schema: { querystring: operationsPageQuerySchema } },
+    async (request) => {
+      const account = owner(request);
+      const binding = target(request.params.host, request.params.instance);
+      permitted(account.id, binding.scope, 'write');
+      const page = await remote<OperationsJobPage>(
+        request,
+        binding.host,
+        EXECUTOR_INSTANCES_PATH +
+          '/' +
+          encodeURIComponent(binding.instance) +
+          '/jobs' +
+          pageSearch(request.query),
+        operationsJobPageSchema,
+        undefined,
+        { [OPERATIONS_SCOPE_HEADER]: binding.scope },
+      );
+      requireThat(
+        page.jobs.length <= OPERATIONS_MAX_PAGE_ROWS,
+        'Operations history page too large',
+        502,
+      );
+      if (page.jobs.length) {
+        const rows = store.db
+          .prepare(
+            'SELECT id,host,instance,intent FROM operation_requests WHERE id IN (' +
+              page.jobs.map(() => '?').join(',') +
+              ')',
+          )
+          .all(...page.jobs.map((job) => job.intent.id));
+        const saved = new Map(rows.map((row) => [row.id, row]));
+        for (const job of page.jobs) {
+          const row = saved.get(job.intent.id);
+          requireThat(
+            row &&
+              row.host === binding.host &&
+              row.instance === binding.instance &&
+              typeof row.intent === 'string' &&
+              job.intent.scope === binding.scope &&
+              isDeepStrictEqual(job.intent, JSON.parse(row.intent)),
+            'Operations host returned a different job',
+            502,
+          );
+        }
+      }
+      return page;
+    },
+  );
+  app.get<{ Params: { host: string; instance: string }; Querystring: OperationsPageQuery }>(
+    instancePath + '/logs',
+    { schema: { querystring: operationsPageQuerySchema } },
+    async (request) => {
+      const account = owner(request);
+      const binding = target(request.params.host, request.params.instance);
+      permitted(account.id, binding.scope, 'write');
+      return remote<OperationsLogPage>(
+        request,
+        binding.host,
+        EXECUTOR_INSTANCES_PATH +
+          '/' +
+          encodeURIComponent(binding.instance) +
+          '/logs' +
+          pageSearch(request.query),
+        operationsLogPageSchema,
+      );
+    },
+  );
+  app.get<{ Params: { host: string; instance: string } }>(
+    instancePath + '/observe',
+    async (request) => {
+      const account = owner(request);
+      const binding = target(request.params.host, request.params.instance);
+      permitted(account.id, binding.scope, 'read');
+      return remote<OperationsObservation>(
+        request,
+        binding.host,
+        EXECUTOR_INSTANCES_PATH + '/' + encodeURIComponent(binding.instance) + '/observe',
+        operationsObservationSchema,
+      );
+    },
+  );
+  app.get<{ Params: { host: string; instance: string }; Querystring: OperationsPageQuery }>(
+    instancePath + '/logs/watch',
+    { config: { mcpStream: true }, schema: { querystring: operationsPageQuerySchema } },
+    async (request, reply) => {
+      const binding = target(request.params.host, request.params.instance);
+      const guard = (audit = false) => {
+        const account = owner(request);
+        requireThat(
+          target(binding.host, binding.instance).scope === binding.scope,
+          'Operations binding changed',
+        );
+        if (audit) permitted(account.id, binding.scope, 'write');
+        else
+          requireThat(
+            identity.check(account.id, binding.scope, 'write'),
+            'Local authority required',
+          );
+      };
+      guard(true);
+      const host = hosts.get(binding.host);
+      requireThat(host, 'Operations host is not configured', 503);
+      const abort = new AbortController();
+      reply.raw.once('close', () => abort.abort());
+      const response = await transport(
+        host.endpoint +
+          EXECUTOR_INSTANCES_PATH +
+          '/' +
+          encodeURIComponent(binding.instance) +
+          '/logs/watch' +
+          pageSearch(request.query),
+        {
+          headers: { Authorization: 'Bearer ' + host.credential },
+          redirect: 'error',
+          signal: AbortSignal.any([abort.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+        },
+      );
+      requireThat(response.ok && response.body, 'Operations stream unavailable', 502);
+      const body = response.body;
+      async function* output() {
+        let complete = false;
+        const limit = Math.max(
+          1,
+          Math.min(OPERATIONS_MAX_PAGE_ROWS, request.query.limit ?? OPERATIONS_MAX_PAGE_ROWS),
+        );
+        const tail: OperationsLogPage = {
+          entries: [],
+          cursor: request.query.cursor ?? '0',
+          truncated: false,
+        };
+        try {
+          for await (const frame of sseFrames(
+            body,
+            OPERATIONS_MAX_REQUEST_BYTES + SSE_ENVELOPE_BYTES,
+            guard,
+          )) {
+            requireThat(
+              ['logs', 'done'].includes(frame.event) &&
+                request.compileValidationSchema(operationsLogPageSchema)(frame.data),
+              'Invalid operations stream',
+              502,
+            );
+            const page = frame.data as OperationsLogPage;
+            tail.entries.push(...page.entries);
+            tail.cursor = page.cursor;
+            tail.truncated ||= page.truncated;
+            while (
+              tail.entries.length > limit ||
+              Buffer.byteLength(JSON.stringify(tail)) > OPERATIONS_MAX_REQUEST_BYTES
+            ) {
+              requireThat(tail.entries.length > 0, 'Operations stream metadata too large', 502);
+              tail.entries.shift();
+              tail.truncated = true;
+            }
+            const value = frame.event === 'done' ? tail : page;
+            yield 'event: ' + frame.event + '\ndata: ' + JSON.stringify(value) + '\n\n';
+            if (frame.event === 'done') {
+              complete = true;
+              break;
+            }
+          }
+          requireThat(complete, 'Operations stream interrupted', 502);
+        } finally {
+          abort.abort();
+        }
+      }
+      return reply
+        .type('text/event-stream')
+        .header('Cache-Control', 'no-cache')
+        .send(Readable.from(output(), { objectMode: false, highWaterMark: 1 }));
+    },
+  );
 }

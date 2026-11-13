@@ -45,51 +45,56 @@ export interface PermissionSource {
   audit(account: string, scope: string, permission: string, allowed: boolean): void;
 }
 
-/** Bind to a server-owned snapshot/transaction; never trust client-supplied membership. */
-export function createAuthorizer(source: PermissionSource) {
-  return function authorize(account: string, scope: string, permission: string): boolean {
-    const decide = () => {
-      if (!source.enabled(account) || !parseScope(scope) || !isPermission(permission)) return false;
-      if (source.grants(account, 'global').includes('admin')) return true;
-      if (PERMISSIONS[permission].globalOnly)
-        return source.grants(account, 'global').includes(permission);
-      const ancestors: Scope[] = [];
-      let current: Scope | null | undefined = scope as Scope;
-      while (current !== null) {
-        if (current === undefined || ancestors.includes(current)) return false;
-        ancestors.push(current);
-        current = source.parent(current);
-      }
-      for (const ancestor of ancestors) {
-        const parsed = parseScope(ancestor)!;
-        if (parsed.kind === 'club' && !source.membership(account, parsed.id!)?.active) return false;
-      }
-      for (const ancestor of ancestors) {
-        if (source.grants(account, ancestor).some((p) => permissionImplies(p, permission)))
-          return true;
-        const parsed = parseScope(ancestor)!;
-        if (parsed.kind !== 'club') continue;
-        const roles = source.membership(account, parsed.id!)!.roles;
-        if (source.chair(account, parsed.id!)) {
-          if (
-            permission === 'president' ||
-            ROLE_PERMISSIONS.president.some((p) => permissionImplies(p, permission))
-          )
-            return true;
-        }
+/** Evaluate current server-owned membership and grants without recording a new action. */
+export function createPermissionChecker(source: Omit<PermissionSource, 'audit'>) {
+  return function check(account: string, scope: string, permission: string): boolean {
+    if (!source.enabled(account) || !parseScope(scope) || !isPermission(permission)) return false;
+    if (source.grants(account, 'global').includes('admin')) return true;
+    if (PERMISSIONS[permission].globalOnly)
+      return source.grants(account, 'global').includes(permission);
+    const ancestors: Scope[] = [];
+    let current: Scope | null | undefined = scope as Scope;
+    while (current !== null) {
+      if (current === undefined || ancestors.includes(current)) return false;
+      ancestors.push(current);
+      current = source.parent(current);
+    }
+    for (const ancestor of ancestors) {
+      const parsed = parseScope(ancestor)!;
+      if (parsed.kind === 'club' && !source.membership(account, parsed.id!)?.active) return false;
+    }
+    for (const ancestor of ancestors) {
+      if (source.grants(account, ancestor).some((p) => permissionImplies(p, permission)))
+        return true;
+      const parsed = parseScope(ancestor)!;
+      if (parsed.kind !== 'club') continue;
+      const roles = source.membership(account, parsed.id!)!.roles;
+      if (source.chair(account, parsed.id!)) {
         if (
-          roles.some((role) => {
-            // President authority comes only from chairs, never from a cached role.
-            if (typeof role !== 'string' || role === 'president') return false;
-            const held = Object.hasOwn(ROLE_PERMISSIONS, role) ? ROLE_PERMISSIONS[role] : [role];
-            return held.some((p) => isPermission(p) && permissionImplies(p, permission));
-          })
+          permission === 'president' ||
+          ROLE_PERMISSIONS.president.some((p) => permissionImplies(p, permission))
         )
           return true;
       }
-      return false;
-    };
-    const allowed = decide();
+      if (
+        roles.some((role) => {
+          // President authority comes only from chairs, never from a cached role.
+          if (typeof role !== 'string' || role === 'president') return false;
+          const held = Object.hasOwn(ROLE_PERMISSIONS, role) ? ROLE_PERMISSIONS[role] : [role];
+          return held.some((p) => isPermission(p) && permissionImplies(p, permission));
+        })
+      )
+        return true;
+    }
+    return false;
+  };
+}
+
+/** Record one authorization decision for the requested action. */
+export function createAuthorizer(source: PermissionSource) {
+  const check = createPermissionChecker(source);
+  return function authorize(account: string, scope: string, permission: string): boolean {
+    const allowed = check(account, scope, permission);
     source.audit(account, scope, permission, allowed);
     return allowed;
   };

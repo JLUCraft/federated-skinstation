@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   PERMISSIONS,
   createAuthorizer,
+  createPermissionChecker,
   isPermission,
   parseScope,
   type Scope,
@@ -378,8 +379,8 @@ export class LocalIdentity {
   authorize(account: string, scope: string, permission: string): boolean {
     return this.store.transaction(() => this.decide(account, scope, permission));
   }
-  decide(account: string, scope: string, permission: string): boolean {
-    const source: PermissionSource = {
+  private permissionSource(): PermissionSource {
+    return {
       enabled: (a) => this.enabled(a),
       parent: (s) => this.parent(s),
       membership: (a, club) => {
@@ -396,7 +397,12 @@ export class LocalIdentity {
           .map((row) => String(row.permission)),
       audit: (a, s, p, allowed) => appendAudit(this.store, a, s, 'authorize', p, { allowed }),
     };
-    return createAuthorizer(source)(account, scope, permission);
+  }
+  decide(account: string, scope: string, permission: string): boolean {
+    return createAuthorizer(this.permissionSource())(account, scope, permission);
+  }
+  check(account: string, scope: string, permission: string): boolean {
+    return createPermissionChecker(this.permissionSource())(account, scope, permission);
   }
 
   /** Keep the decision and mutation under one write lock, retaining failed decisions. */

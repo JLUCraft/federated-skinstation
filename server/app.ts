@@ -365,8 +365,8 @@ export async function build(
   };
   app.get('/', async () => ({
     meta: {
-      serverName: 'JLUCraft Federation',
-      implementationName: 'federated-skinstation',
+      serverName: 'JLUCraft Union',
+      implementationName: 'union-skinstation',
       implementationVersion: VERSION,
       links: {
         homepage: config.origin + '/portal/',

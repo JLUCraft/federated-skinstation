@@ -1,4 +1,4 @@
-# AGENTS.md — federated-skinstation
+# AGENTS.md — union-skinstation
 
 Follow the workspace rules in `../AGENTS.md`. Read [README.md](README.md) for project scope, setup, and standard validation commands.
 
@@ -12,7 +12,7 @@ Keep project documentation in the root `AGENTS.md` and `README.md` only. Product
 
 The skin station is the central account and authorization authority. Consolidate
 identity, permissions, league, events, approvals, and points here, keyed by
-`accounts.id`. Retire federation bridge consumers as each subsystem moves here.
+`accounts.id`. The federation bridge consumers are retired; this station is the central authority.
 Institutional email verification enrolls the matching club; membership revocation
 is permanent. Chair succession and recovery belong to each club.
 Cross-language contracts originate in `shared/contracts/*.schema.json`.

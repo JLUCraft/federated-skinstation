@@ -1,4 +1,4 @@
-# Federated Skin Station
+# Union Skin Station
 
 JLUCraft account, Yggdrasil, MUA, skin library, wardrobe, and community services, with a React web portal.
 
@@ -109,7 +109,7 @@ markers prevent subsequent restarts from restoring revoked grants. Schema 3 spli
 the import markers and retains completed imports, including revoked grants. All route and
 portal administrator decisions read the local authority, including MUA and texture
 publication; editing the configuration after the import does not change authority.
-The federation identity bridge and its attestation endpoints have been removed.
+The legacy identity bridge and its attestation endpoints have been removed.
 
 Configured schools create local clubs, using `school.club` when supplied
 and the school key otherwise. Successful email confirmation creates an active
